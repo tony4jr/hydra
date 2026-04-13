@@ -60,6 +60,52 @@ def create_brand(data: BrandCreate, db: Session = Depends(get_db)):
     return {"id": brand.id, "name": brand.name}
 
 
+@router.get("/api/performance-summary")
+def all_brands_performance(days: int = 30, db: Session = Depends(get_db)):
+    """Performance summary across all brands."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    brands = db.query(Brand).filter(Brand.status == "active").all()
+
+    results = []
+    for b in brands:
+        campaign_count = (
+            db.query(func.count())
+            .filter(Campaign.brand_id == b.id, Campaign.created_at >= cutoff)
+            .scalar()
+        )
+        comment_count = (
+            db.query(func.count())
+            .filter(
+                ActionLog.campaign_id.in_(
+                    db.query(Campaign.id).filter(Campaign.brand_id == b.id)
+                ),
+                ActionLog.action_type.in_(["comment", "reply"]),
+                ActionLog.created_at >= cutoff,
+            )
+            .scalar()
+        )
+        ghost_count = (
+            db.query(func.count())
+            .filter(
+                Campaign.brand_id == b.id,
+                Campaign.ghost_check_status == "ghost",
+                Campaign.created_at >= cutoff,
+            )
+            .scalar()
+        )
+
+        results.append({
+            "id": b.id,
+            "name": b.name,
+            "category": b.product_category,
+            "campaigns": campaign_count,
+            "comments": comment_count,
+            "ghosts": ghost_count,
+        })
+
+    return {"period_days": days, "brands": results}
+
+
 @router.get("/api/{brand_id}")
 def get_brand(brand_id: int, db: Session = Depends(get_db)):
     b = db.query(Brand).get(brand_id)
@@ -260,49 +306,3 @@ def brand_performance(brand_id: int, days: int = 30, db: Session = Depends(get_d
         "keywords": keyword_stats,
         "scenario_distribution": scenario_dist,
     }
-
-
-@router.get("/api/performance-summary")
-def all_brands_performance(days: int = 30, db: Session = Depends(get_db)):
-    """Performance summary across all brands."""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-    brands = db.query(Brand).filter(Brand.status == "active").all()
-
-    results = []
-    for b in brands:
-        campaign_count = (
-            db.query(func.count())
-            .filter(Campaign.brand_id == b.id, Campaign.created_at >= cutoff)
-            .scalar()
-        )
-        comment_count = (
-            db.query(func.count())
-            .filter(
-                ActionLog.campaign_id.in_(
-                    db.query(Campaign.id).filter(Campaign.brand_id == b.id)
-                ),
-                ActionLog.action_type.in_(["comment", "reply"]),
-                ActionLog.created_at >= cutoff,
-            )
-            .scalar()
-        )
-        ghost_count = (
-            db.query(func.count())
-            .filter(
-                Campaign.brand_id == b.id,
-                Campaign.ghost_check_status == "ghost",
-                Campaign.created_at >= cutoff,
-            )
-            .scalar()
-        )
-
-        results.append({
-            "id": b.id,
-            "name": b.name,
-            "category": b.product_category,
-            "campaigns": campaign_count,
-            "comments": comment_count,
-            "ghosts": ghost_count,
-        })
-
-    return {"period_days": days, "brands": results}
