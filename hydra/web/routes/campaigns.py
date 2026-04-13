@@ -222,46 +222,6 @@ def list_campaigns(
     return {"total": total, "page": page, "items": items}
 
 
-@router.get("/api/{campaign_id}")
-def get_campaign(campaign_id: int, db: Session = Depends(get_db)):
-    c = db.query(Campaign).get(campaign_id)
-    if not c:
-        return {"error": "not found"}
-
-    steps = (
-        db.query(CampaignStep)
-        .filter(CampaignStep.campaign_id == c.id)
-        .order_by(CampaignStep.step_number)
-        .all()
-    )
-
-    return {
-        "id": c.id,
-        "video_id": c.video_id,
-        "brand_id": c.brand_id,
-        "scenario": c.scenario,
-        "status": c.status,
-        "like_boost_preset": c.like_boost_preset,
-        "ghost_check_status": c.ghost_check_status,
-        "created_at": str(c.created_at),
-        "completed_at": str(c.completed_at) if c.completed_at else None,
-        "steps": [
-            {
-                "step_number": s.step_number,
-                "role": s.role,
-                "type": s.type,
-                "account_id": s.account_id,
-                "content": s.content,
-                "status": s.status,
-                "scheduled_at": str(s.scheduled_at) if s.scheduled_at else None,
-                "completed_at": str(s.completed_at) if s.completed_at else None,
-                "error": s.error_message,
-            }
-            for s in steps
-        ],
-    }
-
-
 # --- #27: Step Search/Filter ---
 
 @router.get("/api/steps/search")
@@ -416,5 +376,47 @@ def work_queue(db: Session = Depends(get_db)):
                 "scheduled_at": str(b.scheduled_at) if b.scheduled_at else None,
             }
             for b in pending_boosts
+        ],
+    }
+
+
+# --- Path parameter routes MUST be last to avoid conflicts ---
+
+@router.get("/api/{campaign_id}")
+def get_campaign(campaign_id: int, db: Session = Depends(get_db)):
+    c = db.query(Campaign).get(campaign_id)
+    if not c:
+        return {"error": "not found"}
+
+    steps = (
+        db.query(CampaignStep)
+        .filter(CampaignStep.campaign_id == c.id)
+        .order_by(CampaignStep.step_number)
+        .all()
+    )
+
+    return {
+        "id": c.id,
+        "video_id": c.video_id,
+        "brand_id": c.brand_id,
+        "scenario": c.scenario,
+        "status": c.status,
+        "like_boost_preset": c.like_boost_preset,
+        "ghost_check_status": c.ghost_check_status,
+        "created_at": str(c.created_at),
+        "completed_at": str(c.completed_at) if c.completed_at else None,
+        "steps": [
+            {
+                "step_number": s.step_number,
+                "role": s.role,
+                "type": s.type,
+                "account_id": s.account_id,
+                "content": s.content,
+                "status": s.status,
+                "scheduled_at": str(s.scheduled_at) if s.scheduled_at else None,
+                "completed_at": str(s.completed_at) if s.completed_at else None,
+                "error": s.error_message,
+            }
+            for s in steps
         ],
     }

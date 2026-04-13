@@ -98,6 +98,89 @@ def account_stats(db: Session = Depends(get_db)):
     return stats
 
 
+@router.get("/api/health-summary")
+def health_summary(db: Session = Depends(get_db)):
+    """Quick health overview for all active accounts."""
+    now = datetime.now(timezone.utc)
+    thirty_days_ago = now - timedelta(days=30)
+
+    accounts = db.query(Account).filter(Account.status.in_(["active", "warmup", "cooldown"])).all()
+
+    results = []
+    for a in accounts:
+        step_stats = (
+            db.query(
+                func.count().label("total"),
+                func.sum(case((CampaignStep.status == "done", 1), else_=0)).label("done"),
+            )
+            .filter(
+                CampaignStep.account_id == a.id,
+                CampaignStep.scheduled_at >= thirty_days_ago,
+            )
+            .first()
+        )
+        total = step_stats.total or 0
+        done = int(step_stats.done or 0)
+
+        results.append({
+            "id": a.id,
+            "gmail": a.gmail,
+            "status": a.status,
+            "success_rate": round(done / total * 100, 1) if total > 0 else 0.0,
+            "ghost_count": a.ghost_count or 0,
+            "last_active_at": str(a.last_active_at) if a.last_active_at else None,
+        })
+
+    return {"accounts": results}
+
+
+@router.get("/api/csv-template")
+def csv_template():
+    """Return CSV template content."""
+    return {
+        "headers": ["gmail", "password", "recovery_email", "phone_number", "totp_secret"],
+        "required": ["gmail", "password"],
+        "optional": ["recovery_email", "phone_number", "totp_secret"],
+        "example": "user@gmail.com,MyP@ss123,recovery@gmail.com,+821012345678,JBSWY3DPEHPK3PXP",
+    }
+
+
+@router.get("/api/devices")
+def list_devices():
+    """List connected ADB devices."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["adb", "devices", "-l"],
+            capture_output=True, text=True, timeout=10,
+        )
+        lines = result.stdout.strip().split("\n")[1:]
+        devices = []
+        for line in lines:
+            parts = line.split()
+            if len(parts) >= 2:
+                device_id = parts[0]
+                status = parts[1]
+                model = ""
+                for p in parts[2:]:
+                    if p.startswith("model:"):
+                        model = p.split(":")[1]
+                devices.append({"device_id": device_id, "status": status, "model": model})
+        return {"devices": devices}
+    except Exception as e:
+        return {"devices": [], "error": str(e)}
+
+
+@router.post("/api/devices/set-active")
+def set_active_device(device_id: str):
+    """Set the active device for IP rotation."""
+    from hydra.core.scheduler import set_device
+    set_device(device_id)
+    return {"ok": True, "active_device": device_id}
+
+
+# --- Path parameter routes below (must be after static routes) ---
+
 @router.get("/api/{account_id}")
 def get_account(account_id: int, db: Session = Depends(get_db)):
     account = db.query(Account).get(account_id)
@@ -288,43 +371,6 @@ def account_metrics(account_id: int, db: Session = Depends(get_db)):
     }
 
 
-@router.get("/api/health-summary")
-def health_summary(db: Session = Depends(get_db)):
-    """Quick health overview for all active accounts."""
-    now = datetime.now(timezone.utc)
-    thirty_days_ago = now - timedelta(days=30)
-
-    accounts = db.query(Account).filter(Account.status.in_(["active", "warmup", "cooldown"])).all()
-
-    results = []
-    for a in accounts:
-        # Per-account success rate
-        step_stats = (
-            db.query(
-                func.count().label("total"),
-                func.sum(case((CampaignStep.status == "done", 1), else_=0)).label("done"),
-            )
-            .filter(
-                CampaignStep.account_id == a.id,
-                CampaignStep.scheduled_at >= thirty_days_ago,
-            )
-            .first()
-        )
-        total = step_stats.total or 0
-        done = int(step_stats.done or 0)
-
-        results.append({
-            "id": a.id,
-            "gmail": a.gmail,
-            "status": a.status,
-            "success_rate": round(done / total * 100, 1) if total > 0 else 0.0,
-            "ghost_count": a.ghost_count or 0,
-            "last_active_at": str(a.last_active_at) if a.last_active_at else None,
-        })
-
-    return {"accounts": results}
-
-
 @router.get("/api/{account_id}/history")
 def account_history(
     account_id: int,
@@ -373,17 +419,6 @@ def account_history(
         items.append(item)
 
     return {"total": total, "page": page, "items": items}
-
-
-@router.get("/api/csv-template")
-def csv_template():
-    """Return CSV template content."""
-    return {
-        "headers": ["gmail", "password", "recovery_email", "phone_number", "totp_secret"],
-        "required": ["gmail", "password"],
-        "optional": ["recovery_email", "phone_number", "totp_secret"],
-        "example": "user@gmail.com,MyP@ss123,recovery@gmail.com,+821012345678,JBSWY3DPEHPK3PXP",
-    }
 
 
 # --- #8: Account Info Change + Channel Creation ---
@@ -497,43 +532,3 @@ def batch_setup(data: BatchSetupInput, db: Session = Depends(get_db)):
         results["actions"][action] = {"success": success, "failed": failed}
 
     return results
-
-
-# --- #13: Multi-device Management ---
-
-@router.get("/api/devices")
-def list_devices():
-    """List connected ADB devices."""
-    import subprocess
-    try:
-        result = subprocess.run(
-            ["adb", "devices", "-l"],
-            capture_output=True, text=True, timeout=10,
-        )
-        lines = result.stdout.strip().split("\n")[1:]  # Skip header
-        devices = []
-        for line in lines:
-            parts = line.split()
-            if len(parts) >= 2:
-                device_id = parts[0]
-                status = parts[1]
-                model = ""
-                for p in parts[2:]:
-                    if p.startswith("model:"):
-                        model = p.split(":")[1]
-                devices.append({
-                    "device_id": device_id,
-                    "status": status,
-                    "model": model,
-                })
-        return {"devices": devices}
-    except Exception as e:
-        return {"devices": [], "error": str(e)}
-
-
-@router.post("/api/devices/set-active")
-def set_active_device(device_id: str):
-    """Set the active device for IP rotation."""
-    from hydra.core.scheduler import set_device
-    set_device(device_id)
-    return {"ok": True, "active_device": device_id}
