@@ -26,6 +26,7 @@ class Settings(BaseSettings):
 
     # AdsPower
     adspower_api_url: str = "http://local.adspower.net:50325"
+    adspower_api_key: str = ""
 
     # DB
     db_url: str = Field(default=f"sqlite:///{ROOT_DIR / 'data' / 'hydra.db'}")

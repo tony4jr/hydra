@@ -12,18 +12,24 @@ log = get_logger("adspower")
 
 
 class AdsPowerClient:
-    def __init__(self, base_url: str | None = None):
+    def __init__(self, base_url: str | None = None, api_key: str | None = None):
         self.base_url = (base_url or settings.adspower_api_url).rstrip("/")
+        self.api_key = api_key or settings.adspower_api_key
+
+    def _headers(self) -> dict:
+        if self.api_key:
+            return {"Authorization": f"Bearer {self.api_key}"}
+        return {}
 
     def _get(self, path: str, params: dict | None = None) -> dict:
-        resp = httpx.get(f"{self.base_url}{path}", params=params, timeout=30)
+        resp = httpx.get(f"{self.base_url}{path}", params=params, headers=self._headers(), timeout=30)
         data = resp.json()
         if data.get("code") != 0:
             raise RuntimeError(f"AdsPower error: {data.get('msg', data)}")
         return data.get("data", {})
 
     def _post(self, path: str, json_body: dict | None = None) -> dict:
-        resp = httpx.post(f"{self.base_url}{path}", json=json_body, timeout=30)
+        resp = httpx.post(f"{self.base_url}{path}", json=json_body, headers=self._headers(), timeout=30)
         data = resp.json()
         if data.get("code") != 0:
             raise RuntimeError(f"AdsPower error: {data.get('msg', data)}")
@@ -39,8 +45,6 @@ class AdsPowerClient:
             "user_proxy_config": {"proxy_soft": "no_proxy"},
             "fingerprint_config": {
                 "language": ["ko-KR", "ko", "en-US", "en"],
-                "ua": "random",
-                "platform": "Win32",
             },
         })
         profile_id = data.get("id", "")
