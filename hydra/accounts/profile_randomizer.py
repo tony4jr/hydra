@@ -21,25 +21,44 @@ log = get_logger("profile_randomizer")
 
 
 def pick_from_pool(db: Session, pool_type: str) -> str | None:
-    """Pick a random item from a pool type, preferring least-used."""
+    """Pick a random unused item from pool and consume it (disable after use).
+
+    1:1 mapping — each pool item is used by exactly one account.
+    Once consumed, it's marked disabled and won't be picked again.
+    """
     items = (
         db.query(ProfilePool)
         .filter(
             ProfilePool.pool_type == pool_type,
             ProfilePool.disabled == False,
+            ProfilePool.used_count == 0,
         )
-        .order_by(ProfilePool.used_count)
-        .limit(10)
+        .limit(20)
         .all()
     )
     if not items:
+        log.warning(f"Pool '{pool_type}' exhausted — no unused items left")
         return None
 
-    chosen = random.choice(items[:5])  # Pick from 5 least-used
-    chosen.used_count += 1
+    chosen = random.choice(items)
+    chosen.used_count = 1
     chosen.last_used_at = datetime.now(timezone.utc)
+    chosen.disabled = True  # Consumed — never reuse
     db.commit()
     return chosen.content
+
+
+def get_pool_stats(db: Session) -> dict:
+    """Get available/total counts per pool type."""
+    types = ["avatar", "banner", "name", "description", "contact", "hashtag"]
+    stats = {}
+    for t in types:
+        total = db.query(ProfilePool).filter(ProfilePool.pool_type == t).count()
+        available = db.query(ProfilePool).filter(
+            ProfilePool.pool_type == t, ProfilePool.disabled == False, ProfilePool.used_count == 0
+        ).count()
+        stats[t] = {"total": total, "available": available}
+    return stats
 
 
 async def randomize_channel_profile(db: Session, account: Account):

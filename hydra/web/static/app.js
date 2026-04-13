@@ -779,12 +779,16 @@ async function doBackup(){await api('/settings/api/backup',{method:'POST'});toas
 
 // ==================== 프로필 풀 ====================
 async function renderPools(el){
-    const pools=await api('/pools/api/list');
+    const [pools,stats]=await Promise.all([api('/pools/api/list'),api('/pools/api/stats')]);
     const types=[['avatar','아바타'],['banner','배너'],['name','이름'],['description','설명'],['contact','연락처'],['hashtag','해시태그']];
     el.innerHTML=`<h1 class="page-title">프로필 풀</h1>
         ${hint('채널 프로필 랜덤화 소스. 유형별로 여러 항목 등록 → 자동 랜덤 선택')}
+        <div class="stats-grid">${types.map(([v,l])=>{const s=stats[v]||{total:0,available:0};return`<div class="stat-card"><div class="label">${l}</div><div class="value ${s.available>0?'green':'red'}">${s.available}<span style="font-size:12px;color:var(--text-secondary)">/${s.total}</span></div></div>`;}).join('')}</div>
         <div class="tabs">${types.map(([v,l],i)=>`<div class="tab ${i===0?'active':''}" onclick="filterPool('${v}',this)">${l}</div>`).join('')}</div>
-        <div class="filter-bar"><button class="btn btn-primary" onclick="showPoolModal()">항목 추가</button></div>
+        <div class="filter-bar">
+            <button class="btn btn-primary" onclick="showPoolModal()">항목 추가</button>
+            <button class="btn btn-outline" onclick="generatePool()">대량 생성 (200개)</button>
+        </div>
         <div class="card"><table><thead><tr><th>ID</th><th>유형</th><th>내용</th><th>사용</th><th>상태</th><th></th></tr></thead>
         <tbody id="pool-tbody">${poolRows(pools)}</tbody></table></div><div id="modal-container"></div>`;
 }
@@ -809,6 +813,7 @@ async function savePool(){await api('/pools/api/create',{method:'POST',body:{poo
 async function togglePool(id){await api(`/pools/api/${id}/toggle`,{method:'POST'});renderPools(document.getElementById('content'));}
 async function filterPool(type,tab){document.querySelectorAll('.tabs .tab').forEach(t=>t.classList.remove('active'));tab.classList.add('active');
     const pools=await api(`/pools/api/list?type=${type}`);document.getElementById('pool-tbody').innerHTML=poolRows(pools);}
+async function generatePool(){if(!confirm('유형별 200개씩 대량 생성합니다. 진행할까요?'))return;toast('생성 중...');const r=await api('/pools/api/generate?count=200',{method:'POST'});if(r.ok){toast(`생성 완료: 이름 ${r.name}, 설명 ${r.description}, 아바타 ${r.avatar}, 배너 ${r.banner}`);}else{toast('생성 실패: '+(r.error||''));}renderPools(document.getElementById('content'));}
 
 // ==================== 로그 ====================
 async function renderLogs(el){
