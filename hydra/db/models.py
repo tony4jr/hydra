@@ -1,15 +1,16 @@
-"""
-HYDRA Database Models — 11 Tables
-"""
+"""SQLAlchemy models — 15 tables (12 spec + 3 from MKT_TUBE analysis)."""
 
 from datetime import datetime
-from sqlalchemy import (
-    Column, Integer, String, Text, Boolean, Float, DateTime, JSON,
-    ForeignKey, Index
-)
-from sqlalchemy.orm import declarative_base, relationship
 
-Base = declarative_base()
+from sqlalchemy import (
+    Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text,
+    UniqueConstraint,
+)
+from sqlalchemy.orm import DeclarativeBase, relationship
+
+
+class Base(DeclarativeBase):
+    pass
 
 
 class Account(Base):
@@ -23,16 +24,17 @@ class Account(Base):
     totp_secret = Column(String)
 
     adspower_profile_id = Column(String)
-    cookies = Column(Text)
+    cookies = Column(Text)  # JSON
 
     status = Column(String, nullable=False, default="registered")
-    warmup_group = Column(String)
+    warmup_group = Column(String)  # A~E
     warmup_start_date = Column(DateTime)
     warmup_end_date = Column(DateTime)
+
     ghost_count = Column(Integer, default=0)
 
-    persona = Column(JSON)
-    role_preference = Column(String)
+    persona = Column(Text)  # JSON
+    role_preference = Column(String)  # seed|witness|agree|any
 
     created_at = Column(DateTime, default=datetime.utcnow)
     last_active_at = Column(DateTime)
@@ -40,8 +42,10 @@ class Account(Base):
     retired_reason = Column(String)
     notes = Column(Text)
 
+    # relationships
     campaign_steps = relationship("CampaignStep", back_populates="account")
     action_logs = relationship("ActionLog", back_populates="account")
+    weekly_goals = relationship("WeeklyGoal", back_populates="account")
 
     __table_args__ = (
         Index("idx_accounts_status", "status"),
@@ -58,19 +62,20 @@ class Brand(Base):
     core_message = Column(Text)
     brand_story = Column(Text)
 
-    target_keywords = Column(JSON)
-    allowed_keywords = Column(JSON)
-    banned_keywords = Column(JSON)
-    ingredients = Column(JSON)
-    selling_points = Column(JSON)
+    target_keywords = Column(Text)   # JSON
+    allowed_keywords = Column(Text)  # JSON
+    banned_keywords = Column(Text)   # JSON
+    ingredients = Column(Text)       # JSON
+    selling_points = Column(Text)    # JSON
 
-    mention_rules = Column(JSON)
+    mention_rules = Column(Text)  # JSON
     tone_guide = Column(Text)
     target_audience = Column(String)
 
     status = Column(String, default="active")
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    # relationships
     keywords = relationship("Keyword", back_populates="brand")
     campaigns = relationship("Campaign", back_populates="brand")
 
@@ -81,15 +86,17 @@ class Keyword(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     text = Column(String, nullable=False)
     brand_id = Column(Integer, ForeignKey("brands.id"))
-    source = Column(String, default="manual")
-    status = Column(String, default="active")
+    source = Column(String, default="manual")   # manual|auto_expanded|trending
+    status = Column(String, default="active")    # active|paused|excluded
     priority = Column(Integer, default=5)
 
     total_videos_found = Column(Integer, default=0)
     total_comments_posted = Column(Integer, default=0)
     last_searched_at = Column(DateTime)
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    # relationships
     brand = relationship("Brand", back_populates="keywords")
     videos = relationship("Video", back_populates="keyword")
 
@@ -102,7 +109,7 @@ class Keyword(Base):
 class Video(Base):
     __tablename__ = "videos"
 
-    id = Column(String, primary_key=True)
+    id = Column(String, primary_key=True)  # YouTube video ID
     url = Column(String, nullable=False)
     title = Column(String)
     channel_id = Column(String)
@@ -126,6 +133,7 @@ class Video(Base):
     collected_at = Column(DateTime, default=datetime.utcnow)
     last_worked_at = Column(DateTime)
 
+    # relationships
     keyword = relationship("Keyword", back_populates="videos")
     campaigns = relationship("Campaign", back_populates="video")
 
@@ -143,19 +151,20 @@ class Campaign(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     video_id = Column(String, ForeignKey("videos.id"), nullable=False)
     brand_id = Column(Integer, ForeignKey("brands.id"), nullable=False)
-    scenario = Column(String, nullable=False)
+    scenario = Column(String, nullable=False)  # A~J
 
     status = Column(String, default="planning")
-    like_boost_preset = Column(String)
-    like_boost_config = Column(JSON)
+    like_boost_preset = Column(String)   # conservative|normal|aggressive|custom
+    like_boost_config = Column(Text)     # JSON
 
-    ghost_check_status = Column(String)
+    ghost_check_status = Column(String)  # pending|visible|ghost|unchecked
     ghost_checked_by = Column(Integer)
     ghost_checked_at = Column(DateTime)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime)
 
+    # relationships
     video = relationship("Video", back_populates="campaigns")
     brand = relationship("Brand", back_populates="campaigns")
     steps = relationship("CampaignStep", back_populates="campaign")
@@ -174,12 +183,12 @@ class CampaignStep(Base):
     campaign_id = Column(Integer, ForeignKey("campaigns.id"), nullable=False)
     step_number = Column(Integer, nullable=False)
 
-    role = Column(String, nullable=False)
+    role = Column(String, nullable=False)     # seed|asker|witness|agree|...
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False)
-    type = Column(String, nullable=False)
+    type = Column(String, nullable=False)     # comment|reply|like|like_boost
 
     content = Column(Text)
-    parent_step_id = Column(Integer, ForeignKey("campaign_steps.id"))
+    parent_step_id = Column(Integer)
     youtube_comment_id = Column(String)
 
     scheduled_at = Column(DateTime)
@@ -188,6 +197,7 @@ class CampaignStep(Base):
     error_message = Column(Text)
     retry_count = Column(Integer, default=0)
 
+    # relationships
     campaign = relationship("Campaign", back_populates="steps")
     account = relationship("Account", back_populates="campaign_steps")
 
@@ -203,7 +213,7 @@ class LikeBoostQueue(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     campaign_id = Column(Integer, ForeignKey("campaigns.id"), nullable=False)
-    target_step_id = Column(Integer, ForeignKey("campaign_steps.id"), nullable=False)
+    target_step_id = Column(Integer, nullable=False)
 
     wave_number = Column(Integer, nullable=False)
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False)
@@ -213,6 +223,7 @@ class LikeBoostQueue(Base):
     surrounding_likes_count = Column(Integer, default=0)
     completed_at = Column(DateTime)
 
+    # relationships
     campaign = relationship("Campaign", back_populates="like_boosts")
 
     __table_args__ = (
@@ -237,8 +248,10 @@ class ActionLog(Base):
 
     status = Column(String, default="success")
     error_message = Column(Text)
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    # relationships
     account = relationship("Account", back_populates="action_logs")
 
     __table_args__ = (
@@ -270,12 +283,19 @@ class WeeklyGoal(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False)
-    week_start = Column(String, nullable=False)
+    week_start = Column(DateTime, nullable=False)
 
     promo_target = Column(Integer, default=70)
     promo_done = Column(Integer, default=0)
     non_promo_target = Column(Integer, default=140)
     non_promo_done = Column(Integer, default=0)
+
+    # relationships
+    account = relationship("Account", back_populates="weekly_goals")
+
+    __table_args__ = (
+        UniqueConstraint("account_id", "week_start"),
+    )
 
 
 class SystemConfig(Base):
@@ -290,8 +310,8 @@ class ErrorLog(Base):
     __tablename__ = "error_log"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    level = Column(String, nullable=False)
-    source = Column(String)
+    level = Column(String, nullable=False)   # info|warning|error|critical
+    source = Column(String)                  # chrome|youtube|claude|ip|system
     account_id = Column(Integer)
     video_id = Column(String)
     campaign_id = Column(Integer)
@@ -301,9 +321,76 @@ class ErrorLog(Base):
 
     resolved = Column(Boolean, default=False)
     resolved_at = Column(DateTime)
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
         Index("idx_error_level", "level", "created_at"),
         Index("idx_error_source", "source"),
+    )
+
+
+# --- MKT_TUBE-derived tables ---
+
+class ScrapedComment(Base):
+    """Real YouTube comments scraped for AI training dataset."""
+    __tablename__ = "scraped_comments"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    video_id = Column(String, nullable=False)
+    author_name = Column(String)
+    author_channel = Column(String)
+    content = Column(Text, nullable=False)
+    content_hash = Column(String, unique=True)  # dedup
+    like_count = Column(Integer, default=0)
+    time_text = Column(String)  # "2주 전" etc.
+
+    scraped_at = Column(DateTime, default=datetime.utcnow)
+    used_for_training = Column(Boolean, default=False)
+
+    __table_args__ = (
+        Index("idx_scraped_video", "video_id"),
+        Index("idx_scraped_likes", "like_count"),
+    )
+
+
+class ProfilePool(Base):
+    """Pool of randomizable profile assets (avatar, banner, name, etc.).
+
+    MKT_TUBE ChangeInfoChannels pattern: load pool → random select → apply.
+    """
+    __tablename__ = "profile_pools"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    pool_type = Column(String, nullable=False)  # avatar|banner|name|description|contact|hashtag
+    content = Column(Text, nullable=False)       # file path or text content
+    used_count = Column(Integer, default=0)
+    last_used_at = Column(DateTime)
+    disabled = Column(Boolean, default=False)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_pool_type", "pool_type", "disabled"),
+    )
+
+
+class ChannelProfileHistory(Base):
+    """Log of channel profile changes for each account."""
+    __tablename__ = "channel_profile_history"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False)
+
+    avatar_path = Column(String)
+    banner_path = Column(String)
+    name = Column(String)
+    description = Column(Text)
+    contact = Column(String)
+    hashtags = Column(Text)  # JSON
+
+    applied_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_profile_history_account", "account_id"),
     )
