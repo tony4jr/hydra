@@ -195,11 +195,6 @@ function accRows(items){return items.map(a=>{const sr=a.success_rate||0;const sr
     <td>${a.last_active_at?new Date(a.last_active_at).toLocaleDateString('ko'):'-'}</td>
     <td><button class="btn btn-sm btn-outline" onclick="viewAccount(${a.id})">상세</button></td>
 </tr>`;}).join('');}
-    <td>${a.adspower_profile_id?'<span style="color:var(--green)">연결됨</span>':'<span style="color:var(--text2)">없음</span>'}</td>
-    <td>${a.has_persona?'<span style="color:var(--green)">있음</span>':'<span style="color:var(--text2)">없음</span>'}</td>
-    <td>${a.last_active_at?new Date(a.last_active_at).toLocaleDateString('ko'):'-'}</td>
-    <td><button class="btn btn-sm btn-outline" onclick="viewAccount(${a.id})">상세</button></td>
-</tr>`).join('');}
 async function filterAccounts(s){const d=await api('/accounts/api/list'+(s?'?status='+s:''));document.getElementById('acc-tbody').innerHTML=accRows(d.items||[]);}
 async function batchProfiles(){const r=await api('/accounts/api/batch/create-profiles',{method:'POST'});toast(`성공 ${r.success}, 실패 ${r.failed}`);renderAccounts(document.getElementById('content'));}
 async function batchPersonas(){const r=await api('/accounts/api/batch/assign-personas',{method:'POST'});toast(`${r.count}개 배정`);renderAccounts(document.getElementById('content'));}
