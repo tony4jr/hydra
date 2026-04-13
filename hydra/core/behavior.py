@@ -10,9 +10,12 @@ Spec Part 7:
 import random
 import math
 from dataclasses import dataclass
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timezone, timedelta
 
 from hydra.core.config import settings
+
+# Korean Standard Time (UTC+9)
+KST = timezone(timedelta(hours=9))
 
 
 @dataclass
@@ -158,6 +161,41 @@ def should_comment_non_promo(non_promo_remaining: int) -> bool:
     if non_promo_remaining <= 0:
         return False
     return random.random() < 0.30
+
+
+def is_natural_activity_hour() -> bool:
+    """Check if current KST hour is within natural YouTube activity hours.
+
+    Natural hours: 07:00 ~ 01:00 KST (avoid 01~07 = sleeping).
+    """
+    kst_now = datetime.now(KST)
+    hour = kst_now.hour
+    return hour >= 7 or hour < 1
+
+
+def seconds_until_natural_hour() -> int:
+    """Seconds until the next natural activity window opens (07:00 KST)."""
+    kst_now = datetime.now(KST)
+    if is_natural_activity_hour():
+        return 0
+    # Currently 01:00~06:59 → wait until 07:00
+    next_start = kst_now.replace(hour=7, minute=0, second=0, microsecond=0)
+    if kst_now.hour >= 7:
+        next_start += timedelta(days=1)
+    return int((next_start - kst_now).total_seconds())
+
+
+def get_current_slot() -> str | None:
+    """Get the current time slot name based on KST, or None if outside slots."""
+    kst_now = datetime.now(KST)
+    hour = kst_now.hour
+    for name, slot in SLOTS.items():
+        if slot["start"] <= hour < slot["end"]:
+            return name
+        # Handle night slot wrapping (0~1)
+        if name == "night" and hour < slot["end"]:
+            return name
+    return None
 
 
 def pick_typing_method() -> str:

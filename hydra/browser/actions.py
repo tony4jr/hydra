@@ -122,10 +122,11 @@ async def click_like_button(page: Page, target: str = "video") -> bool:
         return False
 
 
-async def post_comment(page: Page, text: str) -> bool:
+async def post_comment(page: Page, text: str) -> str | None:
     """Type and submit a comment.
 
     Spec 7.5: click box → think → paste/type → re-read → submit → confirm.
+    Returns youtube_comment_id if captured, empty string if posted but ID unknown, None on failure.
     """
     try:
         # Click comment input placeholder
@@ -154,16 +155,22 @@ async def post_comment(page: Page, text: str) -> bool:
         await submit.first.click()
         await random_delay(2.0, 4.0)  # confirm
 
-        log.info(f"Comment posted ({len(text)} chars)")
-        return True
+        # Try to capture youtube_comment_id from DOM
+        comment_id = await _extract_new_comment_id(page)
+
+        log.info(f"Comment posted ({len(text)} chars, id={comment_id or 'unknown'})")
+        return comment_id if comment_id else ""
 
     except Exception as e:
         log.error(f"Comment post failed: {e}")
-        return False
+        return None
 
 
-async def post_reply(page: Page, comment_selector: str, text: str) -> bool:
-    """Reply to an existing comment."""
+async def post_reply(page: Page, comment_selector: str, text: str) -> str | None:
+    """Reply to an existing comment.
+
+    Returns youtube_comment_id if captured, empty string if posted but ID unknown, None on failure.
+    """
     try:
         comment = page.locator(comment_selector)
 
@@ -192,12 +199,15 @@ async def post_reply(page: Page, comment_selector: str, text: str) -> bool:
         await submit.first.click()
         await random_delay(2.0, 4.0)
 
-        log.info(f"Reply posted ({len(text)} chars)")
-        return True
+        # Try to capture reply ID
+        comment_id = await _extract_new_comment_id(page)
+
+        log.info(f"Reply posted ({len(text)} chars, id={comment_id or 'unknown'})")
+        return comment_id if comment_id else ""
 
     except Exception as e:
         log.error(f"Reply post failed: {e}")
-        return False
+        return None
 
 
 async def handle_ad(page: Page):
@@ -234,6 +244,19 @@ async def handle_ad(page: Page):
 
     except Exception:
         pass  # No ad or ad already gone
+
+
+async def _extract_new_comment_id(page: Page) -> str | None:
+    """Try to extract the youtube_comment_id of the most recently posted comment.
+
+    YouTube renders new comments at the top of the list after posting.
+    """
+    try:
+        newest = page.locator("ytd-comment-renderer").first
+        comment_id = await newest.get_attribute("data-comment-id")
+        return comment_id
+    except Exception:
+        return None
 
 
 async def check_ghost(page: Page, youtube_comment_id: str) -> str:

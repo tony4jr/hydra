@@ -201,3 +201,25 @@ def get_account_stats(db: Session) -> dict:
         stats[a.status] = stats.get(a.status, 0) + 1
     stats["total"] = len(accounts)
     return stats
+
+
+def queue_channel_creation(db: Session, account: Account):
+    """Queue YouTube channel creation task for an account.
+
+    The actual creation happens during the next browser session:
+    1. Open YouTube in account's browser profile
+    2. Click "Create a channel"
+    3. Fill in name from persona
+    4. Confirm
+
+    This just marks the account as needing channel creation.
+    """
+    if account.youtube_channel_id:
+        return
+
+    account.notes = json.dumps({
+        **(json.loads(account.notes) if account.notes and account.notes.startswith("{") else {}),
+        "pending_channel_creation": True,
+    }, ensure_ascii=False)
+    db.commit()
+    log.info(f"Queued channel creation for {account.gmail}")

@@ -60,7 +60,7 @@ def exclude_keyword(keyword_id: int, db: Session = Depends(get_db)):
 @router.post("/api/{keyword_id}/expand")
 def expand_keyword(keyword_id: int, db: Session = Depends(get_db)):
     """Auto-expand keyword using Claude."""
-    from hydra.collection.keyword_expander import expand_keywords
+    from hydra.ai.agents.keyword_agent import expand_keywords
     kw = db.query(Keyword).get(keyword_id)
     if not kw:
         return {"error": "not found"}

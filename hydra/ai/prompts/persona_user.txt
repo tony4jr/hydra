@@ -1,0 +1,18 @@
+한국인 YouTube 사용자 페르소나를 1개 생성해주세요.
+
+조건:
+- 나이: {age}세
+- 성별: {gender_display}
+
+아래 JSON 형식으로만 답변:
+{{
+  "age": {age},
+  "gender": "{gender}",
+  "region": "한국 도시명",
+  "occupation": "직업",
+  "interests": ["관심사1", "관심사2", "관심사3"],
+  "speech_style": "말투 스타일 설명",
+  "emoji_frequency": "low|medium|high",
+  "comment_length": "short|medium|long",
+  "personality_keywords": ["특성1", "특성2", "특성3"]
+}}

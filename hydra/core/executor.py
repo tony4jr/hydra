@@ -90,9 +90,10 @@ async def execute_step(db: Session, step: CampaignStep, device_id: str | None = 
             await actions.random_delay(1, 3)
 
             # Post comment or reply
-            success = False
+            # post_comment/post_reply return comment_id (str) on success, None on failure
+            result = None
             if step.type == "comment":
-                success = await actions.post_comment(page, step.content)
+                result = await actions.post_comment(page, step.content)
             elif step.type == "reply":
                 # Find parent comment to reply to
                 if step.parent_step_id is not None:
@@ -106,27 +107,20 @@ async def execute_step(db: Session, step: CampaignStep, device_id: str | None = 
                     )
                     if parent and parent.youtube_comment_id:
                         selector = f"[data-comment-id='{parent.youtube_comment_id}']"
-                        success = await actions.post_reply(page, selector, step.content)
+                        result = await actions.post_reply(page, selector, step.content)
                     else:
                         # Fallback: reply to first comment thread
                         selector = "ytd-comment-thread-renderer:first-child"
-                        success = await actions.post_reply(page, selector, step.content)
+                        result = await actions.post_reply(page, selector, step.content)
                 else:
-                    success = await actions.post_comment(page, step.content)
+                    result = await actions.post_comment(page, step.content)
 
-            if success:
-                # Try to capture YouTube comment ID from DOM
-                await actions.random_delay(2, 4)
-                try:
-                    # YouTube assigns IDs to new comments
-                    newest = page.locator("ytd-comment-renderer").first
-                    comment_id = await newest.get_attribute("data-comment-id")
-                    if comment_id:
-                        step.youtube_comment_id = comment_id
-                except Exception:
-                    pass
+            if result is not None:
+                # Save youtube_comment_id to step
+                if result:
+                    step.youtube_comment_id = result
 
-                # Log action
+                # Log action with youtube_comment_id
                 action_log = ActionLog(
                     account_id=account.id,
                     video_id=video.id,
@@ -134,6 +128,7 @@ async def execute_step(db: Session, step: CampaignStep, device_id: str | None = 
                     action_type=ActionType.COMMENT if step.type == "comment" else ActionType.REPLY,
                     is_promo=True,
                     content=step.content,
+                    youtube_comment_id=result or None,
                     ip_address=current_ip,
                     duration_sec=watch_sec,
                 )

@@ -42,11 +42,18 @@ async def _get_current_ip(device_id: str) -> str:
 
 
 async def rotate_ip(device_id: str, max_retries: int = 3) -> str:
-    """Toggle airplane mode to get new IP.
+    """Rotate IP using the active provider, falling back to ADB.
 
     Returns new IP address.
     Raises RuntimeError after max_retries failures.
     """
+    # Use pluggable provider if available
+    from hydra.infra.ip_provider import get_provider
+    provider = get_provider()
+    if provider:
+        return await provider.rotate()
+
+    # Fallback: original ADB airplane mode
     previous_ip = await _get_current_ip(device_id)
 
     for attempt in range(1, max_retries + 1):

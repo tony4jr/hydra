@@ -28,6 +28,7 @@ from hydra.core.enums import AccountStatus, ActionType, StepStatus
 from hydra.core.behavior import (
     plan_daily, pick_action, pick_watch_duration,
     should_comment_promo, should_comment_non_promo,
+    is_natural_activity_hour, seconds_until_natural_hour,
 )
 from hydra.core.executor import execute_step, execute_like_boost
 from hydra.core.scheduler import get_pending_steps, mark_running
@@ -37,8 +38,8 @@ from hydra.db.models import (
     Account, Video, ActionLog, WeeklyGoal, CampaignStep, Campaign,
 )
 from hydra.db.session import SessionLocal
-from hydra.accounts.persona import get_persona
-from hydra.content.generator import generate_non_promo_comment
+from hydra.ai.agents.persona_agent import get_persona
+from hydra.ai.agents.casual_agent import generate_non_promo_comment
 from hydra.infra import telegram
 from hydra.infra.ip import rotate_ip, log_ip_usage, end_ip_usage
 
@@ -53,6 +54,12 @@ async def run_session(account: Account, device_id: str | None = None):
     db = SessionLocal()
 
     try:
+        # Check natural activity hours (KST)
+        if not is_natural_activity_hour():
+            wait = seconds_until_natural_hour()
+            log.info(f"Outside KST activity hours, skipping {account.gmail} (resume in {wait//60}min)")
+            return
+
         # Check account is still active
         acct = db.query(Account).get(account.id)
         if acct.status != AccountStatus.ACTIVE:
@@ -211,7 +218,7 @@ async def run_session(account: Account, device_id: str | None = None):
                         log.warning(f"Recommended click error: {e}")
 
                 elif action == "shorts":
-                    # Browse shorts
+                    # Browse shorts — with keyword matching for promo comments (#4)
                     try:
                         await browser_session.goto("https://www.youtube.com/shorts")
                         await actions.random_delay(2, 4)
@@ -221,15 +228,41 @@ async def run_session(account: Account, device_id: str | None = None):
                             await page.keyboard.press("ArrowDown")
                             await asyncio.sleep(random.uniform(2, 8))
 
-                            # Log each shorts view
-                            action_log = ActionLog(
+                            # Log shorts swipe
+                            db.add(ActionLog(
                                 account_id=acct.id,
                                 action_type=ActionType.SHORTS_SWIPE,
                                 is_promo=False,
                                 ip_address=current_ip,
-                            )
-                            db.add(action_log)
+                            ))
                             non_promo_done += 1
+
+                            # #4: Check if this short matches a brand keyword → comment
+                            promo_left = session_promo_budget - promo_done
+                            if promo_left > 0 and random.random() < 0.20:
+                                try:
+                                    # Get shorts title
+                                    title_el = page.locator("h2.ytShortsVideoTitleViewModelShortsVideoTitle span, yt-formatted-string.ytShortsVideoTitleViewModelShortsVideoTitle")
+                                    title = await title_el.first.text_content(timeout=2000)
+
+                                    # Check pending steps
+                                    pending = (
+                                        db.query(CampaignStep)
+                                        .filter(
+                                            CampaignStep.account_id == acct.id,
+                                            CampaignStep.status == StepStatus.PENDING,
+                                        )
+                                        .order_by(CampaignStep.scheduled_at)
+                                        .first()
+                                    )
+                                    if pending:
+                                        from hydra.core.scheduler import mark_running
+                                        from hydra.core.executor import execute_step
+                                        mark_running(db, pending)
+                                        await execute_step(db, pending)
+                                        promo_done += 1
+                                except Exception:
+                                    pass  # Shorts comment attempt failed, continue swiping
 
                         db.commit()
 
@@ -323,13 +356,14 @@ async def _watch_and_maybe_comment(
                     comment_text = generate_non_promo_comment(persona, title or "")
                     found = await actions.scroll_to_comments(page)
                     if found and comment_text:
-                        success = await actions.post_comment(page, comment_text)
-                        if success:
+                        result = await actions.post_comment(page, comment_text)
+                        if result is not None:
                             db.add(ActionLog(
                                 account_id=account.id,
                                 action_type=ActionType.COMMENT,
                                 is_promo=False,
                                 content=comment_text,
+                                youtube_comment_id=result or None,
                                 ip_address=current_ip,
                             ))
                             db.commit()

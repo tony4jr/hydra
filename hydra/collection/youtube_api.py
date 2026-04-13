@@ -208,6 +208,70 @@ def collect_for_keyword(db: Session, keyword: Keyword) -> int:
     return count
 
 
+def refresh_video_status(db: Session, max_videos: int = 200) -> dict:
+    """Re-check status of active/available videos via YouTube API.
+
+    Updates: view_count, like_count, comment_count, comments_enabled, status.
+    Returns summary dict.
+    """
+    videos = (
+        db.query(Video)
+        .filter(Video.status.in_([VideoStatus.AVAILABLE, VideoStatus.COMMENTS_DISABLED]))
+        .order_by(Video.collected_at.desc())
+        .limit(max_videos)
+        .all()
+    )
+
+    if not videos:
+        return {"checked": 0, "updated": 0, "removed": 0}
+
+    video_ids = [v.id for v in videos]
+    video_map = {v.id: v for v in videos}
+
+    # Batch enrich
+    metadata = enrich_videos(video_ids)
+
+    updated = 0
+    removed = 0
+
+    # Videos not returned by API = deleted/private
+    returned_ids = set(metadata.keys())
+    for vid in video_ids:
+        if vid not in returned_ids:
+            video_map[vid].status = VideoStatus.DELETED
+            removed += 1
+
+    # Update metadata for returned videos
+    for vid, meta in metadata.items():
+        v = video_map.get(vid)
+        if not v:
+            continue
+
+        changed = False
+        if v.view_count != meta.get("view_count"):
+            v.view_count = meta["view_count"]
+            changed = True
+        if v.like_count != meta.get("like_count"):
+            v.like_count = meta["like_count"]
+            changed = True
+        if v.comment_count != meta.get("comment_count"):
+            v.comment_count = meta["comment_count"]
+            changed = True
+
+        new_enabled = meta.get("comments_enabled", True)
+        if v.comments_enabled != new_enabled:
+            v.comments_enabled = new_enabled
+            v.status = VideoStatus.AVAILABLE if new_enabled else VideoStatus.COMMENTS_DISABLED
+            changed = True
+
+        if changed:
+            updated += 1
+
+    db.commit()
+    log.info(f"Video status refresh: checked={len(video_ids)}, updated={updated}, removed={removed}")
+    return {"checked": len(video_ids), "updated": updated, "removed": removed}
+
+
 def collect_all(db: Session, core_only: bool = False):
     """Run collection for all active keywords.
 

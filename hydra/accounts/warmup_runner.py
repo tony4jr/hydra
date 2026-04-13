@@ -26,7 +26,7 @@ from hydra.browser import actions
 from hydra.db.models import Account, ActionLog
 from hydra.db.session import SessionLocal
 from hydra.accounts.manager import transition
-from hydra.accounts.persona import get_persona
+from hydra.ai.agents.persona_agent import get_persona
 from hydra.infra import telegram
 from hydra.infra.ip import rotate_ip, log_ip_usage, end_ip_usage
 

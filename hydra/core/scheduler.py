@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
+from hydra.core.config import settings as app_settings
 from hydra.core.logger import get_logger
 from hydra.core.enums import (
     StepStatus, CampaignStatus, AccountStatus, VideoPriority,
@@ -204,6 +205,8 @@ async def run_periodic_jobs():
     last_maintenance = datetime.min
     last_warmup_run = datetime.min
     last_daily_report = datetime.min
+    last_backup = datetime.min
+    last_patrol = datetime.min
 
     while True:
         now = datetime.now(timezone.utc)
@@ -251,6 +254,25 @@ async def run_periodic_jobs():
                 from hydra.infra.daily_report import send_daily_report
                 send_daily_report()
                 last_daily_report = now
+
+            # Backup (every backup_interval_hours, default 4h)
+            backup_interval = app_settings.backup_interval_hours * 3600
+            if (now - last_backup).total_seconds() >= backup_interval:
+                try:
+                    from hydra.infra.backup import run_backup
+                    run_backup()
+                except Exception as e:
+                    log.error(f"Auto backup failed: {e}")
+                last_backup = now
+
+            # Comment survival patrol (every 6h)
+            if (now - last_patrol).total_seconds() >= 21600:
+                try:
+                    from hydra.ghost.patrol import run_patrol
+                    run_patrol(db)
+                except Exception as e:
+                    log.error(f"Patrol failed: {e}")
+                last_patrol = now
 
         except Exception as e:
             log.error(f"Periodic job error: {e}")

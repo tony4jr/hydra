@@ -1,12 +1,16 @@
 """Brand management API."""
 
 import json
+from datetime import datetime, timezone, timedelta
+from typing import Any
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy import func, case
 
 from hydra.db.session import get_db
-from hydra.db.models import Brand
+from hydra.db.models import Brand, Campaign, CampaignStep, ActionLog, Keyword
 
 router = APIRouter()
 
@@ -99,3 +103,206 @@ def update_brand(brand_id: int, data: BrandCreate, db: Session = Depends(get_db)
         b.ingredients = json.dumps(data.ingredients, ensure_ascii=False)
     db.commit()
     return {"ok": True, "id": b.id}
+
+
+# --- #23: Brand field-level updates for UI ---
+
+class BrandFieldUpdate(BaseModel):
+    field: str
+    value: Any
+
+
+@router.post("/api/{brand_id}/update-field")
+def update_brand_field(brand_id: int, data: BrandFieldUpdate, db: Session = Depends(get_db)):
+    """Update a single brand field. Handles JSON serialization for list/dict fields."""
+    b = db.query(Brand).get(brand_id)
+    if not b:
+        return {"error": "not found"}
+
+    json_fields = {
+        "target_keywords", "allowed_keywords", "banned_keywords",
+        "ingredients", "selling_points", "mention_rules",
+    }
+    text_fields = {
+        "name", "product_category", "core_message", "brand_story",
+        "tone_guide", "target_audience", "status",
+    }
+
+    if data.field in json_fields:
+        setattr(b, data.field, json.dumps(data.value, ensure_ascii=False))
+    elif data.field in text_fields:
+        setattr(b, data.field, data.value)
+    else:
+        return {"error": f"Unknown field: {data.field}"}
+
+    db.commit()
+    return {"ok": True, "field": data.field}
+
+
+@router.post("/api/{brand_id}/add-keyword")
+def add_brand_keyword(brand_id: int, keyword: str, field: str = "allowed_keywords", db: Session = Depends(get_db)):
+    """Add a keyword to a brand's keyword list (allowed/banned/target)."""
+    b = db.query(Brand).get(brand_id)
+    if not b:
+        return {"error": "not found"}
+
+    if field not in ("allowed_keywords", "banned_keywords", "target_keywords"):
+        return {"error": "invalid field"}
+
+    current = json.loads(getattr(b, field) or "[]")
+    if keyword not in current:
+        current.append(keyword)
+        setattr(b, field, json.dumps(current, ensure_ascii=False))
+        db.commit()
+
+    return {"ok": True, "keywords": current}
+
+
+@router.post("/api/{brand_id}/remove-keyword")
+def remove_brand_keyword(brand_id: int, keyword: str, field: str = "allowed_keywords", db: Session = Depends(get_db)):
+    """Remove a keyword from a brand's keyword list."""
+    b = db.query(Brand).get(brand_id)
+    if not b:
+        return {"error": "not found"}
+
+    if field not in ("allowed_keywords", "banned_keywords", "target_keywords"):
+        return {"error": "invalid field"}
+
+    current = json.loads(getattr(b, field) or "[]")
+    if keyword in current:
+        current.remove(keyword)
+        setattr(b, field, json.dumps(current, ensure_ascii=False))
+        db.commit()
+
+    return {"ok": True, "keywords": current}
+
+
+# --- #10: Brand Performance ---
+
+@router.get("/api/{brand_id}/performance")
+def brand_performance(brand_id: int, days: int = 30, db: Session = Depends(get_db)):
+    """Per-brand performance metrics."""
+    brand = db.query(Brand).get(brand_id)
+    if not brand:
+        return {"error": "not found"}
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+    # Campaign stats
+    campaigns = (
+        db.query(Campaign)
+        .filter(Campaign.brand_id == brand_id, Campaign.created_at >= cutoff)
+        .all()
+    )
+    campaign_ids = [c.id for c in campaigns]
+
+    total_campaigns = len(campaigns)
+    completed = sum(1 for c in campaigns if c.status == "completed")
+    ghost_count = sum(1 for c in campaigns if c.ghost_check_status == "ghost")
+
+    # Step stats
+    step_stats = {"total": 0, "done": 0, "failed": 0}
+    if campaign_ids:
+        row = (
+            db.query(
+                func.count().label("total"),
+                func.sum(case((CampaignStep.status == "done", 1), else_=0)).label("done"),
+                func.sum(case((CampaignStep.status == "failed", 1), else_=0)).label("failed"),
+            )
+            .filter(CampaignStep.campaign_id.in_(campaign_ids))
+            .first()
+        )
+        step_stats = {
+            "total": row.total or 0,
+            "done": int(row.done or 0),
+            "failed": int(row.failed or 0),
+        }
+
+    # Comments posted for this brand
+    comments_posted = 0
+    if campaign_ids:
+        comments_posted = (
+            db.query(func.count())
+            .filter(
+                ActionLog.campaign_id.in_(campaign_ids),
+                ActionLog.action_type.in_(["comment", "reply"]),
+            )
+            .scalar()
+        )
+
+    # Keyword stats
+    keywords = db.query(Keyword).filter(Keyword.brand_id == brand_id).all()
+    keyword_stats = {
+        "total": len(keywords),
+        "active": sum(1 for k in keywords if k.status == "active"),
+        "total_videos_found": sum(k.total_videos_found or 0 for k in keywords),
+    }
+
+    # Scenario distribution
+    scenario_dist = {}
+    for c in campaigns:
+        scenario_dist[c.scenario] = scenario_dist.get(c.scenario, 0) + 1
+
+    success_rate = round(step_stats["done"] / step_stats["total"] * 100, 1) if step_stats["total"] > 0 else 0.0
+
+    return {
+        "brand_id": brand_id,
+        "brand_name": brand.name,
+        "period_days": days,
+        "campaigns": {
+            "total": total_campaigns,
+            "completed": completed,
+            "ghost": ghost_count,
+        },
+        "steps": step_stats,
+        "success_rate": success_rate,
+        "comments_posted": comments_posted,
+        "keywords": keyword_stats,
+        "scenario_distribution": scenario_dist,
+    }
+
+
+@router.get("/api/performance-summary")
+def all_brands_performance(days: int = 30, db: Session = Depends(get_db)):
+    """Performance summary across all brands."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    brands = db.query(Brand).filter(Brand.status == "active").all()
+
+    results = []
+    for b in brands:
+        campaign_count = (
+            db.query(func.count())
+            .filter(Campaign.brand_id == b.id, Campaign.created_at >= cutoff)
+            .scalar()
+        )
+        comment_count = (
+            db.query(func.count())
+            .filter(
+                ActionLog.campaign_id.in_(
+                    db.query(Campaign.id).filter(Campaign.brand_id == b.id)
+                ),
+                ActionLog.action_type.in_(["comment", "reply"]),
+                ActionLog.created_at >= cutoff,
+            )
+            .scalar()
+        )
+        ghost_count = (
+            db.query(func.count())
+            .filter(
+                Campaign.brand_id == b.id,
+                Campaign.ghost_check_status == "ghost",
+                Campaign.created_at >= cutoff,
+            )
+            .scalar()
+        )
+
+        results.append({
+            "id": b.id,
+            "name": b.name,
+            "category": b.product_category,
+            "campaigns": campaign_count,
+            "comments": comment_count,
+            "ghosts": ghost_count,
+        })
+
+    return {"period_days": days, "brands": results}

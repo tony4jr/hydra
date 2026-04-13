@@ -18,8 +18,8 @@ from hydra.core.enums import (
 from hydra.core.scenarios import get_template, select_scenario
 from hydra.db.models import Campaign, CampaignStep, Video, Brand, Account
 from hydra.accounts.manager import get_available_accounts
-from hydra.accounts.persona import get_persona
-from hydra.content.generator import generate_comment
+from hydra.ai.agents.persona_agent import get_persona
+from hydra.ai.agents.comment_agent import generate_comment
 from hydra.infra import telegram
 
 log = get_logger("campaign")

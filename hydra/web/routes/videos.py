@@ -1,10 +1,12 @@
 """Video management API."""
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from hydra.db.session import get_db
-from hydra.db.models import Video
+from hydra.db.models import Video, ScrapedComment
 
 router = APIRouter()
 
@@ -41,3 +43,72 @@ def list_videos(
             for v in videos
         ],
     }
+
+
+# --- #7: Comment Scraping UI ---
+
+@router.get("/api/scraped-comments")
+def list_scraped_comments(
+    video_id: str | None = None,
+    min_likes: int = 0,
+    page: int = 1,
+    size: int = 50,
+    db: Session = Depends(get_db),
+):
+    """List scraped comments with filters."""
+    query = db.query(ScrapedComment)
+    if video_id:
+        query = query.filter(ScrapedComment.video_id == video_id)
+    if min_likes > 0:
+        query = query.filter(ScrapedComment.like_count >= min_likes)
+
+    total = query.count()
+    comments = (
+        query.order_by(ScrapedComment.like_count.desc())
+        .offset((page - 1) * size).limit(size).all()
+    )
+
+    return {
+        "total": total,
+        "page": page,
+        "items": [
+            {
+                "id": c.id,
+                "video_id": c.video_id,
+                "author": c.author_name,
+                "content": c.content,
+                "like_count": c.like_count,
+                "time_text": c.time_text,
+                "used_for_training": c.used_for_training,
+                "scraped_at": str(c.scraped_at),
+            }
+            for c in comments
+        ],
+    }
+
+
+@router.get("/api/scraped-stats")
+def scraped_stats(db: Session = Depends(get_db)):
+    """Scraped comments statistics."""
+    total = db.query(func.count()).select_from(ScrapedComment).scalar()
+    videos = db.query(func.count(func.distinct(ScrapedComment.video_id))).scalar()
+    trained = db.query(func.count()).filter(ScrapedComment.used_for_training == True).scalar()
+    avg_likes = db.query(func.avg(ScrapedComment.like_count)).scalar()
+
+    return {
+        "total_comments": total,
+        "unique_videos": videos,
+        "used_for_training": trained,
+        "avg_likes": round(float(avg_likes or 0), 1),
+    }
+
+
+@router.post("/api/refresh-status")
+def refresh_video_status(db: Session = Depends(get_db)):
+    """Re-check status of stored videos via YouTube Data API."""
+    from hydra.collection.youtube_api import refresh_video_status
+    try:
+        result = refresh_video_status(db)
+        return {"ok": True, **result}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
