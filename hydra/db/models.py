@@ -24,7 +24,8 @@ class Account(Base):
     totp_secret = Column(String)
 
     adspower_profile_id = Column(String)
-    cookies = Column(Text)  # JSON
+    youtube_channel_id = Column(String)
+    cookies = Column(Text)  # JSON (encrypted)
 
     status = Column(String, nullable=False, default="registered")
     warmup_group = Column(String)  # A~E
@@ -242,6 +243,8 @@ class ActionLog(Base):
     action_type = Column(String, nullable=False)
     is_promo = Column(Boolean, default=False)
     content = Column(Text)
+    youtube_comment_id = Column(String)  # for comment tracking/survival check
+    session_id = Column(String)          # group actions in same session
 
     ip_address = Column(String)
     duration_sec = Column(Integer)

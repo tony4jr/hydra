@@ -72,7 +72,21 @@ def create_campaign(
     for step_def in template.steps:
         needed_roles.add(step_def.role)
 
-    used_ids: list[int] = []
+    # Get accounts that worked on this video recently (cooldown check)
+    from hydra.core.config import settings as app_settings
+    cooldown_cutoff = datetime.now(timezone.utc) - timedelta(days=app_settings.same_task_same_video_days)
+    recent_on_video = {
+        row[0] for row in
+        db.query(CampaignStep.account_id)
+        .join(Campaign)
+        .filter(
+            Campaign.video_id == video.id,
+            CampaignStep.completed_at >= cooldown_cutoff,
+        )
+        .all()
+    }
+
+    used_ids: list[int] = list(recent_on_video)
     for role in needed_roles:
         accounts = get_available_accounts(db, role=role, exclude_ids=used_ids)
         if not accounts:

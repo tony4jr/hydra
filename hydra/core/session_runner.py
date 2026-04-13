@@ -313,7 +313,31 @@ async def _watch_and_maybe_comment(
 
     elif should_comment_non_promo(non_promo_left):
         roll = random.random()
-        if roll < 0.30:
+        if roll < 0.15:
+            # Leave a non-promo comment (Haiku model, cheap)
+            try:
+                persona = get_persona(account)
+                if persona:
+                    # Get video title from page
+                    title = await page.locator("h1.ytd-watch-metadata yt-formatted-string").first.text_content()
+                    comment_text = generate_non_promo_comment(persona, title or "")
+                    found = await actions.scroll_to_comments(page)
+                    if found and comment_text:
+                        success = await actions.post_comment(page, comment_text)
+                        if success:
+                            db.add(ActionLog(
+                                account_id=account.id,
+                                action_type=ActionType.COMMENT,
+                                is_promo=False,
+                                content=comment_text,
+                                ip_address=current_ip,
+                            ))
+                            db.commit()
+                            non_promo_delta += 1
+            except Exception as e:
+                log.warning(f"Non-promo comment failed: {e}")
+
+        elif roll < 0.45:
             # Like random comments
             found = await actions.scroll_to_comments(page)
             if found:

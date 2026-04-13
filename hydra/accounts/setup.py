@@ -62,13 +62,16 @@ async def login_gmail(session, account: Account) -> bool:
         except Exception as e:
             log.warning(f"2FA handling: {e}")
 
+    # Check for captcha
+    from hydra.infra.captcha import solve_youtube_captcha
+    await solve_youtube_captcha(page)
+
     # Verify login success
     current_url = page.url
     if "myaccount.google.com" in current_url or "youtube.com" in current_url:
         log.info(f"Login success: {account.gmail}")
         return True
 
-    # Check for security checkpoint
     if "challenge" in current_url or "signin" in current_url:
         log.warning(f"Security checkpoint detected: {account.gmail}")
         return False

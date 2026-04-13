@@ -74,6 +74,10 @@ async def execute_step(db: Session, step: CampaignStep, device_id: str | None = 
             await session.goto(video.url, timeout=30000)
             await actions.random_delay(2, 4)
 
+            # Handle captcha if present
+            from hydra.infra.captcha import solve_youtube_captcha
+            await solve_youtube_captcha(page)
+
             # Handle ads
             await actions.handle_ad(page)
 
