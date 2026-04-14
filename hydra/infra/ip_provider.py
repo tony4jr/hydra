@@ -38,7 +38,11 @@ class IpProvider(ABC):
 
 
 class AdbProvider(IpProvider):
-    """IP rotation via ADB airplane mode toggle (original implementation)."""
+    """IP rotation via ADB mobile data toggle.
+
+    Uses `svc data disable/enable` to preserve Wi-Fi hotspot while
+    forcing mobile network re-registration for a new IP.
+    """
 
     def __init__(self, device_id: str, max_retries: int = 3):
         self.device_id = device_id
@@ -70,11 +74,11 @@ class AdbProvider(IpProvider):
         for attempt in range(1, self.max_retries + 1):
             log.info(f"[ADB] IP rotation attempt {attempt}/{self.max_retries} (current: {previous_ip})")
 
-            await self._adb_shell("cmd connectivity airplane-mode enable")
+            await self._adb_shell("svc data disable")
             await asyncio.sleep(3)
-            await self._adb_shell("cmd connectivity airplane-mode disable")
+            await self._adb_shell("svc data enable")
 
-            wait = 15 * attempt
+            wait = 12 * attempt
             await asyncio.sleep(wait)
 
             try:

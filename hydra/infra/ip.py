@@ -1,10 +1,15 @@
-"""IP rotation via ADB airplane mode toggle.
+"""IP rotation via ADB mobile data toggle.
 
 Spec Part 10:
 - Absolute rule: 1 IP = 1 account at a time
-- Airplane on → 3s → off → 15s → verify new IP
+- Mobile data off → 3s → on → 12s → verify new IP
 - Max 3 retries per rotation
 - Log IP-account mapping to DB
+
+Why mobile data toggle instead of airplane mode:
+  Airplane mode turns off Wi-Fi/hotspot too. Android does NOT auto-restart
+  hotspot when airplane mode is disabled. Mobile data toggle keeps hotspot
+  alive while still forcing LTE/5G re-registration for a new IP.
 """
 
 import asyncio
@@ -53,21 +58,21 @@ async def rotate_ip(device_id: str, max_retries: int = 3) -> str:
     if provider:
         return await provider.rotate()
 
-    # Fallback: original ADB airplane mode
+    # Fallback: ADB mobile data toggle (preserves Wi-Fi hotspot)
     previous_ip = await _get_current_ip(device_id)
 
     for attempt in range(1, max_retries + 1):
         log.info(f"IP rotation attempt {attempt}/{max_retries} (current: {previous_ip})")
 
-        # Airplane ON
-        await _adb_shell(device_id, "cmd connectivity airplane-mode enable")
+        # Mobile data OFF
+        await _adb_shell(device_id, "svc data disable")
         await asyncio.sleep(3)
 
-        # Airplane OFF
-        await _adb_shell(device_id, "cmd connectivity airplane-mode disable")
+        # Mobile data ON
+        await _adb_shell(device_id, "svc data enable")
 
-        # Wait for network reconnect (escalating wait)
-        wait = 15 * attempt
+        # Wait for mobile network re-registration (escalating wait)
+        wait = 12 * attempt
         await asyncio.sleep(wait)
 
         # Check new IP
