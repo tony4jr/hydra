@@ -25,14 +25,15 @@ from sqlalchemy.orm import Session
 
 from hydra.accounts.manager import create_adspower_profile
 from hydra.accounts.pool_generator import _random_name, _random_channel_name
+from hydra.accounts import recovery_pool
 from hydra.browser import actions
 from hydra.browser.driver import open_browser
 from hydra.core.config import settings
 from hydra.core.crypto import encrypt
 from hydra.core.enums import AccountStatus
 from hydra.core.logger import get_logger
-from hydra.db.models import Account
-from hydra.infra.temp_mail import TempMailClient
+from hydra.db.models import Account, RecoveryEmail
+from hydra.infra.imap_reader import fetch_verification_code
 from hydra.infra.ip_provider import get_provider
 
 log = get_logger("creator")
@@ -215,15 +216,21 @@ async def _fill_signup_form(page, first_name: str, last_name: str,
     await actions.random_delay(3, 5)
 
 
-async def _handle_phone_and_recovery(page, mail: TempMailClient) -> None:
+async def _handle_phone_and_recovery(page, recovery: RecoveryEmail) -> None:
     """Navigate the phone/recovery-email pages.
 
     Strategy:
     - If phone-number page is optional: click Skip
     - If phone is required: abort (SMS disabled by user policy)
-    - Provide recovery email via mail.tm mailbox
-    - If Google sends a verification code to recovery email, fetch it
+    - Provide recovery email from the claimed RecoveryEmail
+    - If Google sends a verification code, poll IMAP to fetch it
     """
+    from hydra.core.crypto import decrypt
+    recovery_address = recovery.email
+    recovery_pw = decrypt(recovery.password)
+    imap_host = recovery.imap_host
+    imap_port = recovery.imap_port or 993
+
     # Wait for phone or recovery page
     await actions.random_delay(2, 4)
 
@@ -248,12 +255,12 @@ async def _handle_phone_and_recovery(page, mail: TempMailClient) -> None:
 
         # Recovery email page
         if "복구" in content or "recovery" in content:
-            log.info(f"Providing recovery email: {mail.address}")
+            log.info(f"Providing recovery email: {recovery_address}")
             ok = await _fill_text(page, [
                 'input[name="recoveryEmail"]',
                 'input[type="email"]',
                 'input[aria-label*="복구"]',
-            ], mail.address)
+            ], recovery_address)
             if ok:
                 await _click_any(page, ['button:has-text("다음")', 'button:has-text("Next")'])
                 await actions.random_delay(2, 4)
@@ -277,8 +284,12 @@ async def _handle_phone_and_recovery(page, mail: TempMailClient) -> None:
 
         # Code verification via recovery email
         if "코드" in content and ("이메일" in content or "recovery" in content):
-            log.info("Fetching verification code from recovery inbox")
-            code = await mail.extract_verification_code(from_contains="google", timeout_sec=180)
+            log.info(f"Fetching verification code from {recovery_address} via IMAP")
+            code = await fetch_verification_code(
+                recovery_address, recovery_pw,
+                host=imap_host, port=imap_port,
+                from_contains="google", timeout_sec=180,
+            )
             if not code:
                 raise CreationAborted("Recovery email verification code not received")
             ok = await _fill_text(page, ['input[type="text"]', 'input[name="code"]', 'input[aria-label*="코드"]'], code)
@@ -342,48 +353,56 @@ async def create_account(db: Session, device_id: str | None = None) -> Account |
         except Exception as e:
             log.warning(f"IP rotation skipped: {e}")
 
-    # 4. Launch browser + signup
+    # 4. Claim a recovery email from the pool
+    recovery = recovery_pool.claim_for_account(db, account.id)
+    if not recovery:
+        log.error("Recovery email pool is empty — signup aborted")
+        account.status = AccountStatus.LOGIN_FAILED
+        account.retired_reason = "recovery pool exhausted"
+        db.commit()
+        return None
+
+    account.recovery_email = recovery.email
+    db.commit()
+    log.info(f"Claimed recovery email: {recovery.email}")
+
+    # 5. Launch browser + signup
     try:
-        async with TempMailClient() as mail:
-            log.info(f"Recovery mailbox: {mail.address}")
-            account.recovery_email = mail.address  # raw — encrypt if sensitive
+        async with open_browser(account.adspower_profile_id) as session:
+            page = session.page
+            await session.goto(SIGNUP_URL)
+            await actions.random_delay(3, 5)
+
+            await _fill_signup_form(
+                page,
+                first_name=first_name, last_name=last_name,
+                username=username, password=password,
+                birth_year=birth_year, birth_month=birth_month, birth_day=birth_day,
+                gender=gender,
+            )
+
+            await _handle_phone_and_recovery(page, recovery)
+
+            # 6. Confirm + persist
+            account.gmail = f"{username}@gmail.com"
+            account.created_at = datetime.now(timezone.utc)
             db.commit()
 
-            async with open_browser(account.adspower_profile_id) as session:
-                page = session.page
-                await session.goto(SIGNUP_URL)
-                await actions.random_delay(3, 5)
-
-                await _fill_signup_form(
-                    page,
-                    first_name=first_name, last_name=last_name,
-                    username=username, password=password,
-                    birth_year=birth_year, birth_month=birth_month, birth_day=birth_day,
-                    gender=gender,
-                )
-
-                await _handle_phone_and_recovery(page, mail)
-
-                # 5. Confirm + persist
-                account.gmail = f"{username}@gmail.com"
-                account.created_at = datetime.now(timezone.utc)
-                db.commit()
-
-                log.info(f"Account created: {account.gmail}")
-                return account
+            log.info(f"Account created: {account.gmail}")
+            return account
 
     except CreationAborted as e:
         log.warning(f"Signup aborted: {e}")
-        # Clean up: mark as failed (keep row for forensics)
-        from hydra.core.enums import AccountStatus as AS
-        account.status = AS.LOGIN_FAILED
+        # Release recovery so it can be retried
+        recovery_pool.release(db, recovery.id)
+        account.status = AccountStatus.LOGIN_FAILED
         account.retired_reason = f"signup aborted: {e}"
         db.commit()
         return None
     except Exception as e:
         log.error(f"Signup error: {e}", exc_info=True)
-        from hydra.core.enums import AccountStatus as AS
-        account.status = AS.LOGIN_FAILED
+        recovery_pool.release(db, recovery.id)
+        account.status = AccountStatus.LOGIN_FAILED
         account.retired_reason = f"signup error: {e}"
         db.commit()
         return None

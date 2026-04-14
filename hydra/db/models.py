@@ -397,3 +397,31 @@ class ChannelProfileHistory(Base):
     __table_args__ = (
         Index("idx_profile_history_account", "account_id"),
     )
+
+
+class RecoveryEmail(Base):
+    """Pool of real recovery email accounts used for Gmail signup.
+
+    Each Gmail account requires a recovery email. We claim one from this
+    pool per signup and use IMAP to fetch Google's verification codes.
+    """
+    __tablename__ = "recovery_emails"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(String, nullable=False, unique=True)
+    password = Column(String, nullable=False)  # encrypted (app password for IMAP)
+    imap_host = Column(String)                  # e.g. imap.naver.com (auto-detected if empty)
+    imap_port = Column(Integer, default=993)
+
+    # Assignment lifecycle
+    used_by_account_id = Column(Integer, ForeignKey("accounts.id"))
+    used_at = Column(DateTime)
+    disabled = Column(Boolean, default=False)   # manually disabled / burned
+    last_error = Column(String)                 # latest IMAP / assignment error
+
+    notes = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_recovery_available", "disabled", "used_by_account_id"),
+    )
