@@ -10,7 +10,7 @@ from fastapi.templating import Jinja2Templates
 from pathlib import Path
 
 from hydra.db.session import init_db
-from hydra.web.routes import accounts, brands, campaigns, dashboard, keywords, videos, settings, pools, logs, system, export
+from hydra.web.routes import accounts, brands, campaigns, dashboard, keywords, videos, settings, pools, logs, system, export, creator
 
 app = FastAPI(title="HYDRA Dashboard", version="1.0")
 
@@ -33,6 +33,7 @@ app.include_router(pools.router, prefix="/pools", tags=["pools"])
 app.include_router(logs.router, prefix="/logs", tags=["logs"])
 app.include_router(system.router, prefix="/system", tags=["system"])
 app.include_router(export.router, prefix="/export", tags=["export"])
+app.include_router(creator.router, prefix="/creator", tags=["creator"])
 
 
 @app.get("/", response_class=HTMLResponse)

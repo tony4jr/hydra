@@ -8,9 +8,20 @@ import asyncio
 import random
 from playwright.async_api import Page
 
+from hydra.core.config import settings
 from hydra.core.logger import get_logger
 
 log = get_logger("actions")
+
+
+def _paste_modifier() -> str:
+    """Choose paste modifier based on the browser's spoofed OS (not host OS).
+
+    AdsPower profiles can emulate any OS; the modifier must match
+    `settings.adspower_profile_os` so the target page sees a
+    consistent OS + keyboard combo.
+    """
+    return "Meta" if settings.adspower_profile_os.lower() == "mac" else "Control"
 
 
 async def random_delay(min_sec: float = 1.0, max_sec: float = 3.0):
@@ -32,8 +43,7 @@ async def type_human(page: Page, selector: str, text: str, paste: bool = False):
     if paste:
         # Clipboard paste
         await page.evaluate(f"navigator.clipboard.writeText({repr(text)})")
-        modifier = "Meta" if True else "Control"  # macOS
-        await page.keyboard.press(f"{modifier}+v")
+        await page.keyboard.press(f"{_paste_modifier()}+v")
     else:
         # Char-by-char
         for char in text:
@@ -142,7 +152,7 @@ async def post_comment(page: Page, text: str) -> str | None:
         use_paste = random.random() < 0.80
         if use_paste:
             await page.evaluate(f"navigator.clipboard.writeText({repr(text)})")
-            await page.keyboard.press("Meta+v")
+            await page.keyboard.press(f"{_paste_modifier()}+v")
         else:
             for char in text:
                 await page.keyboard.type(char)
@@ -186,7 +196,7 @@ async def post_reply(page: Page, comment_selector: str, text: str) -> str | None
         use_paste = random.random() < 0.80
         if use_paste:
             await page.evaluate(f"navigator.clipboard.writeText({repr(text)})")
-            await page.keyboard.press("Meta+v")
+            await page.keyboard.press(f"{_paste_modifier()}+v")
         else:
             for char in text:
                 await page.keyboard.type(char)
