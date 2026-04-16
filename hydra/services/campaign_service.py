@@ -3,7 +3,7 @@ import re
 import random
 from datetime import datetime, timedelta, UTC
 from sqlalchemy.orm import Session
-from hydra.db.models import Campaign, Task, Preset, Video
+from hydra.db.models import Brand, Campaign, Task, Preset, Video
 
 
 def create_campaign_with_tasks(
@@ -165,3 +165,74 @@ def extract_video_id(url: str) -> str | None:
         if match:
             return match.group(1)
     return None
+
+
+def generate_campaign_texts(
+    db: Session,
+    campaign_id: int,
+) -> list[dict]:
+    """캠페인의 태스크에 AI 생성 텍스트를 채움.
+
+    캠페인의 프리셋 + 브랜드 + 영상 정보로 content_agent 호출,
+    결과를 각 태스크의 payload에 text 필드로 추가.
+    """
+    campaign = db.get(Campaign, campaign_id)
+    if not campaign or not campaign.preset_id:
+        return []
+
+    preset = db.get(Preset, campaign.preset_id)
+    if not preset:
+        return []
+
+    # 브랜드 정보 구성
+    brand_obj = db.get(Brand, campaign.brand_id) if campaign.brand_id else None
+    brand_dict = {}
+    if brand_obj:
+        brand_dict = {
+            "name": brand_obj.name,
+            "product": brand_obj.product_category or "",
+            "core_message": brand_obj.core_message or "",
+            "keywords": [],
+            "tone_guide": brand_obj.tone_guide or "자연스러운 말투",
+            "banned_keywords": brand_obj.banned_keywords or "[]",
+        }
+
+    # 영상 정보
+    video_obj = db.get(Video, campaign.video_id) if campaign.video_id else None
+    video_dict = {}
+    if video_obj:
+        video_dict = {
+            "title": video_obj.title or "",
+            "description": video_obj.description or "",
+            "url": video_obj.url or "",
+        }
+
+    # 프리셋 스텝
+    steps = json.loads(preset.steps)
+
+    # AI 생성 호출
+    try:
+        from hydra.ai.agents.content_agent import generate_conversation
+        results = generate_conversation(
+            brand=brand_dict,
+            preset_steps=steps,
+            video=video_dict,
+        )
+    except Exception as e:
+        print(f"AI generation failed: {e}")
+        return []
+
+    # 태스크에 텍스트 채우기
+    comment_tasks = db.query(Task).filter(
+        Task.campaign_id == campaign_id,
+        Task.task_type.in_(["comment", "reply"]),
+    ).order_by(Task.created_at).all()
+
+    for task, result in zip(comment_tasks, results):
+        payload = json.loads(task.payload or "{}")
+        payload["text"] = result["text"]
+        payload["ai_generated"] = True
+        task.payload = json.dumps(payload, ensure_ascii=False)
+
+    db.commit()
+    return results
