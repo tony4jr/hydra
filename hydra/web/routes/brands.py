@@ -28,6 +28,8 @@ class BrandCreate(BaseModel):
     mention_rules: dict | None = None
     tone_guide: str | None = None
     target_audience: str | None = None
+    weekly_campaign_target: int | None = None
+    auto_campaign_enabled: bool | None = None
 
 
 @router.get("/api/list")
@@ -147,6 +149,10 @@ def update_brand(brand_id: int, data: BrandCreate, db: Session = Depends(get_db)
         b.mention_rules = json.dumps(data.mention_rules, ensure_ascii=False)
     if data.ingredients is not None:
         b.ingredients = json.dumps(data.ingredients, ensure_ascii=False)
+    if data.weekly_campaign_target is not None:
+        b.weekly_campaign_target = data.weekly_campaign_target
+    if data.auto_campaign_enabled is not None:
+        b.auto_campaign_enabled = data.auto_campaign_enabled
     db.commit()
     return {"ok": True, "id": b.id}
 
