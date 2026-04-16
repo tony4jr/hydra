@@ -32,5 +32,13 @@ services:
     volumes:
       - ./data:/app/data
 
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - server
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+
 volumes:
   pgdata:
