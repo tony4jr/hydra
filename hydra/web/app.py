@@ -11,6 +11,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 
+from fastapi.middleware.cors import CORSMiddleware
+
 from hydra.db.session import init_db
 from hydra.web.routes import accounts, brands, campaigns, dashboard, keywords, videos, settings, pools, logs, system, export, creator, recovery
 from hydra.api.workers import router as workers_router
@@ -26,6 +28,15 @@ async def lifespan(app):
     yield
 
 app = FastAPI(title="HYDRA Dashboard", version="1.0", lifespan=lifespan)
+
+# CORS middleware for frontend dev server
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:80", "http://localhost"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Static & templates
 STATIC_DIR = Path(__file__).parent / "static"
