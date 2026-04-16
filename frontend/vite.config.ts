@@ -14,6 +14,54 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/ws': {
+        target: 'ws://localhost:8000',
+        ws: true,
+      },
+      '/accounts': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/brands': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/campaigns': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/videos': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/settings': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/system': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/pools': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/logs': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/export': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+    },
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
