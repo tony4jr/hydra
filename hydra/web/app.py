@@ -3,6 +3,8 @@
 Spec Part 12.2: dashboard pages.
 """
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -11,8 +13,15 @@ from pathlib import Path
 
 from hydra.db.session import init_db
 from hydra.web.routes import accounts, brands, campaigns, dashboard, keywords, videos, settings, pools, logs, system, export, creator, recovery
+from hydra.api.workers import router as workers_router
+from hydra.api.tasks import router as tasks_router
 
-app = FastAPI(title="HYDRA Dashboard", version="1.0")
+@asynccontextmanager
+async def lifespan(app):
+    init_db()
+    yield
+
+app = FastAPI(title="HYDRA Dashboard", version="1.0", lifespan=lifespan)
 
 # Static & templates
 STATIC_DIR = Path(__file__).parent / "static"
@@ -35,16 +44,13 @@ app.include_router(system.router, prefix="/system", tags=["system"])
 app.include_router(export.router, prefix="/export", tags=["export"])
 app.include_router(creator.router, prefix="/creator", tags=["creator"])
 app.include_router(recovery.router, prefix="/recovery", tags=["recovery"])
+app.include_router(workers_router)
+app.include_router(tasks_router)
 
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
-
-
-@app.on_event("startup")
-def startup():
-    init_db()
 
 
 def run(host: str = "127.0.0.1", port: int = 8000):

@@ -163,3 +163,54 @@ class KeywordStatus(StrEnum):
     ACTIVE = "active"
     PAUSED = "paused"
     EXCLUDED = "excluded"
+
+
+# --- Worker ---
+
+class WorkerStatus(StrEnum):
+    ONLINE = "online"
+    OFFLINE = "offline"
+    PAUSED = "paused"
+
+
+# --- Task ---
+
+class TaskStatus(StrEnum):
+    PENDING = "pending"
+    ASSIGNED = "assigned"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    RETRYING = "retrying"
+
+
+class TaskType(StrEnum):
+    COMMENT = "comment"
+    REPLY = "reply"
+    LIKE = "like"
+    LIKE_BOOST = "like_boost"
+    SUBSCRIBE = "subscribe"
+    WARMUP = "warmup"
+    GHOST_CHECK = "ghost_check"
+    PROFILE_SETUP = "profile_setup"
+
+
+class TaskPriority(StrEnum):
+    URGENT = "urgent"
+    HIGH = "high"
+    NORMAL = "normal"
+    LOW = "low"
+
+
+# --- Campaign v2 ---
+
+class CampaignType(StrEnum):
+    SCENARIO = "scenario"
+    DIRECT = "direct"
+
+
+class CommentMode(StrEnum):
+    AI_AUTO = "ai_auto"
+    AI_APPROVE = "ai_approve"
+    MANUAL = "manual"

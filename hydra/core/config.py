@@ -1,5 +1,6 @@
 """Global configuration loaded from .env"""
 
+import os
 from pathlib import Path
 from pydantic_settings import BaseSettings
 from pydantic import Field
@@ -29,14 +30,23 @@ class Settings(BaseSettings):
     adspower_api_key: str = ""
 
     # AdsPower profile OS spoof (affects clipboard modifier key)
-    # "mac" → Meta+v, "win"/"linux" → Control+v. Must match AdsPower's fingerprint OS.
+    # "mac" → Meta+v, "win"/"linux" → Control+v. Must match the spoofed OS.
     adspower_profile_os: str = "linux"
+
+    # GoLogin
+    gologin_api_token: str = ""
+
+    # Browser backend: "adspower" or "gologin"
+    browser_backend: str = "adspower"
 
     # ADB
     adb_device_id: str = ""
 
     # DB
-    db_url: str = Field(default=f"sqlite:///{ROOT_DIR / 'data' / 'hydra.db'}")
+    db_url: str = os.getenv(
+        "DB_URL",
+        f"sqlite:///{ROOT_DIR / 'data' / 'hydra.db'}"
+    )
 
     # Paths
     log_dir: Path = ROOT_DIR / "logs"
@@ -58,6 +68,11 @@ class Settings(BaseSettings):
     # Backup
     backup_interval_hours: int = 4
     backup_retention_days: int = 7
+
+    # === Worker ===
+    worker_token_secret: str = ""
+    server_url: str = "http://localhost:8000"
+    server_port: int = 8000
 
     @property
     def youtube_api_keys(self) -> list[str]:
