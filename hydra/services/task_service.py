@@ -1,16 +1,24 @@
-from datetime import datetime
+from datetime import UTC, datetime
+from sqlalchemy import case, or_
 from sqlalchemy.orm import Session
 from hydra.db.models import Task, ProfileLock, Worker
 
 
 def fetch_tasks(db: Session, worker: Worker, limit: int = 5) -> list[Task]:
     """Worker에게 배정할 태스크 가져오기 (프로필 잠금 고려)."""
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
+    priority_order = case(
+        (Task.priority == "urgent", 0),
+        (Task.priority == "high", 1),
+        (Task.priority == "normal", 2),
+        (Task.priority == "low", 3),
+        else_=4,
+    )
     tasks = db.query(Task).filter(
         Task.status == "pending",
-        Task.scheduled_at <= now,
+        or_(Task.scheduled_at <= now, Task.scheduled_at.is_(None)),
     ).order_by(
-        Task.priority.desc(),
+        priority_order,
         Task.created_at.asc(),
     ).limit(limit * 2).all()
 
@@ -35,11 +43,11 @@ def fetch_tasks(db: Session, worker: Worker, limit: int = 5) -> list[Task]:
 
 
 def complete_task(db: Session, task_id: int, result: str = None):
-    task = db.query(Task).get(task_id)
+    task = db.get(Task, task_id)
     if not task:
         return None
     task.status = "completed"
-    task.completed_at = datetime.utcnow()
+    task.completed_at = datetime.now(UTC)
     if result:
         task.result = result
     if task.account_id:
@@ -48,13 +56,13 @@ def complete_task(db: Session, task_id: int, result: str = None):
             ProfileLock.released_at.is_(None),
         ).first()
         if lock:
-            lock.released_at = datetime.utcnow()
+            lock.released_at = datetime.now(UTC)
     db.commit()
     return task
 
 
 def fail_task(db: Session, task_id: int, error: str):
-    task = db.query(Task).get(task_id)
+    task = db.get(Task, task_id)
     if not task:
         return None
     task.retry_count += 1
@@ -66,13 +74,13 @@ def fail_task(db: Session, task_id: int, error: str):
     else:
         task.status = "failed"
         task.error_message = error
-        task.completed_at = datetime.utcnow()
+        task.completed_at = datetime.now(UTC)
     if task.account_id:
         lock = db.query(ProfileLock).filter(
             ProfileLock.account_id == task.account_id,
             ProfileLock.released_at.is_(None),
         ).first()
         if lock:
-            lock.released_at = datetime.utcnow()
+            lock.released_at = datetime.now(UTC)
     db.commit()
     return task

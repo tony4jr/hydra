@@ -1,6 +1,6 @@
 import hashlib
 import secrets
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from sqlalchemy.orm import Session
 from hydra.db.models import Worker
 
@@ -22,7 +22,7 @@ def register_worker(db: Session, name: str) -> tuple[Worker, str]:
     return worker, raw
 
 def heartbeat(db: Session, worker: Worker, version: str = None, os_type: str = None):
-    worker.last_heartbeat = datetime.utcnow()
+    worker.last_heartbeat = datetime.now(UTC)
     worker.status = "online"
     if version:
         worker.current_version = version
@@ -31,7 +31,7 @@ def heartbeat(db: Session, worker: Worker, version: str = None, os_type: str = N
     db.commit()
 
 def check_stale_workers(db: Session, timeout_seconds: int = 60):
-    cutoff = datetime.utcnow() - timedelta(seconds=timeout_seconds)
+    cutoff = datetime.now(UTC) - timedelta(seconds=timeout_seconds)
     stale = db.query(Worker).filter(
         Worker.status == "online",
         Worker.last_heartbeat < cutoff,

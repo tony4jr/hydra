@@ -1,5 +1,5 @@
 import pytest
-from datetime import datetime
+from datetime import UTC, datetime
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -32,7 +32,7 @@ def client_with_worker():
         priority="normal",
         status="pending",
         payload='{"text":"test"}',
-        scheduled_at=datetime.utcnow(),
+        scheduled_at=datetime.now(UTC),
     )
     db.add(task)
     db.commit()
