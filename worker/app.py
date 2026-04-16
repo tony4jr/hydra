@@ -5,11 +5,13 @@ import sys
 from datetime import datetime, UTC
 from worker.config import config
 from worker.client import ServerClient
+from worker.executor import TaskExecutor
 
 
 class WorkerApp:
     def __init__(self):
         self.client = ServerClient()
+        self.executor = TaskExecutor()
         self.running = True
         self.last_heartbeat = None
         signal.signal(signal.SIGINT, self._shutdown)
@@ -67,15 +69,13 @@ class WorkerApp:
         time.sleep(config.task_fetch_interval)
 
     def _execute_task(self, task: dict):
-        """태스크 실행. Phase 3 Task 3에서 실제 실행기 연결."""
+        """태스크 실행 — executor를 통해 핸들러 디스패치."""
         task_id = task["id"]
         task_type = task["task_type"]
         print(f"[Worker] Executing task {task_id} ({task_type})")
 
         try:
-            # TODO: Phase 3 Task 3에서 실제 실행기 연결
-            # 지금은 성공으로 보고 (스텁)
-            result = f"stub_executed_{task_type}"
+            result = self.executor.execute(task)
             self.client.complete_task(task_id, result)
             print(f"[Worker] Task {task_id} completed")
         except Exception as e:
