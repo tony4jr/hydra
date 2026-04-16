@@ -11,6 +11,7 @@ from pathlib import Path
 
 from hydra.db.session import init_db
 from hydra.web.routes import accounts, brands, campaigns, dashboard, keywords, videos, settings, pools, logs, system, export, creator, recovery
+from hydra.api.workers import router as workers_router
 
 app = FastAPI(title="HYDRA Dashboard", version="1.0")
 
@@ -35,6 +36,7 @@ app.include_router(system.router, prefix="/system", tags=["system"])
 app.include_router(export.router, prefix="/export", tags=["export"])
 app.include_router(creator.router, prefix="/creator", tags=["creator"])
 app.include_router(recovery.router, prefix="/recovery", tags=["recovery"])
+app.include_router(workers_router)
 
 
 @app.get("/", response_class=HTMLResponse)
