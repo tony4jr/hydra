@@ -6,7 +6,7 @@ from sqlalchemy import func, case
 from datetime import datetime, timezone, timedelta
 
 from hydra.db.session import get_db
-from hydra.db.models import Account, Campaign, CampaignStep, ActionLog, ErrorLog
+from hydra.db.models import Account, Campaign, CampaignStep, ActionLog, ErrorLog, Worker, Task
 
 router = APIRouter()
 
@@ -54,6 +54,18 @@ def get_stats(db: Session = Depends(get_db)):
         .scalar()
     )
 
+    # Worker stats
+    workers = db.query(Worker).all()
+    worker_online = sum(1 for w in workers if w.status == "online")
+
+    # Task stats
+    task_stats = {
+        "today_completed": db.query(Task).filter(Task.completed_at >= today_start, Task.status == "completed").count(),
+        "today_failed": db.query(Task).filter(Task.completed_at >= today_start, Task.status == "failed").count(),
+        "pending": db.query(Task).filter(Task.status == "pending").count(),
+        "running": db.query(Task).filter(Task.status.in_(["assigned", "running"])).count(),
+    }
+
     return {
         "accounts": account_stats,
         "today": {
@@ -66,6 +78,8 @@ def get_stats(db: Session = Depends(get_db)):
             "completed_today": completed_today,
         },
         "errors_today": recent_errors,
+        "workers": {"online": worker_online, "total": len(workers)},
+        "tasks": task_stats,
     }
 
 

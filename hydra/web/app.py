@@ -15,6 +15,8 @@ from hydra.db.session import init_db
 from hydra.web.routes import accounts, brands, campaigns, dashboard, keywords, videos, settings, pools, logs, system, export, creator, recovery
 from hydra.api.workers import router as workers_router
 from hydra.api.tasks import router as tasks_router
+from hydra.api.presets import router as presets_router
+from hydra.api.websocket import router as ws_router
 
 @asynccontextmanager
 async def lifespan(app):
@@ -46,6 +48,8 @@ app.include_router(creator.router, prefix="/creator", tags=["creator"])
 app.include_router(recovery.router, prefix="/recovery", tags=["recovery"])
 app.include_router(workers_router)
 app.include_router(tasks_router)
+app.include_router(presets_router)
+app.include_router(ws_router)
 
 
 @app.get("/", response_class=HTMLResponse)

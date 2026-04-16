@@ -78,6 +78,9 @@ class Brand(Base):
     tone_guide = Column(Text)
     target_audience = Column(String)
 
+    weekly_campaign_target = Column(Integer, default=0)
+    auto_campaign_enabled = Column(Boolean, default=False)
+
     status = Column(String, default="active")
     created_at = Column(DateTime, default=datetime.utcnow)
 

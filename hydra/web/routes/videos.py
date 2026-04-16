@@ -103,6 +103,24 @@ def scraped_stats(db: Session = Depends(get_db)):
     }
 
 
+@router.post("/api/collect")
+def collect_videos(brand_id: int = None, db: Session = Depends(get_db)):
+    from hydra.services.video_collector import collect_videos_for_brand
+    if not brand_id:
+        return {"ok": False, "error": "brand_id required"}
+    result = collect_videos_for_brand(db, brand_id)
+    return {"ok": True, "keywords_searched": len(result)}
+
+
+@router.post("/api/add-manual")
+def add_video_manual(url: str, keyword_id: int = None, db: Session = Depends(get_db)):
+    from hydra.services.video_collector import add_video_manually
+    video = add_video_manually(db, url, keyword_id)
+    if not video:
+        return {"ok": False, "error": "Invalid YouTube URL"}
+    return {"ok": True, "video_id": video.id}
+
+
 @router.post("/api/refresh-status")
 def refresh_video_status(db: Session = Depends(get_db)):
     """Re-check status of stored videos via YouTube Data API."""
