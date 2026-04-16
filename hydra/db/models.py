@@ -43,6 +43,11 @@ class Account(Base):
     retired_reason = Column(String)
     notes = Column(Text)
 
+    daily_comment_limit = Column(Integer, default=15)
+    daily_like_limit = Column(Integer, default=50)
+    weekly_comment_limit = Column(Integer, default=70)
+    weekly_like_limit = Column(Integer, default=300)
+
     # relationships
     campaign_steps = relationship("CampaignStep", back_populates="account")
     action_logs = relationship("ActionLog", back_populates="account")
@@ -161,6 +166,11 @@ class Campaign(Base):
     ghost_check_status = Column(String)  # pending|visible|ghost|unchecked
     ghost_checked_by = Column(Integer)
     ghost_checked_at = Column(DateTime)
+
+    campaign_type = Column(String, default="scenario")
+    comment_mode = Column(String, default="ai_auto")
+    preset_id = Column(Integer, ForeignKey("presets.id"))
+    user_id = Column(Integer)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime)
@@ -424,4 +434,128 @@ class RecoveryEmail(Base):
 
     __table_args__ = (
         Index("idx_recovery_available", "disabled", "used_by_account_id"),
+    )
+
+
+class PersonaSlot(Base):
+    """Pre-seeded demographic slots for Korean persona diversity.
+
+    Each slot is claimed once by an account; prevents demographic bias
+    when generating personas in bulk. Device_hint bridges Layer 2 (person)
+    to Layer 1 (fingerprint).
+    """
+    __tablename__ = "persona_slots"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    age = Column(Integer, nullable=False)
+    gender = Column(String, nullable=False)           # male/female
+    occupation = Column(String, nullable=False)       # 대학생/회사원/자영업/주부/프리랜서/은퇴/전문직
+    region = Column(String, nullable=False)           # 서울/경기/부산/...
+    device_hint = Column(String, nullable=False)      # mac_heavy/windows_heavy/windows_10_heavy/mixed
+
+    used = Column(Boolean, default=False, nullable=False)
+    assigned_account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True)
+    used_at = Column(DateTime)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_slot_used", "used"),
+        Index("idx_slot_demo", "age", "gender", "occupation"),
+    )
+
+
+# --- v2: Worker / Task / Preset / ProfileLock ---
+
+
+class Worker(Base):
+    __tablename__ = "workers"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False)
+    token_hash = Column(String, nullable=False)
+    status = Column(String, default="offline")
+    ip_method = Column(String, default="adb_mobile")
+    ip_config = Column(Text)
+    last_heartbeat = Column(DateTime)
+    current_version = Column(String)
+    os_type = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    notes = Column(Text)
+
+    tasks = relationship("Task", back_populates="worker")
+
+    __table_args__ = (
+        Index("idx_workers_status", "status"),
+    )
+
+
+class Task(Base):
+    __tablename__ = "tasks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    campaign_id = Column(Integer, ForeignKey("campaigns.id"))
+    campaign_step_id = Column(Integer, ForeignKey("campaign_steps.id"))
+    worker_id = Column(Integer, ForeignKey("workers.id"))
+    account_id = Column(Integer, ForeignKey("accounts.id"))
+    task_type = Column(String, nullable=False)
+    priority = Column(String, default="normal")
+    status = Column(String, default="pending")
+    payload = Column(Text)
+    result = Column(Text)
+    error_message = Column(Text)
+    retry_count = Column(Integer, default=0)
+    max_retries = Column(Integer, default=3)
+    scheduled_at = Column(DateTime)
+    assigned_at = Column(DateTime)
+    started_at = Column(DateTime)
+    completed_at = Column(DateTime)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    worker = relationship("Worker", back_populates="tasks")
+    campaign = relationship("Campaign")
+    account = relationship("Account")
+
+    __table_args__ = (
+        Index("idx_tasks_status", "status"),
+        Index("idx_tasks_worker", "worker_id"),
+        Index("idx_tasks_priority_status", "priority", "status"),
+        Index("idx_tasks_scheduled", "scheduled_at"),
+    )
+
+
+class Preset(Base):
+    __tablename__ = "presets"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False)
+    code = Column(String, unique=True)
+    is_system = Column(Boolean, default=False)
+    description = Column(Text)
+    steps = Column(Text, nullable=False)
+    user_id = Column(Integer)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_presets_code", "code"),
+    )
+
+
+class ProfileLock(Base):
+    __tablename__ = "profile_locks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False)
+    worker_id = Column(Integer, ForeignKey("workers.id"), nullable=False)
+    adspower_profile_id = Column(String, nullable=False)
+    locked_at = Column(DateTime, default=datetime.utcnow)
+    released_at = Column(DateTime)
+
+    account = relationship("Account")
+    worker = relationship("Worker")
+
+    __table_args__ = (
+        Index("idx_locks_account", "account_id"),
+        Index("idx_locks_active", "released_at"),
     )
