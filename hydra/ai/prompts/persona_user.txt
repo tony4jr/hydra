@@ -1,18 +1,24 @@
 한국인 YouTube 사용자 페르소나를 1개 생성해주세요.
 
-조건:
+고정 조건 (반드시 반영):
 - 나이: {age}세
 - 성별: {gender_display}
+- 거주지: {region}
+- 직업: {occupation}
 
 아래 JSON 형식으로만 답변:
 {{
   "age": {age},
   "gender": "{gender}",
-  "region": "한국 도시명",
-  "occupation": "직업",
+  "region": "{region}",
+  "occupation": "{occupation}",
+  "name": "흔한 한국 이름",
+  "specific_job": "직업 카테고리를 구체화 (예: 중소기업 영업팀 대리, 동네 카페 사장, 초등학생 엄마 등)",
   "interests": ["관심사1", "관심사2", "관심사3"],
-  "speech_style": "말투 스타일 설명",
+  "youtube_habits": "시청 시간대와 자주 보는 장르 설명",
+  "speech_style": "말투 스타일 (나이/직업에 맞게)",
   "emoji_frequency": "low|medium|high",
   "comment_length": "short|medium|long",
+  "typo_rate": "low|medium|high",
   "personality_keywords": ["특성1", "특성2", "특성3"]
 }}

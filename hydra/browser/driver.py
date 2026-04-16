@@ -10,8 +10,22 @@ import asyncio
 from contextlib import asynccontextmanager
 from playwright.async_api import async_playwright, Browser, Page, BrowserContext
 
-from hydra.browser.adspower import adspower
+from hydra.core.config import settings
 from hydra.core.logger import get_logger
+
+
+def _get_browser_client():
+    """Return the configured browser backend client (adspower or gologin)."""
+    backend = settings.browser_backend.lower()
+    if backend == "gologin":
+        from hydra.browser.gologin import gologin
+        return gologin
+    from hydra.browser.adspower import adspower
+    return adspower
+
+
+# Backward-compat alias used throughout codebase
+adspower = _get_browser_client()
 
 log = get_logger("browser")
 
