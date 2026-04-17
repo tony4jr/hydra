@@ -10,6 +10,7 @@ class WorkerConfig:
         self.heartbeat_interval = int(os.getenv("HYDRA_HEARTBEAT_INTERVAL", "30"))
         self.task_fetch_interval = int(os.getenv("HYDRA_TASK_FETCH_INTERVAL", "5"))
         self.max_concurrent_tasks = int(os.getenv("HYDRA_MAX_CONCURRENT", "3"))
+        self.adb_device_id = os.getenv("HYDRA_ADB_DEVICE_ID", "")
         self.worker_version = "0.1.0"
         self.config_path = Path.home() / ".hydra-worker" / "config.json"
 
