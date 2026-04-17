@@ -92,10 +92,19 @@ export default function AccountsPage() {
   useEffect(() => {
     setLoading(true)
     Promise.all([
-      fetchApi<AccountStats>('/accounts/api/stats').catch(() => stats),
+      fetchApi<Record<string, number>>('/accounts/api/stats').catch(() => ({} as Record<string, number>)),
       fetchApi<{ items: Account[] }>('/accounts/api/list').catch(() => ({ items: [] })),
-    ]).then(([s, a]) => {
-      setStats(s)
+    ]).then(([rawStats, a]) => {
+      // API는 {registered: 20, active: 5, ...} 형태 — total은 합산
+      const total = Object.values(rawStats).reduce((sum, n) => sum + (n || 0), 0)
+      setStats({
+        total,
+        active: rawStats['active'] || 0,
+        warmup: rawStats['warmup'] || 0,
+        cooldown: rawStats['cooldown'] || 0,
+        retired: rawStats['retired'] || 0,
+        ghost: (rawStats['ghost'] || 0) + (rawStats['suspended'] || 0),
+      })
       setAccounts(a.items || [])
     }).finally(() => setLoading(false))
   }, [])
