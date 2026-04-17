@@ -15,6 +15,7 @@ import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { fetchApi } from '@/lib/api'
+import { AccountDetailSheet } from './account-detail-sheet'
 
 interface Account {
   id: number
@@ -70,6 +71,8 @@ const statusDotColor = (s: string) => {
 }
 
 export default function AccountsPage() {
+  const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null)
+  const [sheetOpen, setSheetOpen] = useState(false)
   const [accounts, setAccounts] = useState<Account[]>([])
   const [stats, setStats] = useState<AccountStats>({
     total: 0,
@@ -128,6 +131,10 @@ export default function AccountsPage() {
                   <tr
                     key={acc.id}
                     className='cursor-pointer border-b hover:bg-muted/50'
+                    onClick={() => {
+                      setSelectedAccountId(acc.id)
+                      setSheetOpen(true)
+                    }}
                   >
                     <td className='p-3'>
                       <div className='flex items-center gap-2'>
@@ -232,6 +239,12 @@ export default function AccountsPage() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        <AccountDetailSheet
+          accountId={selectedAccountId}
+          open={sheetOpen}
+          onOpenChange={setSheetOpen}
+        />
       </Main>
     </>
   )
