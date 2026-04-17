@@ -161,7 +161,7 @@ class Campaign(Base):
     __tablename__ = "campaigns"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    video_id = Column(String, ForeignKey("videos.id"), nullable=False)
+    video_id = Column(String, ForeignKey("videos.id"), nullable=True)
     brand_id = Column(Integer, ForeignKey("brands.id"), nullable=False)
     scenario = Column(String, nullable=False)  # A~J
 

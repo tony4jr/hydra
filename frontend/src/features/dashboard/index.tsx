@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from '@tanstack/react-router'
 import { AlertTriangle, MessageSquare, ThumbsUp, Users, Monitor, Plus } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -183,7 +184,7 @@ export function Dashboard() {
             <div className='rounded-xl border border-white/10 overflow-hidden'>
               <div className='px-5 py-4 border-b border-border flex items-center justify-between'>
                 <span className='text-foreground font-semibold text-[15px]'>진행 중인 캠페인</span>
-                <a href='/campaigns' className='text-primary text-[12px] hover:underline'>전체보기</a>
+                <Link to='/campaigns' className='text-primary text-[12px] hover:underline'>전체보기</Link>
               </div>
               <div className='px-5 py-4'>
                 {campaigns.length > 0 ? campaigns.map(c => {
@@ -217,10 +218,10 @@ export function Dashboard() {
                   <div className='py-10 text-center'>
                     <p className='text-muted-foreground text-sm mb-1'>진행 중인 캠페인이 없어요</p>
                     <p className='text-muted-foreground/60 text-xs mb-4'>캠페인 페이지에서 새 캠페인을 만들어보세요</p>
-                    <a href='/campaigns'
+                    <Link to='/campaigns'
                        className='inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 transition-opacity'>
                       <Plus className='h-4 w-4' /> 캠페인 만들기
-                    </a>
+                    </Link>
                   </div>
                 )}
               </div>
@@ -233,7 +234,7 @@ export function Dashboard() {
               <div className='rounded-xl border border-white/10 overflow-hidden'>
                 <div className='px-4 py-3 border-b border-border flex items-center justify-between'>
                   <span className='text-foreground font-semibold text-[15px]'>워커</span>
-                  <a href='/workers' className='text-primary text-[12px] hover:underline'>관리</a>
+                  <Link to='/workers' className='text-primary text-[12px] hover:underline'>관리</Link>
                 </div>
                 <div className='px-4 py-3'>
                   {workers.length > 0 ? workers.map(w => (
@@ -253,10 +254,10 @@ export function Dashboard() {
                       <Monitor className='h-8 w-8 text-muted-foreground/30 mx-auto mb-2' />
                       <p className='text-muted-foreground text-sm mb-1'>연결된 워커가 없어요</p>
                       <p className='text-muted-foreground/60 text-xs mb-3'>워커 PC를 연결해보세요</p>
-                      <a href='/workers'
+                      <Link to='/workers'
                          className='inline-flex items-center gap-2 px-4 py-2 border border-white/20 rounded-lg text-sm text-foreground hover:bg-white/5 transition-colors'>
                         <Plus className='h-4 w-4' /> 워커 추가
-                      </a>
+                      </Link>
                     </div>
                   )}
                 </div>

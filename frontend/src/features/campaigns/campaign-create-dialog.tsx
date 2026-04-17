@@ -109,7 +109,7 @@ export function CampaignCreateDialog({
   const handleSubmit = async () => {
     setLoading(true)
     try {
-      await fetchApi('/campaigns/api/create', {
+      await fetchApi('/campaigns/api/create-project', {
         method: 'POST',
         body: JSON.stringify({
           brand_id: parseInt(brandId),
@@ -203,7 +203,7 @@ export function CampaignCreateDialog({
                 <Input
                   value={keywordInput}
                   onChange={e => setKeywordInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addKeyword() } }}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); addKeyword() } }}
                   onBlur={addKeyword}
                   placeholder={keywords.length === 0 ? '예: 탈모, 케라틴, 모발 관리' : ''}
                   className='border-0 p-0 h-7 shadow-none focus-visible:ring-0'
@@ -235,8 +235,8 @@ export function CampaignCreateDialog({
               </div>
 
               <div className='mb-5'>
-                <label className='text-foreground text-sm font-medium mb-1.5'>영상당 프리셋 세트 수</label>
-                <p className='text-muted-foreground text-xs mb-2'>한 영상에 몇 세트의 대화를 만들까요?</p>
+                <label className='text-foreground text-sm font-medium mb-1.5'>한 영상에 댓글 대화를 몇 개 만들까요?</label>
+                <p className='text-muted-foreground text-xs mb-2'>각 대화는 다른 프리셋, 다른 계정으로 만들어져요</p>
                 <Input
                   type='number'
                   min={1}

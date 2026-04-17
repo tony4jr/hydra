@@ -45,6 +45,63 @@ def create_campaign_api(data: CampaignCreate, db: Session = Depends(get_db)):
     }
 
 
+# --- 캠페인 프로젝트 생성 (키워드 기반, video_id 없이) ---
+
+class CampaignProjectCreate(BaseModel):
+    brand_id: int
+    target_keywords: list[str] = []
+    preset_codes: list[str] = []
+    sets_per_video: int = 1
+    mention_style: str = ""
+    duration_days: int = 7
+    target_count: int = 10
+    name: str | None = None
+
+
+@router.post("/api/create-project")
+def create_campaign_project(data: CampaignProjectCreate, db: Session = Depends(get_db)):
+    """키워드 기반 캠페인 프로젝트 생성. 영상은 자동 수집 후 태스크 생성."""
+    import json
+    from datetime import UTC
+
+    brand = db.get(Brand, data.brand_id)
+    if not brand:
+        return {"error": "Brand not found"}
+
+    # 캠페인 이름 자동 생성
+    campaign_name = data.name or f"{brand.name} — {', '.join(data.target_keywords[:3])} 캠페인"
+
+    now = datetime.now(UTC)
+    campaign = Campaign(
+        video_id=None,  # 프로젝트형 캠페인 (영상은 자동 수집 후 배정)
+        brand_id=data.brand_id,
+        scenario=data.preset_codes[0] if data.preset_codes else "A",
+        campaign_type="scenario",
+        comment_mode="ai_auto",
+        status="planning",
+        name=campaign_name,
+        target_keywords=json.dumps(data.target_keywords, ensure_ascii=False),
+        mention_style=data.mention_style,
+        selected_presets=json.dumps(data.preset_codes, ensure_ascii=False),
+        sets_per_video=data.sets_per_video,
+        duration_days=data.duration_days,
+        target_count=data.target_count,
+        start_date=now,
+        end_date=now + timedelta(days=data.duration_days),
+    )
+    db.add(campaign)
+    db.commit()
+    db.refresh(campaign)
+
+    return {
+        "id": campaign.id,
+        "name": campaign_name,
+        "status": campaign.status,
+        "target_count": data.target_count,
+        "duration_days": data.duration_days,
+    }
+
+
 # --- #5: Bulk URL Campaign ---
 
 class BulkUrlInput(BaseModel):
