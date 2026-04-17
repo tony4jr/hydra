@@ -54,7 +54,7 @@ export default function TasksQueuePage() {
   const [campaignFilter, setCampaignFilter] = useState<string>('all')
   const [stats, setStats] = useState({ pending: 0, running: 0, completed: 0, failed: 0 })
 
-  useEffect(() => {
+  const loadTasks = () => {
     setLoading(true)
     fetchApi<{ stats: { pending: number; assigned: number; running: number; completed: number; failed: number }; items: any[] }>('/api/tasks/list')
       .then(data => {
@@ -84,7 +84,19 @@ export default function TasksQueuePage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [])
+  }
+
+  useEffect(() => { loadTasks() }, [])
+
+  const cancelTask = async (taskId: number) => {
+    try {
+      await fetchApi(`/api/tasks/cancel/single`, {
+        method: 'POST',
+        body: JSON.stringify({ task_id: taskId }),
+      })
+      loadTasks()
+    } catch { /* error */ }
+  }
 
   const filtered = campaignFilter === 'all' ? tasks : tasks.filter(t => String(t.campaign_id) === campaignFilter)
   const campaignIds = [...new Set(tasks.filter(t => t.campaign_id).map(t => ({
@@ -203,7 +215,8 @@ export default function TasksQueuePage() {
                       )}
 
                       {(task.status === 'pending' || task.status === 'running') && (
-                        <Button variant='ghost' size='icon' className='h-7 w-7 text-muted-foreground hover:text-destructive hydra-btn-press'>
+                        <Button variant='ghost' size='icon' className='h-7 w-7 text-muted-foreground hover:text-destructive hydra-btn-press'
+                                onClick={() => cancelTask(task.id)}>
                           <X className='h-3.5 w-3.5' />
                         </Button>
                       )}

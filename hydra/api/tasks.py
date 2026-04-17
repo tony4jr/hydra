@@ -114,6 +114,11 @@ def create_warmup_tasks(
         db.add(task)
         created.append(task)
 
+        # 계정 상태를 warmup으로 변경
+        if account.status in ("registered", "profile_set"):
+            account.status = "warmup"
+            account.warmup_group = f"day_{body.day}"
+
     db.commit()
     return {"ok": True, "created": len(created)}
 
@@ -135,6 +140,23 @@ def cancel_campaign_tasks(body: CancelBatchRequest, db: Session = Depends(get_db
         task.status = "cancelled"
     db.commit()
     return {"ok": True, "cancelled": len(tasks)}
+
+
+class CancelSingleRequest(BaseModel):
+    task_id: int
+
+
+@router.post("/cancel/single")
+def cancel_single_task(body: CancelSingleRequest, db: Session = Depends(get_db)):
+    """단일 태스크 취소."""
+    task = db.get(Task, body.task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.status not in ("pending", "assigned"):
+        return {"ok": False, "error": "이미 실행 중이거나 완료된 태스크입니다"}
+    task.status = "cancelled"
+    db.commit()
+    return {"ok": True, "task_id": task.id}
 
 
 @router.get("/list")
