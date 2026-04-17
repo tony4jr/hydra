@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ChevronDown, ChevronRight, Plus, Zap } from 'lucide-react'
+import { ChevronDown, ChevronRight, Zap } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -9,7 +9,6 @@ import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { fetchApi } from '@/lib/api'
-import { CampaignCreateDialog } from './campaign-create-dialog'
 import { DirectCampaignDialog } from './direct-campaign-dialog'
 
 interface Campaign {
@@ -32,7 +31,6 @@ interface CampaignListResponse {
 export default function CampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [expandedId, setExpandedId] = useState<number | null>(null)
-  const [createOpen, setCreateOpen] = useState(false)
   const [directOpen, setDirectOpen] = useState(false)
 
   const loadCampaigns = () => {
@@ -191,15 +189,12 @@ export default function CampaignsPage() {
           <div>
             <h2 className='text-2xl font-bold tracking-tight'>캠페인</h2>
             <p className='text-muted-foreground'>
-              시나리오 캠페인 + 다이렉트 캠페인
+              시나리오 캠페인은 브랜드 주간 목표 기반으로 자동 생성됩니다
             </p>
           </div>
           <div className='flex gap-2'>
-            <Button variant='outline' onClick={() => setDirectOpen(true)}>
+            <Button onClick={() => setDirectOpen(true)}>
               <Zap className='mr-2 h-4 w-4' /> 다이렉트
-            </Button>
-            <Button onClick={() => setCreateOpen(true)}>
-              <Plus className='mr-2 h-4 w-4' /> 캠페인 생성
             </Button>
           </div>
         </div>
@@ -226,11 +221,6 @@ export default function CampaignsPage() {
         </Tabs>
       </Main>
 
-      <CampaignCreateDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        onSuccess={loadCampaigns}
-      />
       <DirectCampaignDialog
         open={directOpen}
         onOpenChange={setDirectOpen}
