@@ -1,6 +1,5 @@
 """Worker 메인 앱 — heartbeat + task fetch + execute loop."""
 import asyncio
-import time
 import signal
 import sys
 from collections import defaultdict
@@ -24,7 +23,11 @@ class WorkerApp:
         self.running = False
 
     def run(self):
-        """메인 루프."""
+        """메인 루프 — 단일 async 이벤트 루프로 실행."""
+        asyncio.run(self._async_run())
+
+    async def _async_run(self):
+        """Persistent async event loop for Playwright compatibility."""
         print(f"[Worker] Starting v{config.worker_version}")
         print(f"[Worker] Server: {config.server_url}")
 
@@ -38,17 +41,17 @@ class WorkerApp:
 
         while self.running:
             try:
-                self._tick()
+                await self._async_tick()
             except KeyboardInterrupt:
                 break
             except Exception as e:
                 print(f"[Worker] Error in main loop: {e}")
-                time.sleep(5)
+                await asyncio.sleep(5)
 
         self.client.close()
         print("[Worker] Stopped")
 
-    def _tick(self):
+    async def _async_tick(self):
         """한 사이클: heartbeat -> fetch -> execute (세션 기반)."""
         now = datetime.now(UTC)
 
@@ -70,13 +73,11 @@ class WorkerApp:
                     tasks_by_account[key].append(task)
 
                 for (profile_id, account_id), account_tasks in tasks_by_account.items():
-                    asyncio.run(
-                        self._execute_session(account_tasks, profile_id, account_id)
-                    )
+                    await self._execute_session(account_tasks, profile_id, account_id)
         except Exception as e:
             print(f"[Worker] Task fetch failed: {e}")
 
-        time.sleep(config.task_fetch_interval)
+        await asyncio.sleep(config.task_fetch_interval)
 
     async def _execute_session(self, tasks: list, profile_id: str, account_id: int):
         """한 계정의 세션 — 여러 태스크를 자연스럽게 실행."""
