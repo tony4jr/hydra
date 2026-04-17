@@ -18,6 +18,7 @@ from worker.mouse import click_with_mouse_move
 from worker.login import auto_login
 from worker.warmup import WarmupExecutor
 from worker.session import WorkerSession
+from worker.comment_behavior import read_comments_before_posting
 
 
 class TaskExecutor:
@@ -130,8 +131,8 @@ class TaskExecutor:
         # 댓글 영역으로 스크롤
         await scroll_to_comments(page)
 
-        # 기존 댓글 읽는 시간
-        await random_delay(3.0, 10.0)
+        # 기존 댓글 읽기 (사람처럼)
+        await read_comments_before_posting(page)
 
         # 댓글 작성
         comment_id = await post_comment(page, text)
