@@ -3,6 +3,7 @@
 Spec Part 12.2: dashboard pages.
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -24,8 +25,13 @@ from hydra.api.version import router as version_router
 
 @asynccontextmanager
 async def lifespan(app):
+    from hydra.services.background import scheduler
     init_db()
+    # Start background scheduler
+    task = asyncio.create_task(scheduler.start())
     yield
+    scheduler.stop()
+    task.cancel()
 
 app = FastAPI(title="HYDRA Dashboard", version="1.0", lifespan=lifespan)
 
