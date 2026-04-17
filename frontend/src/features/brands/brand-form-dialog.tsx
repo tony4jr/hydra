@@ -175,16 +175,20 @@ export function BrandFormDialog({
             />
           </div>
           <div className='grid gap-2'>
-            <Label htmlFor='brand-tone'>톤 가이드</Label>
+            <Label htmlFor='brand-tone'>브랜드 멘션 스타일</Label>
             <Textarea
               id='brand-tone'
               value={form.tone_guide}
               onChange={(e) =>
                 setForm({ ...form, tone_guide: e.target.value })
               }
-              placeholder='댓글 작성 시 톤/말투 가이드'
+              placeholder='간접 언급 / 직접 추천 / 경험담 형식 등'
               rows={3}
             />
+            <p className='text-xs text-muted-foreground'>
+              페르소나별 말투(ㅋㅋ체, 존댓말 등)는 자동 적용됩니다. 여기서는
+              제품을 어떻게 언급할지만 설정하세요.
+            </p>
           </div>
           <div className='grid gap-2'>
             <Label htmlFor='brand-promo'>홍보 키워드</Label>
@@ -245,6 +249,21 @@ export function BrandFormDialog({
                   </label>
                 ))}
               </div>
+              <p className='text-xs text-muted-foreground'>
+                프리셋 편집은{' '}
+                <a
+                  href='/settings/presets'
+                  className='underline hover:text-foreground'
+                  onClick={(e) => {
+                    e.preventDefault()
+                    onOpenChange(false)
+                    window.location.href = '/settings/presets'
+                  }}
+                >
+                  설정 &gt; 프리셋
+                </a>
+                에서 가능합니다
+              </p>
             </div>
           )}
           <div className='grid gap-2'>
