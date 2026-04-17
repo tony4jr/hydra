@@ -74,6 +74,9 @@ class Brand(Base):
     ingredients = Column(Text)       # JSON
     selling_points = Column(Text)    # JSON
 
+    promo_keywords = Column(Text)    # JSON — 홍보 키워드 (댓글에 녹일 메시지)
+    selected_presets = Column(Text)  # JSON — 사용할 프리셋 코드 목록 ["A","B","C"]
+
     mention_rules = Column(Text)  # JSON
     tone_guide = Column(Text)
     target_audience = Column(String)
