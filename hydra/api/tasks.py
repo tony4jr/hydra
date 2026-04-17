@@ -135,3 +135,80 @@ def cancel_campaign_tasks(body: CancelBatchRequest, db: Session = Depends(get_db
         task.status = "cancelled"
     db.commit()
     return {"ok": True, "cancelled": len(tasks)}
+
+
+@router.get("/list")
+def list_tasks(
+    status: str | None = None,
+    campaign_id: int | None = None,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+):
+    """태스크 목록 조회 (모든 태스크 — 워밍업, 캠페인, 다이렉트 포함)."""
+    import json as json_lib
+    from hydra.db.models import Campaign, Worker
+
+    query = db.query(Task)
+    if status:
+        query = query.filter(Task.status == status)
+    if campaign_id:
+        query = query.filter(Task.campaign_id == campaign_id)
+
+    tasks = query.order_by(Task.created_at.desc()).limit(limit).all()
+
+    # 통계
+    stats = {
+        "pending": db.query(Task).filter(Task.status == "pending").count(),
+        "assigned": db.query(Task).filter(Task.status == "assigned").count(),
+        "running": db.query(Task).filter(Task.status == "running").count(),
+        "completed": db.query(Task).filter(Task.status == "completed").count(),
+        "failed": db.query(Task).filter(Task.status == "failed").count(),
+    }
+
+    items = []
+    for t in tasks:
+        # 캠페인 이름
+        campaign_name = None
+        if t.campaign_id:
+            campaign = db.get(Campaign, t.campaign_id)
+            if campaign:
+                campaign_name = campaign.name or f"캠페인 #{campaign.id}"
+
+        # Worker 이름
+        worker_name = None
+        if t.worker_id:
+            worker = db.get(Worker, t.worker_id)
+            if worker:
+                worker_name = worker.name
+
+        # payload에서 정보 추출
+        video_id = ""
+        account_gmail = ""
+        try:
+            payload = json_lib.loads(t.payload or "{}")
+            video_id = payload.get("video_id", "")
+            account_gmail = payload.get("account_gmail", "")
+        except (json_lib.JSONDecodeError, TypeError):
+            pass
+
+        if not account_gmail and t.account_id:
+            account = db.get(Account, t.account_id)
+            if account:
+                account_gmail = account.gmail
+
+        items.append({
+            "id": t.id,
+            "task_type": t.task_type,
+            "priority": t.priority,
+            "status": t.status,
+            "campaign_name": campaign_name,
+            "worker_name": worker_name,
+            "account_gmail": account_gmail,
+            "video_id": video_id,
+            "scheduled_at": str(t.scheduled_at) if t.scheduled_at else None,
+            "completed_at": str(t.completed_at) if t.completed_at else None,
+            "created_at": str(t.created_at) if t.created_at else None,
+            "error_message": t.error_message,
+        })
+
+    return {"stats": stats, "items": items}

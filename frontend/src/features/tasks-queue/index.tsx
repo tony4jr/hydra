@@ -56,34 +56,30 @@ export default function TasksQueuePage() {
 
   useEffect(() => {
     setLoading(true)
-    fetchApi<{ pending: any[]; running: any[]; completed: any[]; summary: any }>('/campaigns/api/queue')
+    fetchApi<{ stats: { pending: number; assigned: number; running: number; completed: number; failed: number }; items: any[] }>('/api/tasks/list')
       .then(data => {
-        const mapTask = (t: any, status: string): Task => ({
+        const items = (data.items || []).map((t: any): Task => ({
           id: t.id || 0,
-          type: t.type || t.task_type || '',
-          status,
-          content: t.content || t.description || '',
-          account_name: t.account_name || t.account || null,
+          type: t.task_type || '',
+          status: t.status || '',
+          content: t.task_type || '',
+          account_name: t.account_gmail || null,
           worker_name: t.worker_name || null,
-          campaign_id: t.campaign_id || null,
+          campaign_id: undefined,
           campaign_name: t.campaign_name || null,
           scheduled_at: t.scheduled_at || null,
           completed_at: t.completed_at || null,
           created_at: t.created_at || '',
-          progress: t.progress || null,
-          progress_total: t.progress_total || null,
-        })
-        const all = [
-          ...(data.running || []).map((t: any) => mapTask(t, 'running')),
-          ...(data.pending || []).map((t: any) => mapTask(t, 'pending')),
-          ...(data.completed || []).map((t: any) => mapTask(t, 'completed')),
-        ]
-        setTasks(all)
+          progress: undefined,
+          progress_total: undefined,
+        }))
+        setTasks(items)
+        const s = data.stats || { pending: 0, assigned: 0, running: 0, completed: 0, failed: 0 }
         setStats({
-          pending: (data.pending || []).length,
-          running: (data.running || []).length,
-          completed: (data.completed || []).length,
-          failed: 0,
+          pending: s.pending + s.assigned,
+          running: s.running,
+          completed: s.completed,
+          failed: s.failed,
         })
       })
       .catch(() => {})
