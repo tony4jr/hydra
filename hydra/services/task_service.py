@@ -1,7 +1,10 @@
 from datetime import UTC, datetime
+import json
 from sqlalchemy import case, or_
 from sqlalchemy.orm import Session
 from hydra.db.models import Task, ProfileLock, Worker
+from hydra.services.account_limits import can_execute_task
+from hydra.services.video_protection import check_account_video_duplicate, check_account_video_like_duplicate
 
 
 PREPARATION_TYPES = {"login", "channel_setup", "warmup"}
@@ -41,6 +44,25 @@ def fetch_tasks(db: Session, worker: Worker, limit: int = 5) -> list[Task]:
             ).first()
             if existing_lock and existing_lock.worker_id != worker.id:
                 continue
+        # Account limit check
+        if task.account_id:
+            allowed, reason = can_execute_task(db, task.account_id, task.task_type)
+            if not allowed:
+                continue
+
+        # Video duplicate check
+        if task.account_id and task.payload:
+            try:
+                payload = json.loads(task.payload)
+                video_id = payload.get("video_id", "")
+                if video_id and task.task_type in ("comment", "reply"):
+                    if not check_account_video_duplicate(db, task.account_id, video_id):
+                        continue  # 이미 댓글 달은 영상 → 건너뜀
+                if video_id and task.task_type in ("like", "like_boost"):
+                    if not check_account_video_like_duplicate(db, task.account_id, video_id):
+                        continue
+            except (json.JSONDecodeError, TypeError):
+                pass
         task.status = "assigned"
         task.worker_id = worker.id
         task.assigned_at = now
