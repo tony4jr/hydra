@@ -280,7 +280,8 @@ class TaskExecutor:
         day = payload.get("day", 1)
         persona = payload.get("persona", {})
 
-        executor = WarmupExecutor(session, day=day, persona=persona)
+        session_context = payload.get("session_context", {})
+        executor = WarmupExecutor(session, day=day, persona=persona, session_context=session_context)
         result = await executor.run()
 
         return json.dumps({"action": "warmup", **result})

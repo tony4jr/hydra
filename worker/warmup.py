@@ -5,6 +5,7 @@ from datetime import datetime, UTC
 from hydra.browser.actions import (
     random_delay, scroll_page, click_like_button,
     post_comment, watch_video, handle_ad, scroll_to_comments,
+    check_ghost,
 )
 from worker.session import WorkerSession
 from worker.google_activity import maybe_check_gmail, maybe_google_search
@@ -13,10 +14,11 @@ from worker.login import ensure_logged_in
 class WarmupExecutor:
     """워밍업 세션 실행기."""
 
-    def __init__(self, session: WorkerSession, day: int = 1, persona: dict | None = None):
+    def __init__(self, session: WorkerSession, day: int = 1, persona: dict | None = None, session_context: dict | None = None):
         self.session = session
         self.day = day
         self.persona = persona or {}
+        self.session_context = session_context or {}
         self.occupation = self.persona.get("occupation", "default")
 
     async def run(self) -> dict:
@@ -76,7 +78,40 @@ class WarmupExecutor:
             except Exception:
                 pass
 
+        # 고스트 체크 (Day 3 — Day 2에서 남긴 댓글 확인)
+        if self.day >= 3:
+            await self._check_previous_comments(page, result)
+
         return result
+
+    async def _check_previous_comments(self, page, result: dict):
+        """이전에 남긴 댓글 생존 확인."""
+        previous_comments = self.session_context.get("previous_comments", [])
+
+        for comment_info in previous_comments[:2]:  # 최대 2개만 체크
+            video_id = comment_info.get("video_id", "")
+            comment_id = comment_info.get("youtube_comment_id", "")
+            if not video_id or not comment_id:
+                continue
+
+            try:
+                await page.goto(f"https://www.youtube.com/watch?v={video_id}")
+                await random_delay(2.0, 4.0)
+
+                await scroll_to_comments(page)
+
+                # 최신순 전환
+                sort_btn = page.locator("#sort-menu tp-yt-paper-button, #sort-menu button").first
+                await sort_btn.click()
+                await random_delay(0.5, 1.0)
+                newest = page.locator("tp-yt-paper-listbox a, div[role='option']").nth(1)
+                await newest.click()
+                await random_delay(2.0, 4.0)
+
+                ghost_result = await check_ghost(page, comment_id)
+                result["actions"].append(f"ghost_check:{comment_id}:{ghost_result}")
+            except Exception:
+                pass
 
     def _pick_video_count(self) -> int:
         if self.day == 1:
