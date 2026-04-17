@@ -45,13 +45,73 @@ class TaskExecutor:
 
     # ── helpers ──────────────────────────────────────────────
 
-    async def _navigate_to_video(self, session: WorkerSession, video_id: str):
-        """영상 페이지로 이동."""
+    async def _navigate_to_video(self, session: WorkerSession, video_id: str, video_title: str = ""):
+        """영상으로 이동 (검색/추천 or 직접 URL)."""
         page = session.browser.page
-        url = f"https://www.youtube.com/watch?v={video_id}"
-        await session.browser.goto(url)
+        use_search = random.random() < 0.7 and video_title  # 70% 검색, 제목 있을 때만
+
+        if use_search:
+            try:
+                # YouTube 홈에서 검색
+                await session.browser.goto("https://www.youtube.com")
+                await random_delay(1.5, 3.0)
+
+                # 검색바 클릭
+                search_btn = page.locator("button#search-icon-legacy, input#search")
+                await search_btn.first.click()
+                await random_delay(0.5, 1.0)
+
+                # 검색어 입력 (영상 제목 일부)
+                search_query = self._make_search_query(video_title)
+                search_input = page.locator("input#search")
+                await search_input.fill("")
+                await type_human(page, "input#search", search_query)
+                await random_delay(0.5, 1.5)
+                await page.keyboard.press("Enter")
+                await random_delay(2.0, 4.0)
+
+                # 검색 결과에서 영상 찾기 (video_id 매칭)
+                found = await self._find_video_in_results(page, video_id, timeout=15)
+                if found:
+                    await handle_ad(page)
+                    return  # 검색으로 성공
+            except Exception:
+                pass  # 검색 실패 → 직접 URL 폴백
+
+        # 직접 URL (폴백 or 30%)
+        await page.goto(f"https://www.youtube.com/watch?v={video_id}")
         await random_delay(2.0, 4.0)
         await handle_ad(page)
+
+    def _make_search_query(self, title: str) -> str:
+        """영상 제목에서 자연스러운 검색어 생성."""
+        # 제목에서 핵심 단어 2~4개 추출
+        words = title.split()
+        if len(words) <= 3:
+            return title
+        num_words = random.randint(2, min(4, len(words)))
+        # 앞쪽 단어 위주 (사람은 제목 앞부분을 기억)
+        selected = words[:num_words]
+        return " ".join(selected)
+
+    async def _find_video_in_results(self, page, video_id: str, timeout: int = 15) -> bool:
+        """검색 결과에서 video_id에 해당하는 영상 클릭."""
+        import time
+        start = time.time()
+        while time.time() - start < timeout:
+            # 검색 결과의 링크들 확인
+            links = page.locator("ytd-video-renderer a#video-title, ytd-video-renderer a#thumbnail")
+            count = await links.count()
+            for i in range(min(count, 20)):
+                href = await links.nth(i).get_attribute("href")
+                if href and video_id in href:
+                    await links.nth(i).click()
+                    await random_delay(2.0, 4.0)
+                    return True
+            # 스크롤해서 더 보기
+            await page.keyboard.press("PageDown")
+            await random_delay(1.0, 2.0)
+        return False
 
     # ── handlers ─────────────────────────────────────────────
 
@@ -61,7 +121,7 @@ class TaskExecutor:
         video_id = payload["video_id"]
         text = payload["text"]
 
-        await self._navigate_to_video(session, video_id)
+        await self._navigate_to_video(session, video_id, payload.get("video_title", ""))
 
         # 영상 잠시 시청
         watch_sec = random.randint(5, 30)
@@ -90,7 +150,7 @@ class TaskExecutor:
         target_comment_selector = payload.get("target_selector", "")
         text = payload["text"]
 
-        await self._navigate_to_video(session, video_id)
+        await self._navigate_to_video(session, video_id, payload.get("video_title", ""))
 
         # 댓글 영역으로 스크롤
         await scroll_to_comments(page)
@@ -110,7 +170,7 @@ class TaskExecutor:
         page = session.browser.page
         video_id = payload["video_id"]
 
-        await self._navigate_to_video(session, video_id)
+        await self._navigate_to_video(session, video_id, payload.get("video_title", ""))
 
         # 영상 시청
         watch_sec = random.randint(5, 30)
@@ -132,7 +192,7 @@ class TaskExecutor:
         video_id = payload["video_id"]
         target_comment_id = payload.get("target_comment_id", "")
 
-        await self._navigate_to_video(session, video_id)
+        await self._navigate_to_video(session, video_id, payload.get("video_title", ""))
 
         # 영상 잠시 시청
         watch_sec = random.randint(3, 15)
@@ -192,7 +252,7 @@ class TaskExecutor:
         page = session.browser.page
         video_id = payload["video_id"]
 
-        await self._navigate_to_video(session, video_id)
+        await self._navigate_to_video(session, video_id, payload.get("video_title", ""))
 
         # 구독 버튼 클릭
         subscribe_btn = page.locator(
@@ -230,7 +290,7 @@ class TaskExecutor:
         video_id = payload["video_id"]
         youtube_comment_id = payload.get("youtube_comment_id", "")
 
-        await self._navigate_to_video(session, video_id)
+        await self._navigate_to_video(session, video_id, payload.get("video_title", ""))
 
         # 댓글 영역으로 스크롤
         await scroll_to_comments(page)
