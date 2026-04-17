@@ -226,6 +226,50 @@ export default function WorkersPage() {
                       </Badge>
                     )}
                   </div>
+                  <div className='pt-2'>
+                    {worker.status === 'online' && (
+                      <Button
+                        variant='outline'
+                        size='sm'
+                        className='w-full'
+                        onClick={async (e) => {
+                          e.stopPropagation()
+                          try {
+                            await fetchApi(
+                              `/api/workers/${worker.id}/pause`,
+                              { method: 'POST' }
+                            )
+                            loadWorkers()
+                          } catch {
+                            // silently handled
+                          }
+                        }}
+                      >
+                        <Pause className='mr-1 h-3 w-3' /> 일시정지
+                      </Button>
+                    )}
+                    {worker.status === 'paused' && (
+                      <Button
+                        variant='outline'
+                        size='sm'
+                        className='w-full'
+                        onClick={async (e) => {
+                          e.stopPropagation()
+                          try {
+                            await fetchApi(
+                              `/api/workers/${worker.id}/resume`,
+                              { method: 'POST' }
+                            )
+                            loadWorkers()
+                          } catch {
+                            // silently handled
+                          }
+                        }}
+                      >
+                        <Wifi className='mr-1 h-3 w-3' /> 재개
+                      </Button>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             ))}
