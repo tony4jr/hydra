@@ -531,10 +531,33 @@ hydra-worker-setup 실행 시:
 5. Worker 시작
 ```
 
-### 빌드 방법
+### OS별 빌드 (2개)
+
 ```
-Windows용: Windows PC에서 PyInstaller → .exe
-Mac용: Mac에서 PyInstaller → .app
+hydra-worker-setup-windows.exe:
+├── PyInstaller로 Windows에서 빌드
+├── AdsPower: Windows .exe 다운로드 URL
+├── ADB: platform-tools-windows.zip 다운로드 → 압축 해제 → PATH 추가
+├── 경로: C:\Users\{user}\.hydra-worker\
+└── adb.exe, AdsPower.exe 경로 자동 감지
+
+hydra-worker-setup-mac.dmg:
+├── PyInstaller로 Mac에서 빌드
+├── AdsPower: Mac .dmg 다운로드 URL (Intel/M시리즈 자동 감지)
+├── ADB: platform-tools-darwin.zip 다운로드 또는 brew install
+├── 경로: ~/.hydra-worker/
+└── adb, AdsPower 경로 자동 감지
+
+인스톨러 내부 로직:
+├── platform.system() → "Windows" or "Darwin"
+├── platform.machine() → "x86_64" or "arm64" (Mac M시리즈 구분)
+├── OS에 맞는 다운로드 URL 선택
+├── OS에 맞는 설치 방식 실행
+└── OS에 맞는 PATH/경로 설정
+```
+
+### 빌드 배포
+```
 서버 업데이트 시: 새 빌드 → 자동 업데이트로 Worker에 배포
 ```
 
