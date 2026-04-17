@@ -19,12 +19,12 @@ import { AccountDetailSheet } from './account-detail-sheet'
 
 interface Account {
   id: number
-  name: string
+  gmail: string
   status: string
-  current_pc: string | null
-  today_tasks: number
+  adspower_profile_id: string | null
   success_rate: number
-  last_activity: string | null
+  ghost_count: number
+  last_active_at: string | null
 }
 
 interface AccountStats {
@@ -141,7 +141,7 @@ export default function AccountsPage() {
                         <span
                           className={`inline-block h-2 w-2 rounded-full ${statusDotColor(acc.status)}`}
                         />
-                        {acc.name}
+                        {acc.gmail}
                       </div>
                     </td>
                     <td className='p-3 text-center'>
@@ -150,15 +150,15 @@ export default function AccountsPage() {
                       </Badge>
                     </td>
                     <td className='p-3 text-center'>
-                      {acc.current_pc || (
+                      {acc.adspower_profile_id || (
                         <span className='text-muted-foreground'>-</span>
                       )}
                     </td>
-                    <td className='p-3 text-center'>{acc.today_tasks}</td>
+                    <td className='p-3 text-center'>{acc.ghost_count}</td>
                     <td className='p-3 text-center'>{acc.success_rate}%</td>
                     <td className='p-3 text-right text-muted-foreground'>
-                      {acc.last_activity
-                        ? new Date(acc.last_activity).toLocaleString('ko')
+                      {acc.last_active_at
+                        ? new Date(acc.last_active_at).toLocaleString('ko')
                         : '-'}
                     </td>
                   </tr>

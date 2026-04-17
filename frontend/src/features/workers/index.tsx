@@ -76,17 +76,16 @@ export default function WorkersPage() {
   })
 
   const loadWorkers = () => {
-    fetchApi<{ items: Worker[]; summary: WorkerSummary }>('/api/workers/')
+    fetchApi<Worker[]>('/api/workers/')
       .then((data) => {
-        setWorkers(data.items || [])
-        setSummary(
-          data.summary || {
-            online: 0,
-            total: 0,
+        const workerList = Array.isArray(data) ? data : []
+        setWorkers(workerList)
+        setSummary({
+            online: workerList.filter(w => w.status === 'online').length,
+            total: workerList.length,
             running_tasks: 0,
             completed_today: 0,
-          }
-        )
+          })
       })
       .catch(() => {})
   }
