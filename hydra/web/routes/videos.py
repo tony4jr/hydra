@@ -105,11 +105,21 @@ def scraped_stats(db: Session = Depends(get_db)):
 
 @router.post("/api/collect")
 def collect_videos(brand_id: int = None, db: Session = Depends(get_db)):
-    from hydra.services.video_collector import collect_videos_for_brand
+    from hydra.services.video_collector import collect_new_videos
     if not brand_id:
         return {"ok": False, "error": "brand_id required"}
-    result = collect_videos_for_brand(db, brand_id)
-    return {"ok": True, "keywords_searched": len(result)}
+    videos = collect_new_videos(db, brand_id)
+    return {"ok": True, "collected": len(videos)}
+
+
+@router.post("/api/collect/initial")
+def collect_initial(brand_id: int, db: Session = Depends(get_db)):
+    """초기 세팅: 조회수순 대량 수집."""
+    from hydra.services.video_collector import collect_initial_videos
+    if not brand_id:
+        return {"ok": False, "error": "brand_id required"}
+    videos = collect_initial_videos(db, brand_id)
+    return {"ok": True, "collected": len(videos)}
 
 
 @router.post("/api/add-manual")

@@ -31,6 +31,10 @@ export function DirectCampaignDialog({
   const [commentEnabled, setCommentEnabled] = useState(false)
   const [commentMode, setCommentMode] = useState<'manual' | 'ai'>('ai')
   const [commentText, setCommentText] = useState('')
+  const [replyEnabled, setReplyEnabled] = useState(false)
+  const [replyTarget, setReplyTarget] = useState('')
+  const [replyMode, setReplyMode] = useState<'manual' | 'ai'>('ai')
+  const [replyText, setReplyText] = useState('')
   const [subscribeEnabled, setSubscribeEnabled] = useState(false)
   const [loading, setLoading] = useState(false)
 
@@ -52,6 +56,9 @@ export function DirectCampaignDialog({
             comment: commentEnabled
               ? { mode: commentMode, text: commentMode === 'manual' ? commentText : null }
               : null,
+            reply: replyEnabled
+              ? { target: replyTarget, mode: replyMode, text: replyMode === 'manual' ? replyText : null }
+              : null,
             subscribe: subscribeEnabled,
           },
         }),
@@ -65,7 +72,7 @@ export function DirectCampaignDialog({
     }
   }
 
-  const hasAction = likeEnabled || commentEnabled || subscribeEnabled
+  const hasAction = likeEnabled || commentEnabled || replyEnabled || subscribeEnabled
   const urlCount = urls
     .split('\n')
     .map((u) => u.trim())
@@ -155,6 +162,56 @@ export function DirectCampaignDialog({
                       value={commentText}
                       onChange={(e) => setCommentText(e.target.value)}
                       placeholder='댓글 내용 입력'
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Reply */}
+            <div className='space-y-2'>
+              <div className='flex items-center gap-3'>
+                <Checkbox
+                  id='action-reply'
+                  checked={replyEnabled}
+                  onCheckedChange={(v) => setReplyEnabled(v === true)}
+                />
+                <Label htmlFor='action-reply' className='font-normal'>
+                  대댓글
+                </Label>
+              </div>
+              {replyEnabled && (
+                <div className='ml-7 space-y-2'>
+                  <Input
+                    value={replyTarget}
+                    onChange={(e) => setReplyTarget(e.target.value)}
+                    placeholder='대상 댓글 (텍스트 일부 또는 작성자)'
+                  />
+                  <RadioGroup
+                    value={replyMode}
+                    onValueChange={(v) =>
+                      setReplyMode(v as 'manual' | 'ai')
+                    }
+                  >
+                    <div className='flex items-center gap-2'>
+                      <RadioGroupItem value='ai' id='reply-ai' />
+                      <Label htmlFor='reply-ai' className='font-normal'>
+                        AI 생성
+                      </Label>
+                    </div>
+                    <div className='flex items-center gap-2'>
+                      <RadioGroupItem value='manual' id='reply-manual' />
+                      <Label htmlFor='reply-manual' className='font-normal'>
+                        직접 입력
+                      </Label>
+                    </div>
+                  </RadioGroup>
+                  {replyMode === 'manual' && (
+                    <Textarea
+                      value={replyText}
+                      onChange={(e) => setReplyText(e.target.value)}
+                      placeholder='대댓글 내용 입력'
+                      rows={2}
                     />
                   )}
                 </div>

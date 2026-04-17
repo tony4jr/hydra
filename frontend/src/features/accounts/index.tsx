@@ -8,7 +8,16 @@ import {
   Ghost,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -74,6 +83,10 @@ export default function AccountsPage() {
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
   const [accounts, setAccounts] = useState<Account[]>([])
+  const [warmupSelected, setWarmupSelected] = useState<number[]>([])
+  const [warmupDay, setWarmupDay] = useState('1')
+  const [warmupLoading, setWarmupLoading] = useState(false)
+  const [warmupMsg, setWarmupMsg] = useState('')
   const [stats, setStats] = useState<AccountStats>({
     total: 0,
     active: 0,
@@ -91,6 +104,13 @@ export default function AccountsPage() {
       .then((data) => setAccounts(data.items || []))
       .catch(() => {})
   }, [])
+
+  const warmupCandidates = accounts.filter(
+    (a) =>
+      a.status === 'registered' ||
+      a.status === 'profile_set' ||
+      a.status === 'warmup'
+  )
 
   const statCards = [
     { title: '전체', value: stats.total, icon: Users, color: 'text-muted-foreground' },
@@ -220,7 +240,135 @@ export default function AccountsPage() {
             {accountTable(accounts)}
           </TabsContent>
           <TabsContent value='warmup' className='mt-4'>
-            {accountTable(accounts.filter((a) => a.status === 'warmup'))}
+            <Card>
+              <CardContent className='p-4'>
+                <div className='mb-4 flex flex-wrap items-center gap-3'>
+                  <Select value={warmupDay} onValueChange={setWarmupDay}>
+                    <SelectTrigger className='w-32'>
+                      <SelectValue placeholder='Day 선택' />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value='1'>Day 1</SelectItem>
+                      <SelectItem value='2'>Day 2</SelectItem>
+                      <SelectItem value='3'>Day 3</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    disabled={warmupSelected.length === 0 || warmupLoading}
+                    onClick={async () => {
+                      setWarmupLoading(true)
+                      setWarmupMsg('')
+                      try {
+                        await fetchApi('/api/tasks/warmup/batch', {
+                          method: 'POST',
+                          body: JSON.stringify({
+                            account_ids: warmupSelected,
+                            day: parseInt(warmupDay),
+                          }),
+                        })
+                        setWarmupMsg(
+                          `${warmupSelected.length}개 계정 워밍업 Day ${warmupDay} 시작됨`
+                        )
+                        setWarmupSelected([])
+                      } catch {
+                        setWarmupMsg('워밍업 시작 실패')
+                      } finally {
+                        setWarmupLoading(false)
+                      }
+                    }}
+                  >
+                    {warmupLoading
+                      ? '실행 중...'
+                      : `워밍업 시작 (${warmupSelected.length}개)`}
+                  </Button>
+                  {warmupMsg && (
+                    <span className='text-sm text-muted-foreground'>
+                      {warmupMsg}
+                    </span>
+                  )}
+                </div>
+                <div className='overflow-auto'>
+                  <table className='w-full text-sm'>
+                    <thead>
+                      <tr className='border-b bg-muted/50'>
+                        <th className='w-10 p-3'>
+                          <Checkbox
+                            checked={
+                              warmupCandidates.length > 0 &&
+                              warmupSelected.length === warmupCandidates.length
+                            }
+                            onCheckedChange={(checked) => {
+                              setWarmupSelected(
+                                checked
+                                  ? warmupCandidates.map((a) => a.id)
+                                  : []
+                              )
+                            }}
+                          />
+                        </th>
+                        <th className='p-3 text-left font-medium'>계정명</th>
+                        <th className='p-3 text-center font-medium'>상태</th>
+                        <th className='p-3 text-right font-medium'>
+                          마지막 활동
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {warmupCandidates.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={4}
+                            className='p-10 text-center text-muted-foreground'
+                          >
+                            워밍업 대상 계정이 없습니다.
+                          </td>
+                        </tr>
+                      ) : (
+                        warmupCandidates.map((acc) => (
+                          <tr
+                            key={acc.id}
+                            className='cursor-pointer border-b hover:bg-muted/50'
+                          >
+                            <td className='p-3'>
+                              <Checkbox
+                                checked={warmupSelected.includes(acc.id)}
+                                onCheckedChange={(checked) => {
+                                  setWarmupSelected((prev) =>
+                                    checked
+                                      ? [...prev, acc.id]
+                                      : prev.filter((id) => id !== acc.id)
+                                  )
+                                }}
+                              />
+                            </td>
+                            <td className='p-3'>
+                              <div className='flex items-center gap-2'>
+                                <span
+                                  className={`inline-block h-2 w-2 rounded-full ${statusDotColor(acc.status)}`}
+                                />
+                                {acc.gmail}
+                              </div>
+                            </td>
+                            <td className='p-3 text-center'>
+                              <Badge variant={statusColor(acc.status)}>
+                                {acc.status}
+                              </Badge>
+                            </td>
+                            <td className='p-3 text-right text-muted-foreground'>
+                              {acc.last_active_at
+                                ? new Date(
+                                    acc.last_active_at
+                                  ).toLocaleString('ko')
+                                : '-'}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
           <TabsContent value='problem' className='mt-4'>
             {accountTable(

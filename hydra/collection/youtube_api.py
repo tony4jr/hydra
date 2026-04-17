@@ -51,8 +51,12 @@ def _parse_duration(iso_duration: str) -> int:
     return h * 3600 + m * 60 + s
 
 
-def search_videos(keyword_text: str, max_results: int = 50) -> list[dict]:
-    """Search YouTube for videos matching keyword. Returns raw items."""
+def search_videos(keyword_text: str, max_results: int = 50, order: str = "relevance") -> list[dict]:
+    """Search YouTube for videos matching keyword. Returns raw items.
+
+    Args:
+        order: "relevance" | "date" | "viewCount" — YouTube search order.
+    """
     yt = _get_youtube_service()
     results = []
     next_page = None
@@ -63,6 +67,7 @@ def search_videos(keyword_text: str, max_results: int = 50) -> list[dict]:
                 q=keyword_text,
                 part="id,snippet",
                 type="video",
+                order=order,
                 relevanceLanguage="ko",
                 regionCode="KR",
                 maxResults=min(50, max_results - len(results)),

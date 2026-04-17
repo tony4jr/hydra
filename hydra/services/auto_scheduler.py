@@ -55,8 +55,17 @@ def auto_create_campaigns(db: Session, max_per_run: int = 5) -> list[Campaign]:
         # 작업 가능한 영상 찾기
         available_videos = _find_available_videos(db, brand_id, to_create)
 
-        # 프리셋 랜덤 선택
-        presets = db.query(Preset).all()
+        # 브랜드의 선택된 프리셋 사용
+        brand = db.get(Brand, brand_id)
+        if brand and brand.selected_presets:
+            try:
+                selected_codes = json.loads(brand.selected_presets)
+                presets = db.query(Preset).filter(Preset.code.in_(selected_codes)).all()
+            except (json.JSONDecodeError, TypeError):
+                presets = db.query(Preset).all()
+        else:
+            presets = db.query(Preset).all()
+
         if not presets:
             continue
 
@@ -86,25 +95,81 @@ def auto_create_campaigns(db: Session, max_per_run: int = 5) -> list[Campaign]:
 
 
 def _find_available_videos(db: Session, brand_id: int, limit: int) -> list:
-    """브랜드의 키워드로 수집된 영상 중 작업 가능한 것들."""
+    """작업 우선순위에 따라 영상 선택.
+    1순위: 인기 (조회수 높은 순)
+    2순위: 신규 (24시간 이내)
+    3순위: 최근 (7일 이내)
+    4순위: 나머지
+    """
+    now = datetime.now(UTC)
+
     keywords = db.query(Keyword).filter(
         Keyword.brand_id == brand_id,
         Keyword.status == "active",
     ).all()
-
     keyword_ids = [kw.id for kw in keywords]
     if not keyword_ids:
         return []
 
-    videos = db.query(Video).filter(
+    base_query = db.query(Video).filter(
         Video.keyword_id.in_(keyword_ids),
         Video.status == "available",
         Video.comments_enabled == True,
-    ).order_by(Video.collected_at.desc()).limit(limit * 2).all()
+    )
 
-    # 셔플해서 랜덤 선택
-    random.shuffle(videos)
-    return videos[:limit]
+    # 1순위: 조회수 높은 순
+    popular = base_query.order_by(Video.view_count.desc()).limit(limit * 3).all()
+
+    result = []
+    for v in popular:
+        if len(result) >= limit:
+            break
+        allowed, _ = check_video_campaign_limit(db, v.id)
+        if allowed:
+            result.append(v)
+
+    if len(result) >= limit:
+        return result
+
+    # 2순위: 24시간 이내 신규
+    new_cutoff = now - timedelta(hours=24)
+    new_videos = base_query.filter(Video.published_at >= new_cutoff).order_by(Video.published_at.desc()).limit(limit * 2).all()
+    for v in new_videos:
+        if len(result) >= limit:
+            break
+        if v not in result:
+            allowed, _ = check_video_campaign_limit(db, v.id)
+            if allowed:
+                result.append(v)
+
+    if len(result) >= limit:
+        return result
+
+    # 3순위: 7일 이내
+    recent_cutoff = now - timedelta(days=7)
+    recent = base_query.filter(Video.published_at >= recent_cutoff).order_by(Video.published_at.desc()).limit(limit * 2).all()
+    for v in recent:
+        if len(result) >= limit:
+            break
+        if v not in result:
+            allowed, _ = check_video_campaign_limit(db, v.id)
+            if allowed:
+                result.append(v)
+
+    if len(result) >= limit:
+        return result
+
+    # 4순위: 나머지
+    rest = base_query.order_by(Video.collected_at.desc()).limit(limit * 2).all()
+    for v in rest:
+        if len(result) >= limit:
+            break
+        if v not in result:
+            allowed, _ = check_video_campaign_limit(db, v.id)
+            if allowed:
+                result.append(v)
+
+    return result
 
 
 def _get_week_start() -> datetime:

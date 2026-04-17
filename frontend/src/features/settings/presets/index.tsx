@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -12,7 +12,13 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Table,
   TableBody,
@@ -64,7 +70,7 @@ export function SettingsPresets() {
   const [formName, setFormName] = useState('')
   const [formCode, setFormCode] = useState('')
   const [formDescription, setFormDescription] = useState('')
-  const [formSteps, setFormSteps] = useState('')
+  const [formSteps, setFormSteps] = useState<PresetStep[]>([])
   const [saving, setSaving] = useState(false)
 
   const loadPresets = () => {
@@ -82,7 +88,7 @@ export function SettingsPresets() {
     setFormName('')
     setFormCode('')
     setFormDescription('')
-    setFormSteps(JSON.stringify(defaultSteps, null, 2))
+    setFormSteps([...defaultSteps])
     setDialogOpen(true)
   }
 
@@ -91,18 +97,44 @@ export function SettingsPresets() {
     setFormName(preset.name)
     setFormCode(preset.code)
     setFormDescription(preset.description || '')
-    setFormSteps(JSON.stringify(preset.steps || [], null, 2))
+    setFormSteps(preset.steps?.length ? [...preset.steps] : [...defaultSteps])
     setDialogOpen(true)
   }
 
+  const updateStep = (index: number, field: keyof PresetStep, value: string | number) => {
+    setFormSteps((prev) => {
+      const next = [...prev]
+      next[index] = { ...next[index], [field]: value }
+      return next
+    })
+  }
+
+  const addStep = () => {
+    setFormSteps((prev) => [
+      ...prev,
+      {
+        step_number: prev.length + 1,
+        role: 'seed',
+        type: 'comment',
+        tone: '',
+        target: 'main',
+        like_count: 0,
+        delay_min: 30,
+        delay_max: 120,
+      },
+    ])
+  }
+
+  const removeStep = (index: number) => {
+    setFormSteps((prev) =>
+      prev
+        .filter((_, i) => i !== index)
+        .map((s, i) => ({ ...s, step_number: i + 1 }))
+    )
+  }
+
   const handleSave = async () => {
-    let steps: PresetStep[]
-    try {
-      steps = JSON.parse(formSteps)
-    } catch {
-      alert('Steps JSON이 올바르지 않습니다.')
-      return
-    }
+    const steps = formSteps.map((s, i) => ({ ...s, step_number: i + 1 }))
 
     setSaving(true)
     try {
@@ -263,19 +295,92 @@ export function SettingsPresets() {
                 />
               </div>
               <div className='space-y-2'>
-                <Label htmlFor='preset-steps'>
-                  스텝 (JSON)
-                </Label>
-                <Textarea
-                  id='preset-steps'
-                  className='min-h-[200px] font-mono text-sm'
-                  value={formSteps}
-                  onChange={(e) => setFormSteps(e.target.value)}
-                />
-                <p className='text-xs text-muted-foreground'>
-                  각 스텝: step_number, role, type, tone, target, like_count,
-                  delay_min, delay_max
-                </p>
+                <Label>스텝 편집기</Label>
+                <div className='space-y-3 max-h-[300px] overflow-y-auto'>
+                  {formSteps.map((step, i) => (
+                    <div
+                      key={i}
+                      className='grid grid-cols-8 gap-2 items-center border p-2 rounded'
+                    >
+                      <span className='text-sm text-muted-foreground text-center'>
+                        #{i + 1}
+                      </span>
+                      <Select
+                        value={step.role}
+                        onValueChange={(v) => updateStep(i, 'role', v)}
+                      >
+                        <SelectTrigger className='h-8 text-xs'>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value='seed'>시드</SelectItem>
+                          <SelectItem value='asker'>질문자</SelectItem>
+                          <SelectItem value='witness'>목격자</SelectItem>
+                          <SelectItem value='agree'>동조자</SelectItem>
+                          <SelectItem value='curious'>궁금이</SelectItem>
+                          <SelectItem value='info'>정보통</SelectItem>
+                          <SelectItem value='fan'>팬</SelectItem>
+                          <SelectItem value='qa'>QA</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Select
+                        value={step.type}
+                        onValueChange={(v) => updateStep(i, 'type', v)}
+                      >
+                        <SelectTrigger className='h-8 text-xs'>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value='comment'>댓글</SelectItem>
+                          <SelectItem value='reply'>대댓글</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        className='h-8 text-xs'
+                        placeholder='톤'
+                        value={step.tone}
+                        onChange={(e) => updateStep(i, 'tone', e.target.value)}
+                      />
+                      <Input
+                        className='h-8 text-xs'
+                        placeholder='대상'
+                        value={step.target}
+                        onChange={(e) =>
+                          updateStep(i, 'target', e.target.value)
+                        }
+                      />
+                      <Input
+                        className='h-8 text-xs'
+                        type='number'
+                        placeholder='좋아요'
+                        value={step.like_count}
+                        onChange={(e) =>
+                          updateStep(i, 'like_count', parseInt(e.target.value) || 0)
+                        }
+                      />
+                      <Input
+                        className='h-8 text-xs'
+                        type='number'
+                        placeholder='딜레이(분)'
+                        value={step.delay_min}
+                        onChange={(e) =>
+                          updateStep(i, 'delay_min', parseInt(e.target.value) || 0)
+                        }
+                      />
+                      <Button
+                        variant='ghost'
+                        size='sm'
+                        className='h-8 w-8 p-0'
+                        onClick={() => removeStep(i)}
+                      >
+                        <X className='h-4 w-4' />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                <Button variant='outline' size='sm' onClick={addStep}>
+                  <Plus className='mr-1 h-3 w-3' /> 스텝 추가
+                </Button>
               </div>
             </div>
             <DialogFooter>

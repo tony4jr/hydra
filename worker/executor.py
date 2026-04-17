@@ -116,11 +116,38 @@ class TaskExecutor:
 
     # ── handlers ─────────────────────────────────────────────
 
+    async def _generate_comment_text(self, payload: dict) -> str:
+        """서버에서 AI 텍스트 생성 요청."""
+        # Worker는 직접 AI를 호출하지 않음 — 서버에 요청
+        # 서버의 content_agent가 transcript + persona로 생성
+        import httpx
+        from worker.config import config
+        resp = httpx.post(
+            f"{config.server_url}/api/generate-comment",
+            headers={"X-Worker-Token": config.worker_token},
+            json=payload,
+            timeout=30,
+        )
+        if resp.status_code == 200:
+            return resp.json().get("text", "")
+        return ""
+
     async def _handle_comment(self, task: dict, payload: dict, session: WorkerSession) -> str:
         """영상에 댓글 작성."""
         page = session.browser.page
-        video_id = payload["video_id"]
-        text = payload["text"]
+        video_id = payload.get("video_id", "")
+        text = payload.get("text", "")
+
+        # AI 자동 생성 (text가 없는 경우)
+        if not text and payload.get("ai_generated") is not True:
+            try:
+                text = await self._generate_comment_text(payload)
+            except Exception as e:
+                print(f"  [Executor] AI generation failed, using fallback: {e}")
+                text = ""
+
+        if not text:
+            return json.dumps({"action": "comment", "error": "no_text"})
 
         await self._navigate_to_video(session, video_id, payload.get("video_title", ""))
 
@@ -147,9 +174,20 @@ class TaskExecutor:
     async def _handle_reply(self, task: dict, payload: dict, session: WorkerSession) -> str:
         """댓글에 대댓글 작성."""
         page = session.browser.page
-        video_id = payload["video_id"]
+        video_id = payload.get("video_id", "")
         target_comment_selector = payload.get("target_selector", "")
-        text = payload["text"]
+        text = payload.get("text", "")
+
+        # AI 자동 생성 (text가 없는 경우)
+        if not text and payload.get("ai_generated") is not True:
+            try:
+                text = await self._generate_comment_text(payload)
+            except Exception as e:
+                print(f"  [Executor] AI generation failed for reply: {e}")
+                text = ""
+
+        if not text:
+            return json.dumps({"action": "reply", "error": "no_text"})
 
         await self._navigate_to_video(session, video_id, payload.get("video_title", ""))
 

@@ -1,13 +1,25 @@
 import { useEffect, useState } from 'react'
-import { Plus, RefreshCw } from 'lucide-react'
+import { Download, Plus, RefreshCw } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { fetchApi } from '@/lib/api'
+
+interface Brand {
+  id: number
+  name: string
+}
 
 interface Video {
   id: string
@@ -28,6 +40,10 @@ interface VideoListResponse {
 export default function TargetsPage() {
   const [videos, setVideos] = useState<Video[]>([])
   const [total, setTotal] = useState(0)
+  const [brands, setBrands] = useState<Brand[]>([])
+  const [initialBrandId, setInitialBrandId] = useState('')
+  const [initialLoading, setInitialLoading] = useState(false)
+  const [initialMsg, setInitialMsg] = useState('')
 
   useEffect(() => {
     fetchApi<VideoListResponse>('/videos/api/list')
@@ -36,7 +52,31 @@ export default function TargetsPage() {
         setTotal(data.total || 0)
       })
       .catch(() => {})
+    fetchApi<Brand[]>('/brands/api/list')
+      .then(setBrands)
+      .catch(() => setBrands([]))
   }, [])
+
+  const handleInitialCollect = async () => {
+    if (!initialBrandId) return
+    setInitialLoading(true)
+    setInitialMsg('')
+    try {
+      await fetchApi(
+        `/videos/api/collect/initial?brand_id=${initialBrandId}`,
+        { method: 'POST' }
+      )
+      setInitialMsg('초기 수집 시작됨')
+      // reload video list
+      const data = await fetchApi<VideoListResponse>('/videos/api/list')
+      setVideos(data.items || [])
+      setTotal(data.total || 0)
+    } catch {
+      setInitialMsg('초기 수집 실패')
+    } finally {
+      setInitialLoading(false)
+    }
+  }
 
   return (
     <>
@@ -54,13 +94,38 @@ export default function TargetsPage() {
               타겟 영상 수집 + 관리 ({total}개)
             </p>
           </div>
-          <div className='flex gap-2'>
+          <div className='flex flex-wrap items-center gap-2'>
+            <Select value={initialBrandId} onValueChange={setInitialBrandId}>
+              <SelectTrigger className='w-40'>
+                <SelectValue placeholder='브랜드 선택' />
+              </SelectTrigger>
+              <SelectContent>
+                {brands.map((b) => (
+                  <SelectItem key={b.id} value={String(b.id)}>
+                    {b.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              variant='outline'
+              disabled={!initialBrandId || initialLoading}
+              onClick={handleInitialCollect}
+            >
+              <Download className='mr-2 h-4 w-4' />
+              {initialLoading ? '수집 중...' : '초기 수집'}
+            </Button>
             <Button variant='outline'>
-              <RefreshCw className='mr-2 h-4 w-4' /> 수집 실행
+              <RefreshCw className='mr-2 h-4 w-4' /> 정기 수집
             </Button>
             <Button>
               <Plus className='mr-2 h-4 w-4' /> URL 추가
             </Button>
+            {initialMsg && (
+              <span className='text-sm text-muted-foreground'>
+                {initialMsg}
+              </span>
+            )}
           </div>
         </div>
 
