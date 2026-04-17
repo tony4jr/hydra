@@ -11,11 +11,35 @@ from hydra.ai.harness import call_claude, load_prompt
 PROMO_ROLES = {"seed", "info", "witness", "qa"}
 CASUAL_ROLES = {"agree", "fan", "curious", "asker"}
 
+# 페르소나 말투 가이드
+PERSONA_SPEECH = {
+    "대학생": "축약어 많이 (ㅋㅋ, ㄹㅇ, ;;), 반말 위주, 전문 용어 안 씀, 친구한테 말하듯이",
+    "회사원": "반말+존댓말 혼용, ㅋㅋ 적당히, 자기 경험 위주",
+    "주부": "존댓말 위주, 공감 표현 많이 (맞아요, 저도요), ㅠㅠ .. 자주 사용",
+    "전문직": "정중한 존댓말, 전문 용어 자연스럽게, 근거 기반",
+    "자영업": "실용적 톤, 직접 써본 후기 위주",
+    "프리랜서": "캐주얼, 자기 경험 기반",
+}
+
+
 def _select_model(role: str) -> str:
     """역할에 따라 모델 선택."""
     if role in PROMO_ROLES:
         return get_model("comment")  # Sonnet
     return get_model("casual")  # Haiku
+
+
+def _fetch_transcript(video_id: str) -> str:
+    """YouTube 영상 자막/스크립트 가져오기."""
+    try:
+        from youtube_transcript_api import YouTubeTranscriptApi
+        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['ko', 'en'])
+        # 전체 텍스트 합치기 (최대 2000자)
+        full_text = " ".join([t["text"] for t in transcript_list])
+        return full_text[:2000]
+    except Exception:
+        return ""
+
 
 def generate_conversation(
     brand: dict,
@@ -36,6 +60,10 @@ def generate_conversation(
     Returns:
         [{"step_number": int, "role": str, "text": str}]
     """
+    # 영상 스크립트 가져오기
+    video_id = video.get("url", "").split("v=")[-1].split("&")[0] if video.get("url") else ""
+    transcript = _fetch_transcript(video_id) if video_id else ""
+
     results = []
     conversation_context = []  # 이전 스텝의 결과를 맥락으로 전달
 
@@ -47,16 +75,20 @@ def generate_conversation(
 
         model = _select_model(role)
 
+        # 페르소나 가져오기
+        persona = personas[i] if personas and i < len(personas) else None
+
         # 시스템 프롬프트 구성
-        system_prompt = _build_system_prompt(brand, role, tone)
+        system_prompt = _build_system_prompt(brand, role, tone, persona)
 
         # 유저 메시지 구성
         user_message = _build_user_message(
             video=video,
             step=step,
             conversation_context=conversation_context,
-            persona=personas[i] if personas and i < len(personas) else None,
+            persona=persona,
             previous_results=previous_results,
+            transcript=transcript,
         )
 
         # 댓글 생성
@@ -79,7 +111,7 @@ def generate_conversation(
 
     return results
 
-def _build_system_prompt(brand: dict, role: str, tone: str) -> str:
+def _build_system_prompt(brand: dict, role: str, tone: str, persona: dict | None = None) -> str:
     """역할과 톤에 맞는 시스템 프롬프트 생성."""
     brand_name = brand.get("name", "")
     product = brand.get("product", "")
@@ -106,6 +138,19 @@ def _build_system_prompt(brand: dict, role: str, tone: str) -> str:
 - 너무 길지 않게 (1~3문장)
 - 같은 표현 반복 금지"""
 
+    # 페르소나 말투 강화
+    if persona:
+        occupation = persona.get("occupation", "")
+        age = persona.get("age", "")
+        gender = persona.get("gender", "")
+        speech = PERSONA_SPEECH.get(occupation, "자연스러운 구어체, 평범한 말투")
+        base += f"""
+
+페르소나:
+- {age}대 {gender} {occupation}
+- 말투: {speech}
+- 이 사람이 실제로 댓글을 달듯이 작성하세요"""
+
     return base
 
 def _build_user_message(
@@ -114,6 +159,7 @@ def _build_user_message(
     conversation_context: list[dict],
     persona: dict | None,
     previous_results: list[str] | None,
+    transcript: str = "",
 ) -> str:
     """유저 메시지 구성."""
     parts = []
@@ -122,6 +168,10 @@ def _build_user_message(
     parts.append(f"영상 제목: {video.get('title', '')}")
     if video.get("description"):
         parts.append(f"영상 설명: {video['description'][:200]}")
+
+    # 영상 스크립트 (자막)
+    if transcript:
+        parts.append(f"\n영상 스크립트 (자막):\n{transcript[:1000]}")
 
     # 페르소나
     if persona:
