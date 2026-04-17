@@ -240,3 +240,39 @@ def _apply_custom_scenario(data: ScenarioInput):
         like_target_step=data.like_target_step,
         total_likes=(data.total_likes_min, data.total_likes_max),
     )
+
+
+# --- 텔레그램 테스트 전송 ---
+
+@router.post("/api/test-telegram")
+async def test_telegram(db: Session = Depends(get_db)):
+    """텔레그램 알림 테스트 전송."""
+    # DB에서 텔레그램 설정 가져오기
+    rows = db.query(SystemConfig).filter(
+        SystemConfig.key.in_(["telegram_bot_token", "telegram_chat_id"])
+    ).all()
+    config = {r.key: r.value for r in rows}
+
+    bot_token = config.get("telegram_bot_token") or app_settings.telegram_bot_token
+    chat_id = config.get("telegram_chat_id") or app_settings.telegram_chat_id
+
+    if not bot_token or not chat_id:
+        return {"ok": False, "error": "텔레그램 Bot Token과 Chat ID를 먼저 설정하세요"}
+
+    try:
+        import httpx
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                json={
+                    "chat_id": chat_id,
+                    "text": "✅ HYDRA 텔레그램 알림 테스트\n\n연결이 정상적으로 작동합니다!",
+                },
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                return {"ok": True, "message": "테스트 메시지를 전송했어요"}
+            else:
+                return {"ok": False, "error": f"전송 실패: {resp.text}"}
+    except Exception as e:
+        return {"ok": False, "error": f"연결 실패: {str(e)}"}
