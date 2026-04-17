@@ -498,18 +498,47 @@ POST /api/tasks/cancel/batch — 캠페인 단위 일괄 취소
 
 ## 13. Worker 앱 설치
 
-### setup.py 환경 검증
+### 올인원 인스톨러 (hydra-worker-setup.exe / .app)
+
+PyInstaller로 빌드. 대상 PC에 Python 설치 필요 없음.
+
 ```
-1. Python 버전 체크 (3.11+ 필수)
-2. pip 의존성 설치
-3. AdsPower 연결 테스트 (API URL ping)
-4. ADB 연결 테스트 (adb devices)
-5. 서버 연결 테스트 (heartbeat)
-6. 전부 통과 → "준비 완료"
-7. 실패 → 구체적 안내 메시지
+hydra-worker-setup 실행 시:
+
+1. AdsPower 설치 확인
+   ├── 이미 있음 → skip
+   └── 없음 → AdsPower 공식 URL에서 다운로드 + 자동 설치
+   ※ 설치 후 AdsPower 로그인은 수동 (AdsPower 계정 필요)
+
+2. ADB 설치 확인
+   ├── 이미 있음 → skip
+   └── 없음 → Android Platform Tools 다운로드 + PATH 자동 설정
+   ※ 휴대폰 USB 디버깅 모드 켜기는 수동
+
+3. Worker 앱 설치
+   ├── hydra-worker.exe / .app (Python + 모든 의존성 포함)
+   └── 시작 프로그램 등록 (선택)
+
+4. 설정 마법사
+   ├── 서버 주소 입력
+   ├── 연결 토큰 입력 (대시보드에서 복사)
+   ├── AdsPower 연결 테스트 (API ping — 포트 자동 감지)
+   ├── ADB 디바이스 연결 테스트
+   ├── 서버 연결 테스트 (heartbeat)
+   └── 전부 통과 → "모든 준비 완료!"
+       실패 항목 → 구체적 안내 메시지
+
+5. Worker 시작
 ```
 
-### config.json (PC별)
+### 빌드 방법
+```
+Windows용: Windows PC에서 PyInstaller → .exe
+Mac용: Mac에서 PyInstaller → .app
+서버 업데이트 시: 새 빌드 → 자동 업데이트로 Worker에 배포
+```
+
+### config.json (PC별, 자동 생성)
 ```json
 {
   "server_url": "https://your-vps.com",
@@ -522,6 +551,7 @@ POST /api/tasks/cancel/batch — 캠페인 단위 일괄 취소
 ### 자동 업데이트
 - Worker 시작 시 서버 버전 체크
 - 새 버전 → 진행중 태스크 마무리 → 업데이트 → 재시작
+- 운영자는 서버만 업데이트 → Worker는 알아서 따라감
 
 ---
 
