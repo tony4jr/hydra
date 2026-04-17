@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
+import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -9,41 +9,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { fetchApi } from '@/lib/api'
-
-interface Preset {
-  id: number
-  code: string
-  name: string
-}
-
-interface BrandFormData {
-  name: string
-  product_category: string
-  core_message: string
-  tone_guide: string
-  promo_keywords: string
-  target_keywords: string
-  selected_presets: string[]
-  weekly_campaign_target: number
-  auto_campaign_enabled: boolean
-}
 
 interface Brand {
   id: number
   name: string
   product_category: string | null
   core_message: string | null
-  tone_guide: string | null
   promo_keywords: string[] | null
-  target_keywords: string[] | null
-  selected_presets: string[] | null
   status: string
-  weekly_campaign_target: number
-  auto_campaign_enabled: boolean
 }
 
 interface BrandFormDialogProps {
@@ -54,18 +29,6 @@ interface BrandFormDialogProps {
   onSuccess: () => void
 }
 
-const defaultForm: BrandFormData = {
-  name: '',
-  product_category: '',
-  core_message: '',
-  tone_guide: '',
-  promo_keywords: '',
-  target_keywords: '',
-  selected_presets: [],
-  weekly_campaign_target: 5,
-  auto_campaign_enabled: false,
-}
-
 export function BrandFormDialog({
   open,
   onOpenChange,
@@ -73,63 +36,95 @@ export function BrandFormDialog({
   brand,
   onSuccess,
 }: BrandFormDialogProps) {
-  const [form, setForm] = useState<BrandFormData>(defaultForm)
-  const [presets, setPresets] = useState<Preset[]>([])
+  const [name, setName] = useState('')
+  const [category, setCategory] = useState('')
+  const [coreMessage, setCoreMessage] = useState('')
+  const [promoKeywords, setPromoKeywords] = useState<string[]>([])
+  const [keywordInput, setKeywordInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState(false)
 
   useEffect(() => {
     if (open) {
-      fetchApi<Preset[]>('/api/presets/')
-        .then(setPresets)
-        .catch(() => setPresets([]))
-
       if (mode === 'edit' && brand) {
-        setForm({
-          name: brand.name || '',
-          product_category: brand.product_category || '',
-          core_message: brand.core_message || '',
-          tone_guide: brand.tone_guide || '',
-          promo_keywords: (brand.promo_keywords || []).join(', '),
-          target_keywords: (brand.target_keywords || []).join(', '),
-          selected_presets: brand.selected_presets || [],
-          weekly_campaign_target: brand.weekly_campaign_target || 5,
-          auto_campaign_enabled: brand.auto_campaign_enabled || false,
-        })
+        setName(brand.name || '')
+        setCategory(brand.product_category || '')
+        setCoreMessage(brand.core_message || '')
+        setPromoKeywords(brand.promo_keywords || [])
       } else {
-        setForm(defaultForm)
+        setName('')
+        setCategory('')
+        setCoreMessage('')
+        setPromoKeywords([])
       }
+      setKeywordInput('')
+      setDeleteConfirm(false)
     }
   }, [open, mode, brand])
 
+  const addKeyword = useCallback(() => {
+    const trimmed = keywordInput.trim()
+    if (trimmed && !promoKeywords.includes(trimmed)) {
+      setPromoKeywords(prev => [...prev, trimmed])
+    }
+    setKeywordInput('')
+  }, [keywordInput, promoKeywords])
+
+  const removeKeyword = (kw: string) => {
+    setPromoKeywords(prev => prev.filter(k => k !== kw))
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      addKeyword()
+    }
+  }
+
   const handleSubmit = async () => {
-    if (!form.name.trim()) return
+    if (!name.trim()) return
     setLoading(true)
     try {
-      const url =
-        mode === 'edit' && brand
-          ? `/brands/api/${brand.id}/update`
-          : '/brands/api/create'
-      const payload = {
-        ...form,
-        promo_keywords: form.promo_keywords
-          .split(',')
-          .map((k) => k.trim())
-          .filter(Boolean),
-        target_keywords: form.target_keywords
-          .split(',')
-          .map((k) => k.trim())
-          .filter(Boolean),
-      }
+      const url = mode === 'edit' && brand
+        ? `/brands/api/${brand.id}/update`
+        : '/brands/api/create'
       await fetchApi(url, {
         method: 'POST',
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          name: name.trim(),
+          product_category: category.trim(),
+          core_message: coreMessage.trim(),
+          promo_keywords: promoKeywords,
+        }),
       })
       onOpenChange(false)
       onSuccess()
     } catch {
-      // error handled silently
+      // error
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!brand) return
+    if (!deleteConfirm) {
+      setDeleteConfirm(true)
+      return
+    }
+    setLoading(true)
+    try {
+      await fetchApi(`/brands/api/${brand.id}/update`, {
+        method: 'POST',
+        body: JSON.stringify({ status: 'deleted' }),
+      })
+      onOpenChange(false)
+      onSuccess()
+    } catch {
+      // error
+    } finally {
+      setLoading(false)
+      setDeleteConfirm(false)
     }
   }
 
@@ -141,164 +136,93 @@ export function BrandFormDialog({
             {mode === 'create' ? '브랜드 추가' : '브랜드 수정'}
           </DialogTitle>
         </DialogHeader>
-        <div className='grid gap-4 py-2'>
-          <div className='grid gap-2'>
-            <Label htmlFor='brand-name'>브랜드명 *</Label>
+        <div className='space-y-5 py-2'>
+          {/* Name */}
+          <div className='mb-5'>
+            <label className='text-foreground text-sm font-medium mb-1.5'>브랜드 이름</label>
+            <p className='text-muted-foreground text-xs mb-2'>홍보할 브랜드나 제품의 이름</p>
             <Input
-              id='brand-name'
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              placeholder='브랜드명을 입력하세요'
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder='예: 모렉신'
             />
           </div>
-          <div className='grid gap-2'>
-            <Label htmlFor='brand-category'>카테고리</Label>
+
+          {/* Category */}
+          <div className='mb-5'>
+            <label className='text-foreground text-sm font-medium mb-1.5'>카테고리</label>
+            <p className='text-muted-foreground text-xs mb-2'>어떤 종류의 제품인가요?</p>
             <Input
-              id='brand-category'
-              value={form.product_category}
-              onChange={(e) =>
-                setForm({ ...form, product_category: e.target.value })
-              }
-              placeholder='예: 화장품, IT서비스, 식품'
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              placeholder='예: 건강기능식품, 화장품, IT서비스'
             />
           </div>
-          <div className='grid gap-2'>
-            <Label htmlFor='brand-message'>핵심 메시지</Label>
+
+          {/* Core Message */}
+          <div className='mb-5'>
+            <label className='text-foreground text-sm font-medium mb-1.5'>핵심 메시지</label>
+            <p className='text-muted-foreground text-xs mb-2'>댓글에서 자연스럽게 전달할 셀링 포인트</p>
             <Textarea
-              id='brand-message'
-              value={form.core_message}
-              onChange={(e) =>
-                setForm({ ...form, core_message: e.target.value })
-              }
-              placeholder='브랜드의 핵심 메시지를 입력하세요'
+              value={coreMessage}
+              onChange={(e) => setCoreMessage(e.target.value)}
+              placeholder='예: 케라틴 직접 보충으로 모발 성장 촉진, 해외 논문 검증'
               rows={3}
             />
           </div>
-          <div className='grid gap-2'>
-            <Label htmlFor='brand-tone'>브랜드 멘션 스타일</Label>
-            <Textarea
-              id='brand-tone'
-              value={form.tone_guide}
-              onChange={(e) =>
-                setForm({ ...form, tone_guide: e.target.value })
-              }
-              placeholder='간접 언급 / 직접 추천 / 경험담 형식 등'
-              rows={3}
-            />
-            <p className='text-xs text-muted-foreground'>
-              페르소나별 말투(ㅋㅋ체, 존댓말 등)는 자동 적용됩니다. 여기서는
-              제품을 어떻게 언급할지만 설정하세요.
-            </p>
-          </div>
-          <div className='grid gap-2'>
-            <Label htmlFor='brand-promo'>홍보 키워드</Label>
-            <Textarea
-              id='brand-promo'
-              value={form.promo_keywords}
-              onChange={(e) =>
-                setForm({ ...form, promo_keywords: e.target.value })
-              }
-              placeholder='댓글에 녹일 메시지 키워드 (쉼표로 구분)'
-              rows={2}
-            />
-            <p className='text-xs text-muted-foreground'>
-              쉼표로 구분하여 입력하세요
-            </p>
-          </div>
-          <div className='grid gap-2'>
-            <Label htmlFor='brand-target-kw'>타겟 키워드</Label>
-            <Textarea
-              id='brand-target-kw'
-              value={form.target_keywords}
-              onChange={(e) =>
-                setForm({ ...form, target_keywords: e.target.value })
-              }
-              placeholder='영상 검색용 키워드 (쉼표로 구분)'
-              rows={2}
-            />
-            <p className='text-xs text-muted-foreground'>
-              영상 수집 시 사용할 검색 키워드
-            </p>
-          </div>
-          {presets.length > 0 && (
-            <div className='grid gap-2'>
-              <Label>사용할 프리셋</Label>
-              <div className='max-h-32 space-y-1 overflow-y-auto rounded-md border p-2'>
-                {presets.map((p) => (
-                  <label
-                    key={p.id}
-                    className='flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted'
-                  >
-                    <Checkbox
-                      checked={form.selected_presets.includes(p.code)}
-                      onCheckedChange={(checked) => {
-                        setForm((prev) => ({
-                          ...prev,
-                          selected_presets: checked
-                            ? [...prev.selected_presets, p.code]
-                            : prev.selected_presets.filter((c) => c !== p.code),
-                        }))
-                      }}
-                    />
-                    <span>
-                      <span className='font-mono text-xs text-muted-foreground'>
-                        {p.code}
-                      </span>{' '}
-                      {p.name}
-                    </span>
-                  </label>
+
+          {/* Promo Keywords (Tag Input) */}
+          <div className='mb-5'>
+            <label className='text-foreground text-sm font-medium mb-1.5'>홍보 키워드</label>
+            <p className='text-muted-foreground text-xs mb-2'>댓글에 녹일 핵심 키워드를 입력하고 Enter</p>
+            <div className='rounded-lg border border-border bg-background p-2 min-h-[42px]'>
+              <div className='flex flex-wrap gap-1.5 mb-1'>
+                {promoKeywords.map(kw => (
+                  <span key={kw} className='hydra-tag hydra-tag-primary flex items-center gap-1'>
+                    {kw}
+                    <button
+                      type='button'
+                      onClick={() => removeKeyword(kw)}
+                      className='hover:text-foreground'
+                    >
+                      <X className='h-3 w-3' />
+                    </button>
+                  </span>
                 ))}
               </div>
-              <p className='text-xs text-muted-foreground'>
-                프리셋 편집은{' '}
-                <a
-                  href='/settings/presets'
-                  className='underline hover:text-foreground'
-                  onClick={(e) => {
-                    e.preventDefault()
-                    onOpenChange(false)
-                    window.location.href = '/settings/presets'
-                  }}
-                >
-                  설정 &gt; 프리셋
-                </a>
-                에서 가능합니다
-              </p>
+              <Input
+                value={keywordInput}
+                onChange={(e) => setKeywordInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                onBlur={addKeyword}
+                placeholder={promoKeywords.length === 0 ? '키워드를 입력하고 Enter' : ''}
+                className='border-0 p-0 h-7 shadow-none focus-visible:ring-0'
+              />
             </div>
-          )}
-          <div className='grid gap-2'>
-            <Label htmlFor='brand-target'>주간 목표</Label>
-            <Input
-              id='brand-target'
-              type='number'
-              min={0}
-              value={form.weekly_campaign_target}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  weekly_campaign_target: parseInt(e.target.value) || 0,
-                })
-              }
-            />
-          </div>
-          <div className='flex items-center gap-3'>
-            <Switch
-              id='brand-auto'
-              checked={form.auto_campaign_enabled}
-              onCheckedChange={(checked) =>
-                setForm({ ...form, auto_campaign_enabled: checked })
-              }
-            />
-            <Label htmlFor='brand-auto'>자동 캠페인</Label>
           </div>
         </div>
-        <DialogFooter>
-          <Button variant='outline' onClick={() => onOpenChange(false)}>
-            취소
-          </Button>
-          <Button onClick={handleSubmit} disabled={loading || !form.name.trim()}>
-            {loading ? '저장 중...' : mode === 'create' ? '추가' : '저장'}
-          </Button>
+
+        <DialogFooter className='flex !justify-between'>
+          {mode === 'edit' ? (
+            <Button
+              variant='ghost'
+              className={`text-destructive hover:text-destructive hover:bg-destructive/10 hydra-btn-press ${deleteConfirm ? 'bg-destructive/10' : ''}`}
+              onClick={handleDelete}
+              disabled={loading}
+            >
+              {deleteConfirm ? '정말 삭제할까요?' : '삭제'}
+            </Button>
+          ) : (
+            <div />
+          )}
+          <div className='flex gap-2'>
+            <Button variant='outline' onClick={() => onOpenChange(false)} className='hydra-btn-press'>
+              취소
+            </Button>
+            <Button onClick={handleSubmit} disabled={loading || !name.trim()} className='hydra-btn-press'>
+              {loading ? '저장 중...' : mode === 'create' ? '추가' : '저장'}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

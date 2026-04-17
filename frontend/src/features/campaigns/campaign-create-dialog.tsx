@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
+import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -7,8 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Label } from '@/components/ui/label'
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -16,7 +17,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Checkbox } from '@/components/ui/checkbox'
 import { fetchApi } from '@/lib/api'
 
 interface Brand {
@@ -26,13 +26,8 @@ interface Brand {
 
 interface Preset {
   id: number
+  code: string
   name: string
-}
-
-interface Video {
-  id: number
-  title: string
-  video_id: string
 }
 
 interface CampaignCreateDialogProps {
@@ -41,161 +36,299 @@ interface CampaignCreateDialogProps {
   onSuccess: () => void
 }
 
+const mentionStyles = [
+  { value: 'indirect', label: '간접 언급', desc: '대화 흐름 속에서 자연스럽게' },
+  { value: 'direct', label: '직접 추천', desc: '경험담 형식으로 제품명 직접 언급' },
+  { value: 'minimal', label: '최소 멘션', desc: '브랜드명만 살짝 언급' },
+]
+
 export function CampaignCreateDialog({
   open,
   onOpenChange,
   onSuccess,
 }: CampaignCreateDialogProps) {
+  const [step, setStep] = useState(1)
   const [brands, setBrands] = useState<Brand[]>([])
   const [presets, setPresets] = useState<Preset[]>([])
-  const [videos, setVideos] = useState<Video[]>([])
 
+  // Step 1: Brand
   const [brandId, setBrandId] = useState('')
-  const [presetId, setPresetId] = useState('')
-  const [selectedVideoIds, setSelectedVideoIds] = useState<number[]>([])
-  const [execMode, setExecMode] = useState('auto')
+  // Step 2: Keywords
+  const [keywords, setKeywords] = useState<string[]>([])
+  const [keywordInput, setKeywordInput] = useState('')
+  // Step 3: Preset / Style
+  const [selectedPresets, setSelectedPresets] = useState<string[]>([])
+  const [setsPerVideo, setSetsPerVideo] = useState(1)
+  const [mentionStyle, setMentionStyle] = useState('indirect')
+  // Step 4: Duration / Goal
+  const [durationDays, setDurationDays] = useState(7)
+  const [targetCount, setTargetCount] = useState(50)
+
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     if (open) {
-      fetchApi<Brand[]>('/brands/api/list')
-        .then(setBrands)
-        .catch(() => setBrands([]))
-      fetchApi<Preset[]>('/api/presets/')
-        .then(setPresets)
-        .catch(() => setPresets([]))
-      fetchApi<{ items: Video[] }>('/videos/api/list')
-        .then((data) => setVideos(data.items || []))
-        .catch(() => setVideos([]))
-      // reset form
+      fetchApi<Brand[]>('/brands/api/list').then(setBrands).catch(() => setBrands([]))
+      fetchApi<Preset[]>('/api/presets/').then(d => setPresets(Array.isArray(d) ? d : [])).catch(() => setPresets([]))
+      setStep(1)
       setBrandId('')
-      setPresetId('')
-      setSelectedVideoIds([])
-      setExecMode('auto')
+      setKeywords([])
+      setKeywordInput('')
+      setSelectedPresets([])
+      setSetsPerVideo(1)
+      setMentionStyle('indirect')
+      setDurationDays(7)
+      setTargetCount(50)
     }
   }, [open])
 
-  const toggleVideo = (id: number) => {
-    setSelectedVideoIds((prev) =>
-      prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id]
+  const addKeyword = useCallback(() => {
+    const trimmed = keywordInput.trim()
+    if (trimmed && !keywords.includes(trimmed)) {
+      setKeywords(prev => [...prev, trimmed])
+    }
+    setKeywordInput('')
+  }, [keywordInput, keywords])
+
+  const togglePreset = (code: string) => {
+    setSelectedPresets(prev =>
+      prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]
     )
   }
 
+  const canNext = () => {
+    switch (step) {
+      case 1: return !!brandId
+      case 2: return keywords.length > 0
+      case 3: return selectedPresets.length > 0
+      case 4: return durationDays > 0 && targetCount > 0
+      default: return false
+    }
+  }
+
   const handleSubmit = async () => {
-    if (!brandId) return
     setLoading(true)
     try {
       await fetchApi('/campaigns/api/create', {
         method: 'POST',
         body: JSON.stringify({
           brand_id: parseInt(brandId),
-          preset_id: presetId ? parseInt(presetId) : null,
-          video_ids: selectedVideoIds,
-          exec_mode: execMode,
+          target_keywords: keywords,
+          preset_codes: selectedPresets,
+          sets_per_video: setsPerVideo,
+          mention_style: mentionStyle,
+          duration_days: durationDays,
+          target_count: targetCount,
         }),
       })
       onOpenChange(false)
       onSuccess()
     } catch {
-      // error handled silently
+      // error
     } finally {
       setLoading(false)
     }
   }
 
+  const stepTitles = [
+    '누구의 홍보인가요?',
+    '어떤 영상에 작업할까요?',
+    '어떻게 작업할까요?',
+    '얼마나 할까요?',
+  ]
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className='sm:max-w-lg'>
+      <DialogContent className='sm:max-w-md'>
         <DialogHeader>
-          <DialogTitle>캠페인 생성</DialogTitle>
+          <DialogTitle>캠페인 만들기</DialogTitle>
         </DialogHeader>
-        <div className='grid gap-4 py-2'>
-          <div className='grid gap-2'>
-            <Label>브랜드 선택 *</Label>
-            <Select value={brandId} onValueChange={setBrandId}>
-              <SelectTrigger className='w-full'>
-                <SelectValue placeholder='브랜드를 선택하세요' />
-              </SelectTrigger>
-              <SelectContent>
-                {brands.map((b) => (
-                  <SelectItem key={b.id} value={String(b.id)}>
-                    {b.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
 
-          <div className='grid gap-2'>
-            <Label>프리셋 선택</Label>
-            <Select value={presetId} onValueChange={setPresetId}>
-              <SelectTrigger className='w-full'>
-                <SelectValue placeholder='프리셋을 선택하세요' />
-              </SelectTrigger>
-              <SelectContent>
-                {presets.map((p) => (
-                  <SelectItem key={p.id} value={String(p.id)}>
-                    {p.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+        {/* Step indicator */}
+        <div className='flex items-center gap-2 mb-2'>
+          {[1, 2, 3, 4].map(s => (
+            <div key={s} className='flex items-center gap-2'>
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-semibold ${
+                s === step ? 'bg-primary text-primary-foreground' :
+                s < step ? 'bg-primary/20 text-primary' :
+                'bg-muted text-muted-foreground'
+              }`}>{s}</div>
+              {s < 4 && <div className={`w-6 h-0.5 ${s < step ? 'bg-primary/40' : 'bg-border'}`} />}
+            </div>
+          ))}
+        </div>
 
-          <div className='grid gap-2'>
-            <Label>영상 선택</Label>
-            <div className='max-h-40 overflow-y-auto rounded-md border p-2'>
-              {videos.length === 0 ? (
-                <p className='py-2 text-center text-sm text-muted-foreground'>
-                  영상이 없습니다
+        <p className='text-foreground font-medium text-[15px] mb-3'>{stepTitles[step - 1]}</p>
+
+        <div className='min-h-[200px]'>
+          {/* Step 1: Brand */}
+          {step === 1 && (
+            <div className='mb-5'>
+              <label className='text-foreground text-sm font-medium mb-1.5'>브랜드 선택</label>
+              <p className='text-muted-foreground text-xs mb-2'>홍보할 브랜드를 선택하세요</p>
+              <Select value={brandId} onValueChange={setBrandId}>
+                <SelectTrigger>
+                  <SelectValue placeholder='브랜드를 선택하세요' />
+                </SelectTrigger>
+                <SelectContent>
+                  {brands.map(b => (
+                    <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {brands.length === 0 && (
+                <p className='text-muted-foreground/60 text-[12px] mt-2'>
+                  먼저 브랜드를 등록해주세요
                 </p>
-              ) : (
-                videos.map((v) => (
-                  <label
-                    key={v.id}
-                    className='flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted'
-                  >
-                    <Checkbox
-                      checked={selectedVideoIds.includes(v.id)}
-                      onCheckedChange={() => toggleVideo(v.id)}
-                    />
-                    <span className='truncate'>{v.title || v.video_id}</span>
-                  </label>
-                ))
               )}
             </div>
-            {selectedVideoIds.length > 0 && (
-              <p className='text-xs text-muted-foreground'>
-                {selectedVideoIds.length}개 선택됨
-              </p>
-            )}
-          </div>
+          )}
 
-          <div className='grid gap-2'>
-            <Label>실행 모드</Label>
-            <RadioGroup value={execMode} onValueChange={setExecMode}>
-              <div className='flex items-center gap-2'>
-                <RadioGroupItem value='auto' id='mode-auto' />
-                <Label htmlFor='mode-auto' className='font-normal'>
-                  자동 분산
-                </Label>
+          {/* Step 2: Keywords */}
+          {step === 2 && (
+            <div className='mb-5'>
+              <label className='text-foreground text-sm font-medium mb-1.5'>타겟 키워드</label>
+              <p className='text-muted-foreground text-xs mb-2'>이 키워드로 영상을 검색해서 작업합니다. Enter로 추가하세요.</p>
+              <div className='rounded-lg border border-border bg-background p-2 min-h-[42px]'>
+                <div className='flex flex-wrap gap-1.5 mb-1'>
+                  {keywords.map(kw => (
+                    <span key={kw} className='hydra-tag hydra-tag-primary flex items-center gap-1'>
+                      {kw}
+                      <button type='button' onClick={() => setKeywords(prev => prev.filter(k => k !== kw))} className='hover:text-foreground'>
+                        <X className='h-3 w-3' />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <Input
+                  value={keywordInput}
+                  onChange={e => setKeywordInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addKeyword() } }}
+                  onBlur={addKeyword}
+                  placeholder={keywords.length === 0 ? '예: 탈모, 케라틴, 모발 관리' : ''}
+                  className='border-0 p-0 h-7 shadow-none focus-visible:ring-0'
+                />
               </div>
-              <div className='flex items-center gap-2'>
-                <RadioGroupItem value='urgent' id='mode-urgent' />
-                <Label htmlFor='mode-urgent' className='font-normal'>
-                  긴급
-                </Label>
+            </div>
+          )}
+
+          {/* Step 3: Presets + Style */}
+          {step === 3 && (
+            <div className='space-y-4'>
+              <div className='mb-5'>
+                <label className='text-foreground text-sm font-medium mb-1.5'>프리셋 선택</label>
+                <p className='text-muted-foreground text-xs mb-2'>사용할 댓글 대화 구조를 선택하세요 (복수 선택 가능)</p>
+                <div className='max-h-[140px] overflow-y-auto rounded-lg border border-border p-2 space-y-1'>
+                  {presets.length === 0 ? (
+                    <p className='text-muted-foreground text-[13px] py-2 text-center'>프리셋이 없습니다</p>
+                  ) : presets.map(p => (
+                    <label key={p.id} className='flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted'>
+                      <Checkbox
+                        checked={selectedPresets.includes(p.code)}
+                        onCheckedChange={() => togglePreset(p.code)}
+                      />
+                      <span className='font-mono text-[11px] text-muted-foreground'>{p.code}</span>
+                      <span className='text-[13px]'>{p.name}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
-            </RadioGroup>
-          </div>
+
+              <div className='mb-5'>
+                <label className='text-foreground text-sm font-medium mb-1.5'>영상당 프리셋 세트 수</label>
+                <p className='text-muted-foreground text-xs mb-2'>한 영상에 몇 세트의 대화를 만들까요?</p>
+                <Input
+                  type='number'
+                  min={1}
+                  max={5}
+                  value={setsPerVideo}
+                  onChange={e => setSetsPerVideo(parseInt(e.target.value) || 1)}
+                  className='w-24'
+                />
+              </div>
+
+              <div className='mb-5'>
+                <label className='text-foreground text-sm font-medium mb-1.5'>멘션 스타일</label>
+                <p className='text-muted-foreground text-xs mb-2'>제품을 어떤 방식으로 언급할까요?</p>
+                <Select value={mentionStyle} onValueChange={setMentionStyle}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {mentionStyles.map(ms => (
+                      <SelectItem key={ms.value} value={ms.value}>
+                        {ms.label} — {ms.desc}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+
+          {/* Step 4: Duration + Goal */}
+          {step === 4 && (
+            <div className='space-y-4'>
+              <div className='mb-5'>
+                <label className='text-foreground text-sm font-medium mb-1.5'>작업 기간</label>
+                <p className='text-muted-foreground text-xs mb-2'>며칠 동안 작업할까요?</p>
+                <div className='flex items-center gap-2'>
+                  <Input
+                    type='number'
+                    min={1}
+                    value={durationDays}
+                    onChange={e => setDurationDays(parseInt(e.target.value) || 1)}
+                    className='w-24'
+                  />
+                  <span className='text-muted-foreground text-[13px]'>일</span>
+                </div>
+              </div>
+
+              <div className='mb-5'>
+                <label className='text-foreground text-sm font-medium mb-1.5'>목표 영상 수</label>
+                <p className='text-muted-foreground text-xs mb-2'>총 몇 개 영상에 작업할까요?</p>
+                <div className='flex items-center gap-2'>
+                  <Input
+                    type='number'
+                    min={1}
+                    value={targetCount}
+                    onChange={e => setTargetCount(parseInt(e.target.value) || 1)}
+                    className='w-24'
+                  />
+                  <span className='text-muted-foreground text-[13px]'>개</span>
+                </div>
+              </div>
+
+              <div className='bg-muted/50 rounded-lg p-4 text-[13px]'>
+                <p className='text-foreground font-medium mb-2'>캠페인 요약</p>
+                <div className='space-y-1 text-muted-foreground'>
+                  <p>브랜드: {brands.find(b => String(b.id) === brandId)?.name || '-'}</p>
+                  <p>키워드: {keywords.join(', ')}</p>
+                  <p>프리셋: {selectedPresets.join(', ')}</p>
+                  <p>기간: {durationDays}일 · 목표: {targetCount}개 영상</p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-        <DialogFooter>
-          <Button variant='outline' onClick={() => onOpenChange(false)}>
-            취소
+
+        <DialogFooter className='flex !justify-between'>
+          <Button
+            variant='outline'
+            onClick={() => step > 1 ? setStep(step - 1) : onOpenChange(false)}
+            className='hydra-btn-press'
+          >
+            {step > 1 ? '이전' : '취소'}
           </Button>
-          <Button onClick={handleSubmit} disabled={loading || !brandId}>
-            {loading ? '생성 중...' : '캠페인 생성'}
-          </Button>
+          {step < 4 ? (
+            <Button onClick={() => setStep(step + 1)} disabled={!canNext()} className='hydra-btn-press'>
+              다음
+            </Button>
+          ) : (
+            <Button onClick={handleSubmit} disabled={loading || !canNext()} className='hydra-btn-press'>
+              {loading ? '생성 중...' : '캠페인 시작'}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

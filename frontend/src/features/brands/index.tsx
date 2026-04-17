@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Pencil, Plus } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
+import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -15,26 +14,23 @@ interface Brand {
   name: string
   product_category: string | null
   core_message: string | null
-  tone_guide: string | null
   promo_keywords: string[] | null
-  target_keywords: string[] | null
-  selected_presets: string[] | null
   status: string
-  weekly_campaign_target: number
-  auto_campaign_enabled: boolean
-  keywords?: string[]
 }
 
 export default function BrandsPage() {
   const [brands, setBrands] = useState<Brand[]>([])
+  const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create')
   const [editBrand, setEditBrand] = useState<Brand | null>(null)
 
   const loadBrands = () => {
+    setLoading(true)
     fetchApi<Brand[]>('/brands/api/list')
       .then(setBrands)
       .catch(() => setBrands([]))
+      .finally(() => setLoading(false))
   }
 
   useEffect(() => {
@@ -62,88 +58,71 @@ export default function BrandsPage() {
         </div>
       </Header>
       <Main>
-        <div className='mb-2 flex flex-wrap items-center justify-between space-y-2'>
-          <div>
-            <h2 className='text-2xl font-bold tracking-tight'>브랜드</h2>
-            <p className='text-muted-foreground'>
-              브랜드/상품 관리, 홍보 키워드, AI 가이드
-            </p>
+        <div >
+          <div className='mb-5 flex flex-wrap items-center justify-between gap-2'>
+            <div>
+              <h2 className='text-[22px] font-bold'>브랜드</h2>
+              <p className='text-muted-foreground text-[13px]'>
+                AI가 제품을 이해하기 위한 브랜드 정보를 관리하세요
+              </p>
+            </div>
+            <Button size="lg" onClick={openCreate} className='hydra-btn-press'>
+              <Plus className='mr-2 h-4 w-4' /> 브랜드 추가
+            </Button>
           </div>
-          <Button onClick={openCreate}>
-            <Plus className='mr-2 h-4 w-4' /> 브랜드 추가
-          </Button>
-        </div>
 
-        <div className='grid gap-4 md:grid-cols-2 lg:grid-cols-3'>
-          {brands.length === 0 ? (
-            <Card className='col-span-full'>
-              <CardContent className='flex items-center justify-center py-10'>
-                <p className='text-muted-foreground'>
-                  등록된 브랜드가 없습니다. 서버 연결 후 표시됩니다.
-                </p>
-              </CardContent>
-            </Card>
+          {loading ? (
+            <div className='grid gap-3 md:grid-cols-2 lg:grid-cols-3'>
+              {[1, 2, 3].map(i => (
+                <Skeleton key={i} className='h-40 rounded-xl' />
+              ))}
+            </div>
+          ) : brands.length === 0 ? (
+            <div className='bg-card border border-border rounded-xl py-16 text-center'>
+              <p className='text-muted-foreground text-[14px] mb-1'>등록된 브랜드가 없어요</p>
+              <p className='text-muted-foreground/60 text-[12px] mb-4'>브랜드를 추가하면 AI가 제품에 맞는 댓글을 생성합니다</p>
+              <Button onClick={openCreate} variant='outline' className='hydra-btn-press'>
+                <Plus className='mr-2 h-4 w-4' /> 첫 브랜드 추가하기
+              </Button>
+            </div>
           ) : (
-            brands.map((brand) => (
-              <Card
-                key={brand.id}
-                className='cursor-pointer transition-colors hover:border-primary'
-              >
-                <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
-                  <CardTitle className='text-lg'>{brand.name}</CardTitle>
-                  <div className='flex items-center gap-2'>
-                    <Button
-                      variant='ghost'
-                      size='icon'
-                      className='h-7 w-7'
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        openEdit(brand)
-                      }}
-                    >
-                      <Pencil className='h-3.5 w-3.5' />
-                    </Button>
-                    <Badge
-                      variant={
-                        brand.status === 'active' ? 'default' : 'secondary'
-                      }
-                    >
-                      {brand.status}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <p className='text-sm text-muted-foreground'>
-                    {brand.product_category || '카테고리 미설정'}
-                  </p>
-                  <div className='mt-3 flex items-center gap-4 text-sm'>
-                    <span>
-                      주간 목표:{' '}
-                      <strong>{brand.weekly_campaign_target || '-'}</strong>
-                    </span>
-                    {brand.auto_campaign_enabled && (
-                      <Badge variant='outline' className='text-xs'>
-                        자동
-                      </Badge>
+            <div className='grid gap-3 md:grid-cols-2 lg:grid-cols-3'>
+              {brands.map((brand) => (
+                <div
+                  key={brand.id}
+                  className='bg-card border border-border rounded-xl p-5 cursor-pointer hydra-card-hover'
+                  onClick={() => openEdit(brand)}
+                >
+                  <div className='flex items-center justify-between mb-2'>
+                    <h3 className='text-foreground font-semibold text-[16px]'>{brand.name}</h3>
+                    {brand.product_category && (
+                      <span className='hydra-tag hydra-tag-muted'>{brand.product_category}</span>
                     )}
                   </div>
-                  {brand.keywords && brand.keywords.length > 0 && (
-                    <div className='mt-3'>
-                      <p className='mb-1 text-xs font-medium text-muted-foreground'>
-                        키워드
-                      </p>
-                      <div className='flex flex-wrap gap-1'>
-                        {brand.keywords.map((kw, i) => (
-                          <Badge key={i} variant='outline' className='text-xs'>
-                            {kw}
-                          </Badge>
-                        ))}
-                      </div>
+
+                  {brand.core_message && (
+                    <p className='text-muted-foreground text-[13px] mb-3 line-clamp-2'>
+                      {brand.core_message}
+                    </p>
+                  )}
+
+                  {brand.promo_keywords && brand.promo_keywords.length > 0 && (
+                    <div className='flex flex-wrap gap-1.5'>
+                      {brand.promo_keywords.slice(0, 5).map((kw, i) => (
+                        <span key={i} className='hydra-tag hydra-tag-primary'>{kw}</span>
+                      ))}
+                      {brand.promo_keywords.length > 5 && (
+                        <span className='hydra-tag hydra-tag-muted'>+{brand.promo_keywords.length - 5}</span>
+                      )}
                     </div>
                   )}
-                </CardContent>
-              </Card>
-            ))
+
+                  {!brand.core_message && (!brand.promo_keywords || brand.promo_keywords.length === 0) && (
+                    <p className='text-muted-foreground/50 text-[12px]'>클릭해서 브랜드 정보를 입력하세요</p>
+                  )}
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </Main>

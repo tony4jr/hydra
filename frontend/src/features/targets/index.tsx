@@ -1,25 +1,20 @@
 import { useEffect, useState } from 'react'
-import { Download, Plus, RefreshCw } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
+import { Plus, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { fetchApi } from '@/lib/api'
-
-interface Brand {
-  id: number
-  name: string
-}
+import { useCountUp } from '@/hooks/use-count-up'
 
 interface Video {
   id: string
@@ -29,53 +24,75 @@ interface Video {
   comment_count: number
   status: string
   is_short: boolean
+  campaign_name?: string
   collected_at: string
 }
 
-interface VideoListResponse {
-  items: Video[]
-  total: number
+const statusLabels: Record<string, string> = {
+  available: '대기', completed: '완료', in_progress: '진행중',
+}
+const statusTag: Record<string, string> = {
+  available: 'hydra-tag-muted', completed: 'hydra-tag-success', in_progress: 'hydra-tag-primary',
+}
+
+function StatCard({ label, value }: { label: string; value: number | string }) {
+  const isNum = typeof value === 'number'
+  const animated = useCountUp(isNum ? value : 0)
+  return (
+    <div className='bg-card rounded-xl border border-border p-4'>
+      <span className='text-muted-foreground text-[12px]'>{label}</span>
+      <div className='text-[28px] font-bold'>
+        {isNum ? animated : value}
+      </div>
+    </div>
+  )
 }
 
 export default function TargetsPage() {
   const [videos, setVideos] = useState<Video[]>([])
   const [total, setTotal] = useState(0)
-  const [brands, setBrands] = useState<Brand[]>([])
-  const [initialBrandId, setInitialBrandId] = useState('')
-  const [initialLoading, setInitialLoading] = useState(false)
-  const [initialMsg, setInitialMsg] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [page, setPage] = useState(1)
+  const [addOpen, setAddOpen] = useState(false)
+  const [urlInput, setUrlInput] = useState('')
+  const [adding, setAdding] = useState(false)
+  const [campaignFilter, setCampaignFilter] = useState('all')
+  const perPage = 20
 
-  useEffect(() => {
-    fetchApi<VideoListResponse>('/videos/api/list')
-      .then((data) => {
-        setVideos(data.items || [])
-        setTotal(data.total || 0)
-      })
+  const loadVideos = () => {
+    setLoading(true)
+    fetchApi<{ items: Video[]; total: number }>('/videos/api/list')
+      .then(data => { setVideos(data.items || []); setTotal(data.total || 0) })
       .catch(() => {})
-    fetchApi<Brand[]>('/brands/api/list')
-      .then(setBrands)
-      .catch(() => setBrands([]))
-  }, [])
+      .finally(() => setLoading(false))
+  }
 
-  const handleInitialCollect = async () => {
-    if (!initialBrandId) return
-    setInitialLoading(true)
-    setInitialMsg('')
+  useEffect(() => { loadVideos() }, [])
+
+  const completed = videos.filter(v => v.status === 'completed').length
+  const pending = videos.filter(v => v.status === 'available').length
+  const lastCollect = videos.length > 0 ? videos[0]?.collected_at : null
+
+  const filtered = campaignFilter === 'all' ? videos : videos.filter(v => v.campaign_name === campaignFilter)
+  const totalPages = Math.ceil(filtered.length / perPage)
+  const pagedVideos = filtered.slice((page - 1) * perPage, page * perPage)
+
+  const campaigns = [...new Set(videos.filter(v => v.campaign_name).map(v => v.campaign_name!))]
+
+  const handleAddUrl = async () => {
+    const url = urlInput.trim()
+    if (!url) return
+    setAdding(true)
     try {
-      await fetchApi(
-        `/videos/api/collect/initial?brand_id=${initialBrandId}`,
-        { method: 'POST' }
-      )
-      setInitialMsg('초기 수집 시작됨')
-      // reload video list
-      const data = await fetchApi<VideoListResponse>('/videos/api/list')
-      setVideos(data.items || [])
-      setTotal(data.total || 0)
-    } catch {
-      setInitialMsg('초기 수집 실패')
-    } finally {
-      setInitialLoading(false)
-    }
+      await fetchApi('/videos/api/add-manual', {
+        method: 'POST',
+        body: JSON.stringify({ url }),
+      })
+      setUrlInput('')
+      setAddOpen(false)
+      loadVideos()
+    } catch { /* error */ }
+    finally { setAdding(false) }
   }
 
   return (
@@ -87,115 +104,133 @@ export default function TargetsPage() {
         </div>
       </Header>
       <Main>
-        <div className='mb-2 flex flex-wrap items-center justify-between space-y-2'>
-          <div>
-            <h2 className='text-2xl font-bold tracking-tight'>타겟</h2>
-            <p className='text-muted-foreground'>
-              타겟 영상 수집 + 관리 ({total}개)
-            </p>
-          </div>
-          <div className='flex flex-wrap items-center gap-2'>
-            <Select value={initialBrandId} onValueChange={setInitialBrandId}>
-              <SelectTrigger className='w-40'>
-                <SelectValue placeholder='브랜드 선택' />
-              </SelectTrigger>
-              <SelectContent>
-                {brands.map((b) => (
-                  <SelectItem key={b.id} value={String(b.id)}>
-                    {b.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              variant='outline'
-              disabled={!initialBrandId || initialLoading}
-              onClick={handleInitialCollect}
-            >
-              <Download className='mr-2 h-4 w-4' />
-              {initialLoading ? '수집 중...' : '초기 수집'}
-            </Button>
-            <Button variant='outline'>
-              <RefreshCw className='mr-2 h-4 w-4' /> 정기 수집
-            </Button>
-            <Button>
-              <Plus className='mr-2 h-4 w-4' /> URL 추가
-            </Button>
-            {initialMsg && (
-              <span className='text-sm text-muted-foreground'>
-                {initialMsg}
-              </span>
-            )}
-          </div>
-        </div>
-
-        <Card>
-          <CardContent className='p-0'>
-            <div className='overflow-auto'>
-              <table className='w-full text-sm'>
-                <thead>
-                  <tr className='border-b bg-muted/50'>
-                    <th className='p-3 text-left font-medium'>제목</th>
-                    <th className='p-3 text-left font-medium'>채널</th>
-                    <th className='p-3 text-right font-medium'>조회수</th>
-                    <th className='p-3 text-right font-medium'>댓글수</th>
-                    <th className='p-3 text-center font-medium'>유형</th>
-                    <th className='p-3 text-center font-medium'>상태</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {videos.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={6}
-                        className='p-10 text-center text-muted-foreground'
-                      >
-                        타겟 영상이 없습니다. 서버 연결 후 표시됩니다.
-                      </td>
-                    </tr>
-                  ) : (
-                    videos.map((v) => (
-                      <tr
-                        key={v.id}
-                        className='cursor-pointer border-b hover:bg-muted/50'
-                      >
-                        <td className='max-w-[300px] truncate p-3'>
-                          {v.title}
-                        </td>
-                        <td className='p-3 text-muted-foreground'>
-                          {v.channel_title}
-                        </td>
-                        <td className='p-3 text-right'>
-                          {v.view_count?.toLocaleString()}
-                        </td>
-                        <td className='p-3 text-right'>
-                          {v.comment_count?.toLocaleString()}
-                        </td>
-                        <td className='p-3 text-center'>
-                          <Badge variant='outline'>
-                            {v.is_short ? '숏폼' : '롱폼'}
-                          </Badge>
-                        </td>
-                        <td className='p-3 text-center'>
-                          <Badge
-                            variant={
-                              v.status === 'available'
-                                ? 'default'
-                                : 'secondary'
-                            }
-                          >
-                            {v.status}
-                          </Badge>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+        <div >
+          <div className='mb-5 flex flex-wrap items-center justify-between gap-2'>
+            <div>
+              <h2 className='text-[22px] font-bold'>타겟</h2>
+              <p className='text-muted-foreground text-[13px]'>수집된 영상 목록 확인 및 관리</p>
             </div>
-          </CardContent>
-        </Card>
+            <div className='flex gap-2'>
+              {campaigns.length > 0 && (
+                <Select value={campaignFilter} onValueChange={v => { setCampaignFilter(v); setPage(1) }}>
+                  <SelectTrigger className='w-40'>
+                    <SelectValue placeholder='캠페인 필터' />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value='all'>전체</SelectItem>
+                    {campaigns.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )}
+              <Button onClick={() => setAddOpen(true)} className='hydra-btn-press'>
+                <Plus className='mr-2 h-4 w-4' /> URL 추가
+              </Button>
+            </div>
+          </div>
+
+          {/* Stat cards */}
+          {loading ? (
+            <div className='grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5'>
+              {[1, 2, 3, 4].map(i => <Skeleton key={i} className='h-24 rounded-xl' />)}
+            </div>
+          ) : (
+            <div className='grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5'>
+              <StatCard label='전체 영상' value={total} />
+              <StatCard label='완료' value={completed} />
+              <StatCard label='대기' value={pending} />
+              <StatCard
+                label='마지막 수집'
+                value={lastCollect ? new Date(lastCollect).toLocaleDateString('ko') : '-'}
+              />
+            </div>
+          )}
+
+          {/* Video table */}
+          {loading ? (
+            <Skeleton className='h-64 rounded-xl' />
+          ) : pagedVideos.length === 0 ? (
+            <div className='bg-card border border-border rounded-xl py-16 text-center'>
+              <p className='text-muted-foreground text-[14px] mb-1'>타겟 영상이 없어요</p>
+              <p className='text-muted-foreground/60 text-[12px] mb-4'>캠페인의 타겟 키워드로 영상이 자동 수집됩니다</p>
+              <Button onClick={() => setAddOpen(true)} variant='outline' className='hydra-btn-press'>
+                <Plus className='mr-2 h-4 w-4' /> URL 수동 추가
+              </Button>
+            </div>
+          ) : (
+            <>
+              <div className='bg-card border border-border rounded-xl overflow-hidden'>
+                <div className='overflow-x-auto'>
+                  <table className='w-full text-sm'>
+                    <thead>
+                      <tr className='border-b border-border bg-muted/30'>
+                        <th className='p-3 text-left font-medium text-[12px] text-muted-foreground'>제목</th>
+                        <th className='p-3 text-left font-medium text-[12px] text-muted-foreground'>채널</th>
+                        <th className='p-3 text-right font-medium text-[12px] text-muted-foreground'>조회수</th>
+                        <th className='p-3 text-center font-medium text-[12px] text-muted-foreground'>캠페인</th>
+                        <th className='p-3 text-center font-medium text-[12px] text-muted-foreground'>상태</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pagedVideos.map(v => (
+                        <tr key={v.id} className='border-b border-border/30 hydra-row-hover'>
+                          <td className='p-3 max-w-[300px]'>
+                            <span className='text-foreground text-[13px] truncate block'>{v.title}</span>
+                          </td>
+                          <td className='p-3 text-muted-foreground text-[13px]'>{v.channel_title}</td>
+                          <td className='p-3 text-right text-[13px]'>{v.view_count?.toLocaleString()}</td>
+                          <td className='p-3 text-center text-muted-foreground text-[12px]'>{v.campaign_name || '-'}</td>
+                          <td className='p-3 text-center'>
+                            <span className={`hydra-tag ${statusTag[v.status] || 'hydra-tag-muted'}`}>
+                              {statusLabels[v.status] || v.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {totalPages > 1 && (
+                <div className='flex items-center justify-center gap-2 mt-4'>
+                  <Button variant='outline' size='icon' className='h-8 w-8' disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
+                    <ChevronLeft className='h-4 w-4' />
+                  </Button>
+                  <span className='text-muted-foreground text-[13px]'>{page} / {totalPages}</span>
+                  <Button variant='outline' size='icon' className='h-8 w-8' disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>
+                    <ChevronRight className='h-4 w-4' />
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </Main>
+
+      {/* URL Add Dialog */}
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent className='sm:max-w-sm'>
+          <DialogHeader>
+            <DialogTitle>영상 URL 추가</DialogTitle>
+          </DialogHeader>
+          <div className='mb-5 py-2'>
+            <label className='text-foreground text-sm font-medium mb-1.5'>YouTube URL</label>
+            <p className='text-muted-foreground text-xs mb-2'>작업할 영상의 URL을 입력하세요</p>
+            <Input
+              value={urlInput}
+              onChange={e => setUrlInput(e.target.value)}
+              placeholder='https://youtube.com/watch?v=...'
+              onKeyDown={e => { if (e.key === 'Enter') handleAddUrl() }}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant='outline' onClick={() => setAddOpen(false)} className='hydra-btn-press'>취소</Button>
+            <Button onClick={handleAddUrl} disabled={adding || !urlInput.trim()} className='hydra-btn-press'>
+              {adding ? '추가 중...' : '추가'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

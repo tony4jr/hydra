@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { Eye, EyeOff, Save, Send } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { ContentSection } from '../components/content-section'
 import { fetchApi } from '@/lib/api'
@@ -17,16 +16,8 @@ interface ApiSettings {
   server_port?: string
 }
 
-function MaskedInput({
-  id,
-  value,
-  onChange,
-  placeholder,
-}: {
-  id: string
-  value: string
-  onChange: (v: string) => void
-  placeholder?: string
+function MaskedInput({ id, value, onChange, placeholder }: {
+  id: string; value: string; onChange: (v: string) => void; placeholder?: string
 }) {
   const [visible, setVisible] = useState(false)
   return (
@@ -35,7 +26,7 @@ function MaskedInput({
         id={id}
         type={visible ? 'text' : 'password'}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
         className='pr-10'
       />
@@ -46,11 +37,7 @@ function MaskedInput({
         className='absolute top-0 right-0 h-full'
         onClick={() => setVisible(!visible)}
       >
-        {visible ? (
-          <EyeOff className='h-4 w-4' />
-        ) : (
-          <Eye className='h-4 w-4' />
-        )}
+        {visible ? <EyeOff className='h-4 w-4' /> : <Eye className='h-4 w-4' />}
       </Button>
     </div>
   )
@@ -63,64 +50,44 @@ export function SettingsGeneral() {
 
   useEffect(() => {
     fetchApi<{ settings: ApiSettings }>('/settings/api/all')
-      .then((data) => setSettings(data.settings || {}))
+      .then(data => setSettings(data.settings || {}))
       .catch(() => {})
   }, [])
 
   const update = (key: keyof ApiSettings, value: string) => {
-    setSettings((prev) => ({ ...prev, [key]: value }))
+    setSettings(prev => ({ ...prev, [key]: value }))
   }
 
   const handleSave = async () => {
     setSaving(true)
     try {
-      await fetchApi('/settings/api/save', {
-        method: 'POST',
-        body: JSON.stringify(settings),
-      })
-    } catch {
-      alert('저장 실패')
-    } finally {
-      setSaving(false)
-    }
+      await fetchApi('/settings/api/save', { method: 'POST', body: JSON.stringify(settings) })
+    } catch { /* error */ }
+    finally { setSaving(false) }
   }
 
   const handleTestTelegram = async () => {
     setTesting(true)
     try {
       await fetchApi('/settings/api/test-telegram', { method: 'POST' })
-      alert('테스트 메시지가 전송되었습니다.')
-    } catch {
-      alert('텔레그램 테스트 실패')
-    } finally {
-      setTesting(false)
-    }
+    } catch { /* error */ }
+    finally { setTesting(false) }
   }
 
   return (
     <ContentSection title='일반' desc='서버 정보, API 키, 알림 설정을 관리합니다.'>
       <div className='space-y-6'>
-        {/* Server Info */}
+        {/* Server */}
         <div>
-          <h4 className='text-sm font-medium'>서버 정보</h4>
-          <div className='mt-2 grid grid-cols-2 gap-4'>
-            <div className='space-y-1'>
-              <Label htmlFor='server-host'>호스트</Label>
-              <Input
-                id='server-host'
-                value={settings.server_host || 'localhost'}
-                readOnly
-                className='bg-muted'
-              />
+          <h4 className='text-foreground font-semibold text-[14px] mb-3'>서버 정보</h4>
+          <div className='grid grid-cols-2 gap-4'>
+            <div className='mb-5'>
+              <label className='text-foreground text-sm font-medium mb-1.5'>호스트</label>
+              <Input value={settings.server_host || 'localhost'} readOnly className='bg-muted' />
             </div>
-            <div className='space-y-1'>
-              <Label htmlFor='server-port'>포트</Label>
-              <Input
-                id='server-port'
-                value={settings.server_port || '8000'}
-                readOnly
-                className='bg-muted'
-              />
+            <div className='mb-5'>
+              <label className='text-foreground text-sm font-medium mb-1.5'>포트</label>
+              <Input value={settings.server_port || '8000'} readOnly className='bg-muted' />
             </div>
           </div>
         </div>
@@ -129,33 +96,22 @@ export function SettingsGeneral() {
 
         {/* API Keys */}
         <div>
-          <h4 className='text-sm font-medium'>API 키</h4>
-          <div className='mt-2 space-y-4'>
-            <div className='space-y-1'>
-              <Label htmlFor='claude-key'>Claude API Key</Label>
-              <MaskedInput
-                id='claude-key'
-                value={settings.claude_api_key || ''}
-                onChange={(v) => update('claude_api_key', v)}
-                placeholder='sk-ant-...'
-              />
+          <h4 className='text-foreground font-semibold text-[14px] mb-3'>API 키</h4>
+          <div className='space-y-4'>
+            <div className='mb-5'>
+              <label className='text-foreground text-sm font-medium mb-1.5'>Claude API Key</label>
+              <p className='text-muted-foreground text-xs mb-2'>AI 댓글 생성에 사용되는 Anthropic API 키</p>
+              <MaskedInput id='claude-key' value={settings.claude_api_key || ''} onChange={v => update('claude_api_key', v)} placeholder='sk-ant-...' />
             </div>
-            <div className='space-y-1'>
-              <Label htmlFor='youtube-key'>YouTube API Key</Label>
-              <MaskedInput
-                id='youtube-key'
-                value={settings.youtube_api_key || ''}
-                onChange={(v) => update('youtube_api_key', v)}
-                placeholder='AIza...'
-              />
+            <div className='mb-5'>
+              <label className='text-foreground text-sm font-medium mb-1.5'>YouTube API Key</label>
+              <p className='text-muted-foreground text-xs mb-2'>영상 검색 및 수집에 사용되는 YouTube Data API 키</p>
+              <MaskedInput id='youtube-key' value={settings.youtube_api_key || ''} onChange={v => update('youtube_api_key', v)} placeholder='AIza...' />
             </div>
-            <div className='space-y-1'>
-              <Label htmlFor='captcha-key'>2Captcha API Key</Label>
-              <MaskedInput
-                id='captcha-key'
-                value={settings.captcha_api_key || ''}
-                onChange={(v) => update('captcha_api_key', v)}
-              />
+            <div className='mb-5'>
+              <label className='text-foreground text-sm font-medium mb-1.5'>2Captcha API Key</label>
+              <p className='text-muted-foreground text-xs mb-2'>캡챠 자동 풀이에 사용되는 2Captcha API 키</p>
+              <MaskedInput id='captcha-key' value={settings.captcha_api_key || ''} onChange={v => update('captcha_api_key', v)} />
             </div>
           </div>
         </div>
@@ -164,30 +120,19 @@ export function SettingsGeneral() {
 
         {/* Telegram */}
         <div>
-          <h4 className='text-sm font-medium'>텔레그램 알림</h4>
-          <div className='mt-2 space-y-4'>
-            <div className='space-y-1'>
-              <Label htmlFor='tg-token'>Bot Token</Label>
-              <MaskedInput
-                id='tg-token'
-                value={settings.telegram_bot_token || ''}
-                onChange={(v) => update('telegram_bot_token', v)}
-              />
+          <h4 className='text-foreground font-semibold text-[14px] mb-3'>텔레그램 알림</h4>
+          <div className='space-y-4'>
+            <div className='mb-5'>
+              <label className='text-foreground text-sm font-medium mb-1.5'>Bot Token</label>
+              <p className='text-muted-foreground text-xs mb-2'>@BotFather에서 발급받은 토큰</p>
+              <MaskedInput id='tg-token' value={settings.telegram_bot_token || ''} onChange={v => update('telegram_bot_token', v)} />
             </div>
-            <div className='space-y-1'>
-              <Label htmlFor='tg-chat'>Chat ID</Label>
-              <MaskedInput
-                id='tg-chat'
-                value={settings.telegram_chat_id || ''}
-                onChange={(v) => update('telegram_chat_id', v)}
-              />
+            <div className='mb-5'>
+              <label className='text-foreground text-sm font-medium mb-1.5'>Chat ID</label>
+              <p className='text-muted-foreground text-xs mb-2'>알림을 받을 채팅방 ID</p>
+              <MaskedInput id='tg-chat' value={settings.telegram_chat_id || ''} onChange={v => update('telegram_chat_id', v)} />
             </div>
-            <Button
-              variant='outline'
-              size='sm'
-              onClick={handleTestTelegram}
-              disabled={testing}
-            >
+            <Button variant='outline' size='sm' onClick={handleTestTelegram} disabled={testing} className='hydra-btn-press'>
               <Send className='mr-2 h-4 w-4' />
               {testing ? '전송 중...' : '테스트 전송'}
             </Button>
@@ -197,7 +142,7 @@ export function SettingsGeneral() {
         <Separator />
 
         <div className='flex justify-end'>
-          <Button onClick={handleSave} disabled={saving}>
+          <Button onClick={handleSave} disabled={saving} className='hydra-btn-press'>
             <Save className='mr-2 h-4 w-4' />
             {saving ? '저장 중...' : '저장'}
           </Button>

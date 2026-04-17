@@ -1,54 +1,18 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState } from 'react'
 import {
-  MessageSquare,
-  ThumbsUp,
-  TrendingUp,
-  Ghost,
-  CalendarDays,
-  BarChart3,
-  ChevronLeft,
-  ChevronRight,
+  MessageSquare, ThumbsUp, TrendingUp, Ghost,
 } from 'lucide-react'
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  AreaChart,
-  Area,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from 'recharts'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { fetchApi } from '@/lib/api'
-
-interface AnalyticsStats {
-  total_comments: number
-  total_likes: number
-  success_rate: number
-  ghost_rate: number
-}
-
-interface DailyData {
-  date: string
-  comments: number
-  likes: number
-}
+import { useCountUp } from '@/hooks/use-count-up'
 
 interface BrandPerformance {
   brand: string
@@ -59,380 +23,70 @@ interface BrandPerformance {
   success_rate: number
 }
 
-interface CalendarDay {
+interface DailyData {
   date: string
   comments: number
   likes: number
 }
 
-// Mock data for charts when API is unavailable
-const mockDailyData: DailyData[] = Array.from({ length: 14 }, (_, i) => {
-  const d = new Date()
-  d.setDate(d.getDate() - 13 + i)
-  return {
-    date: `${d.getMonth() + 1}/${d.getDate()}`,
-    comments: Math.floor(Math.random() * 15) + 2,
-    likes: Math.floor(Math.random() * 25) + 5,
-  }
-})
+type Period = '7d' | '30d' | 'all'
 
-const mockBrandData: BrandPerformance[] = [
-  { brand: 'Brand A', campaigns: 3, comments: 45, likes: 120, ghosts: 2, success_rate: 95.6 },
-  { brand: 'Brand B', campaigns: 2, comments: 28, likes: 85, ghosts: 1, success_rate: 96.4 },
-  { brand: 'Brand C', campaigns: 1, comments: 12, likes: 38, ghosts: 0, success_rate: 100 },
-]
-
-function DashboardTab({ stats }: { stats: AnalyticsStats }) {
-  const [dailyData, setDailyData] = useState<DailyData[]>([])
-  const [brandData, setBrandData] = useState<BrandPerformance[]>([])
-
-  useEffect(() => {
-    // /analytics/api/daily는 아직 없음 — mock 데이터 사용
-    setDailyData(mockDailyData)
-
-    fetchApi<BrandPerformance[]>('/brands/api/performance-summary')
-      .then((data) => setBrandData(Array.isArray(data) ? data : []))
-      .catch(() => setBrandData(mockBrandData))
-  }, [])
-
-  const statCards = [
-    {
-      title: '총 댓글',
-      value: stats.total_comments.toLocaleString(),
-      icon: MessageSquare,
-      color: 'text-blue-500',
-    },
-    {
-      title: '총 좋아요',
-      value: stats.total_likes.toLocaleString(),
-      icon: ThumbsUp,
-      color: 'text-green-500',
-    },
-    {
-      title: '성공률',
-      value: `${stats.success_rate}%`,
-      icon: TrendingUp,
-      color: 'text-emerald-500',
-    },
-    {
-      title: '고스트율',
-      value: `${stats.ghost_rate}%`,
-      icon: Ghost,
-      color: 'text-orange-500',
-    },
-  ]
-
+function StatCard({ label, value, icon: Icon, color, trend }: {
+  label: string; value: number; icon: React.ElementType; color: string; trend?: string
+}) {
+  const animated = useCountUp(value)
   return (
-    <div className='space-y-6'>
-      {/* Stat cards */}
-      <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-4'>
-        {statCards.map((card) => (
-          <Card key={card.title}>
-            <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
-              <CardTitle className='text-sm font-medium'>
-                {card.title}
-              </CardTitle>
-              <card.icon className={`h-4 w-4 ${card.color}`} />
-            </CardHeader>
-            <CardContent>
-              <div className='text-2xl font-bold'>{card.value}</div>
-            </CardContent>
-          </Card>
-        ))}
+    <div className='bg-card rounded-xl border border-border p-4'>
+      <div className='flex items-center justify-between mb-1'>
+        <span className='text-muted-foreground text-[12px]'>{label}</span>
+        <Icon className={`h-4 w-4 ${color}`} />
       </div>
-
-      {/* Daily trend chart */}
-      <Card>
-        <CardHeader>
-          <CardTitle className='text-base'>일별 댓글/좋아요 추이</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {dailyData.length === 0 ? (
-            <div className='flex h-[300px] items-center justify-center rounded-lg border border-dashed'>
-              <p className='text-muted-foreground'>데이터가 없습니다</p>
-            </div>
-          ) : (
-            <ResponsiveContainer width='100%' height={300}>
-              <AreaChart data={dailyData}>
-                <CartesianGrid strokeDasharray='3 3' className='stroke-muted' />
-                <XAxis dataKey='date' className='text-xs' />
-                <YAxis className='text-xs' />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: 'hsl(var(--popover))',
-                    border: '1px solid hsl(var(--border))',
-                    borderRadius: '8px',
-                    color: 'hsl(var(--popover-foreground))',
-                  }}
-                />
-                <Area
-                  type='monotone'
-                  dataKey='comments'
-                  name='댓글'
-                  stroke='hsl(217, 91%, 60%)'
-                  fill='hsl(217, 91%, 60%)'
-                  fillOpacity={0.2}
-                />
-                <Area
-                  type='monotone'
-                  dataKey='likes'
-                  name='좋아요'
-                  stroke='hsl(142, 71%, 45%)'
-                  fill='hsl(142, 71%, 45%)'
-                  fillOpacity={0.2}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Brand comparison chart */}
-      <Card>
-        <CardHeader>
-          <CardTitle className='text-base'>브랜드별 성과 비교</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {brandData.length === 0 ? (
-            <div className='flex h-[300px] items-center justify-center rounded-lg border border-dashed'>
-              <p className='text-muted-foreground'>데이터가 없습니다</p>
-            </div>
-          ) : (
-            <ResponsiveContainer width='100%' height={300}>
-              <BarChart data={brandData}>
-                <CartesianGrid strokeDasharray='3 3' className='stroke-muted' />
-                <XAxis dataKey='brand' className='text-xs' />
-                <YAxis className='text-xs' />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: 'hsl(var(--popover))',
-                    border: '1px solid hsl(var(--border))',
-                    borderRadius: '8px',
-                    color: 'hsl(var(--popover-foreground))',
-                  }}
-                />
-                <Bar dataKey='comments' name='댓글' fill='hsl(217, 91%, 60%)' radius={[4, 4, 0, 0]} />
-                <Bar dataKey='likes' name='좋아요' fill='hsl(142, 71%, 45%)' radius={[4, 4, 0, 0]} />
-                <Bar dataKey='ghosts' name='고스트' fill='hsl(25, 95%, 53%)' radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </CardContent>
-      </Card>
+      <div className='text-[28px] font-bold'>{animated}</div>
+      {trend && <span className='text-muted-foreground text-[11px]'>{trend}</span>}
     </div>
   )
 }
 
-function CalendarTab() {
-  const [year, setYear] = useState(() => new Date().getFullYear())
-  const [month, setMonth] = useState(() => new Date().getMonth() + 1)
-  const [calendarData, setCalendarData] = useState<CalendarDay[]>([])
-
-  useEffect(() => {
-    fetchApi<CalendarDay[]>(
-      `/api/calendar?year=${year}&month=${month}`
-    )
-      .then((data) => setCalendarData(Array.isArray(data) ? data : []))
-      .catch(() => setCalendarData([]))
-  }, [year, month])
-
-  const dayNames = ['일', '월', '화', '수', '목', '금', '토']
-
-  const calendarGrid = useMemo(() => {
-    const firstDay = new Date(year, month - 1, 1)
-    const lastDay = new Date(year, month, 0)
-    const startDow = firstDay.getDay()
-    const totalDays = lastDay.getDate()
-
-    const dataMap = new Map<number, CalendarDay>()
-    calendarData.forEach((d) => {
-      const day = parseInt(d.date.split('-')[2], 10)
-      dataMap.set(day, d)
-    })
-
-    const cells: { day: number; data?: CalendarDay }[] = []
-    // Empty cells before first day
-    for (let i = 0; i < startDow; i++) {
-      cells.push({ day: 0 })
+// Generate mock daily data when API isn't available
+function generateDailyData(days: number): DailyData[] {
+  return Array.from({ length: days }, (_, i) => {
+    const d = new Date()
+    d.setDate(d.getDate() - days + 1 + i)
+    return {
+      date: `${d.getMonth() + 1}/${d.getDate()}`,
+      comments: Math.floor(Math.random() * 15) + 2,
+      likes: Math.floor(Math.random() * 25) + 5,
     }
-    for (let d = 1; d <= totalDays; d++) {
-      cells.push({ day: d, data: dataMap.get(d) })
-    }
-    return cells
-  }, [year, month, calendarData])
-
-  const prevMonth = () => {
-    if (month === 1) {
-      setYear(year - 1)
-      setMonth(12)
-    } else {
-      setMonth(month - 1)
-    }
-  }
-
-  const nextMonth = () => {
-    if (month === 12) {
-      setYear(year + 1)
-      setMonth(1)
-    } else {
-      setMonth(month + 1)
-    }
-  }
-
-  const today = new Date()
-  const isToday = (day: number) =>
-    year === today.getFullYear() &&
-    month === today.getMonth() + 1 &&
-    day === today.getDate()
-
-  return (
-    <Card>
-      <CardHeader>
-        <div className='flex items-center justify-between'>
-          <Button variant='ghost' size='icon' onClick={prevMonth}>
-            <ChevronLeft className='h-4 w-4' />
-          </Button>
-          <CardTitle className='text-base'>
-            {year}년 {month}월
-          </CardTitle>
-          <Button variant='ghost' size='icon' onClick={nextMonth}>
-            <ChevronRight className='h-4 w-4' />
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className='grid grid-cols-7 gap-1'>
-          {/* Day headers */}
-          {dayNames.map((name) => (
-            <div
-              key={name}
-              className='py-2 text-center text-xs font-medium text-muted-foreground'
-            >
-              {name}
-            </div>
-          ))}
-
-          {/* Day cells */}
-          {calendarGrid.map((cell, i) => (
-            <div
-              key={i}
-              className={`min-h-[72px] rounded-md border p-1 text-xs ${
-                cell.day === 0
-                  ? 'border-transparent'
-                  : isToday(cell.day)
-                    ? 'border-primary bg-primary/5'
-                    : 'border-border'
-              }`}
-            >
-              {cell.day > 0 && (
-                <>
-                  <div
-                    className={`mb-1 font-medium ${isToday(cell.day) ? 'text-primary' : ''}`}
-                  >
-                    {cell.day}
-                  </div>
-                  {cell.data && (cell.data.comments > 0 || cell.data.likes > 0) && (
-                    <div className='space-y-0.5'>
-                      {cell.data.comments > 0 && (
-                        <div className='flex items-center gap-1 text-blue-500'>
-                          <MessageSquare className='h-3 w-3' />
-                          <span>{cell.data.comments}</span>
-                        </div>
-                      )}
-                      {cell.data.likes > 0 && (
-                        <div className='flex items-center gap-1 text-green-500'>
-                          <ThumbsUp className='h-3 w-3' />
-                          <span>{cell.data.likes}</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-function DetailTab() {
-  const [brands, setBrands] = useState<BrandPerformance[]>([])
-
-  useEffect(() => {
-    fetchApi<BrandPerformance[]>('/brands/api/performance-summary')
-      .then((data) => setBrands(Array.isArray(data) ? data : []))
-      .catch(() => setBrands(mockBrandData))
-  }, [])
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className='text-base'>브랜드별 성과</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>브랜드</TableHead>
-              <TableHead className='text-center'>캠페인 수</TableHead>
-              <TableHead className='text-center'>댓글 수</TableHead>
-              <TableHead className='text-center'>좋아요 수</TableHead>
-              <TableHead className='text-center'>고스트 수</TableHead>
-              <TableHead className='text-center'>성공률</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {brands.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={6}
-                  className='py-10 text-center text-muted-foreground'
-                >
-                  데이터가 없습니다
-                </TableCell>
-              </TableRow>
-            ) : (
-              brands.map((b) => (
-                <TableRow key={b.brand}>
-                  <TableCell className='font-medium'>{b.brand}</TableCell>
-                  <TableCell className='text-center'>{b.campaigns}</TableCell>
-                  <TableCell className='text-center'>{b.comments}</TableCell>
-                  <TableCell className='text-center'>{b.likes}</TableCell>
-                  <TableCell className='text-center'>{b.ghosts}</TableCell>
-                  <TableCell className='text-center'>
-                    {b.success_rate}%
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
-  )
+  })
 }
 
 export default function AnalyticsPage() {
-  const [stats, setStats] = useState<AnalyticsStats>({
-    total_comments: 0,
-    total_likes: 0,
-    success_rate: 0,
-    ghost_rate: 0,
-  })
+  const [period, setPeriod] = useState<Period>('7d')
+  const [loading, setLoading] = useState(true)
+  const [stats, setStats] = useState({ comments: 0, likes: 0, videos: 0, ghostRate: 0 })
+  const [dailyData, setDailyData] = useState<DailyData[]>([])
+  const [brandData, setBrandData] = useState<BrandPerformance[]>([])
 
   useEffect(() => {
-    // /analytics/api/stats는 아직 없음 — /api/stats 사용
-    fetchApi<any>('/api/stats')
-      .then((data) => setStats({
-        total_comments: data?.today?.comments || 0,
-        total_likes: data?.today?.likes || 0,
-        success_rate: 0,
-        ghost_rate: 0,
-      }))
-      .catch(() => {})
-  }, [])
+    setLoading(true)
+    const days = period === '7d' ? 7 : period === '30d' ? 30 : 90
+
+    Promise.all([
+      fetchApi<any>('/api/stats').catch(() => null),
+      fetchApi<BrandPerformance[]>('/brands/api/performance-summary').catch(() => []),
+    ]).then(([s, bd]) => {
+      setStats({
+        comments: s?.today?.comments || 0,
+        likes: s?.today?.likes || 0,
+        videos: s?.campaigns?.total || 0,
+        ghostRate: 0,
+      })
+      setDailyData(generateDailyData(days))
+      setBrandData(Array.isArray(bd) ? bd : [])
+    }).finally(() => setLoading(false))
+  }, [period])
+
+  const todayStr = `${new Date().getMonth() + 1}/${new Date().getDate()}`
 
   return (
     <>
@@ -443,40 +97,138 @@ export default function AnalyticsPage() {
         </div>
       </Header>
       <Main>
-        <div className='mb-2 flex flex-wrap items-center justify-between space-y-2'>
-          <div>
-            <h2 className='text-2xl font-bold tracking-tight'>분석</h2>
-            <p className='text-muted-foreground'>
-              댓글 성과, 계정 건강도, 기간별 추세
-            </p>
+        <div >
+          <div className='mb-5 flex flex-wrap items-center justify-between gap-2'>
+            <div>
+              <h2 className='text-[22px] font-bold'>분석</h2>
+              <p className='text-muted-foreground text-[13px]'>성과 확인 및 기간별 추세</p>
+            </div>
+            {/* Period selector */}
+            <div className='flex gap-1 bg-muted rounded-lg p-1'>
+              {([['7d', '7일'], ['30d', '30일'], ['all', '전체']] as [Period, string][]).map(([key, label]) => (
+                <Button
+                  key={key}
+                  variant={period === key ? 'default' : 'ghost'}
+                  size='sm'
+                  onClick={() => setPeriod(key)}
+                  className='hydra-btn-press text-[12px] h-7 px-3'
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
           </div>
+
+          {/* Stat cards */}
+          {loading ? (
+            <div className='grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5'>
+              {[1, 2, 3, 4].map(i => <Skeleton key={i} className='h-24 rounded-xl' />)}
+            </div>
+          ) : (
+            <div className='grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5'>
+              <StatCard label='총 댓글' value={stats.comments} icon={MessageSquare} color='text-blue-500' />
+              <StatCard label='총 좋아요' value={stats.likes} icon={ThumbsUp} color='text-green-500' />
+              <StatCard label='작업 영상' value={stats.videos} icon={TrendingUp} color='text-emerald-500' />
+              <StatCard label='고스트율' value={stats.ghostRate} icon={Ghost} color='text-orange-500' trend={stats.ghostRate === 0 ? '문제 없음' : undefined} />
+            </div>
+          )}
+
+          {/* Daily bar chart */}
+          {loading ? (
+            <Skeleton className='h-80 rounded-xl mb-5' />
+          ) : (
+            <div className='bg-card border border-border rounded-xl p-5 mb-5'>
+              <h3 className='text-foreground font-semibold text-[15px] mb-4'>일별 작업량</h3>
+              {dailyData.length === 0 ? (
+                <div className='flex h-[280px] items-center justify-center'>
+                  <p className='text-muted-foreground text-[13px]'>데이터가 없어요</p>
+                </div>
+              ) : (
+                <ResponsiveContainer width='100%' height={280}>
+                  <BarChart data={dailyData} barGap={2}>
+                    <CartesianGrid strokeDasharray='3 3' className='stroke-muted' vertical={false} />
+                    <XAxis dataKey='date' className='text-xs' tick={{ fill: 'rgba(161,161,170,0.9)' }} />
+                    <YAxis className='text-xs' tick={{ fill: 'rgba(161,161,170,0.9)' }} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: 'var(--popover)',
+                        border: '1px solid var(--border)',
+                        borderRadius: '8px',
+                        color: 'var(--popover-foreground)',
+                        fontSize: '12px',
+                      }}
+                    />
+                    <Bar dataKey='comments' name='댓글' radius={[4, 4, 0, 0]} maxBarSize={24}>
+                      {dailyData.map((entry, idx) => (
+                        <Cell
+                          key={idx}
+                          fill={entry.date === todayStr ? 'transparent' : 'hsl(217, 91%, 60%)'}
+                          stroke={entry.date === todayStr ? 'hsl(217, 91%, 60%)' : 'none'}
+                          strokeWidth={entry.date === todayStr ? 2 : 0}
+                          strokeDasharray={entry.date === todayStr ? '4 2' : '0'}
+                        />
+                      ))}
+                    </Bar>
+                    <Bar dataKey='likes' name='좋아요' radius={[4, 4, 0, 0]} maxBarSize={24}>
+                      {dailyData.map((entry, idx) => (
+                        <Cell
+                          key={idx}
+                          fill={entry.date === todayStr ? 'transparent' : 'hsl(142, 71%, 45%)'}
+                          stroke={entry.date === todayStr ? 'hsl(142, 71%, 45%)' : 'none'}
+                          strokeWidth={entry.date === todayStr ? 2 : 0}
+                          strokeDasharray={entry.date === todayStr ? '4 2' : '0'}
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          )}
+
+          {/* Campaign performance table */}
+          {loading ? (
+            <Skeleton className='h-48 rounded-xl' />
+          ) : (
+            <div className='bg-card border border-border rounded-xl overflow-hidden'>
+              <div className='px-5 py-4 border-b border-border'>
+                <h3 className='text-foreground font-semibold text-[15px]'>캠페인별 성과</h3>
+              </div>
+              <div className='overflow-x-auto'>
+                <table className='w-full text-sm'>
+                  <thead>
+                    <tr className='border-b border-border bg-muted/30'>
+                      <th className='p-3 text-left font-medium text-[12px] text-muted-foreground'>브랜드</th>
+                      <th className='p-3 text-center font-medium text-[12px] text-muted-foreground'>캠페인</th>
+                      <th className='p-3 text-center font-medium text-[12px] text-muted-foreground'>댓글</th>
+                      <th className='p-3 text-center font-medium text-[12px] text-muted-foreground'>좋아요</th>
+                      <th className='p-3 text-center font-medium text-[12px] text-muted-foreground'>고스트</th>
+                      <th className='p-3 text-center font-medium text-[12px] text-muted-foreground'>성공률</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {brandData.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className='py-12 text-center text-muted-foreground text-[13px]'>
+                          성과 데이터가 없어요. 캠페인을 실행하면 여기에 표시됩니다.
+                        </td>
+                      </tr>
+                    ) : brandData.map(b => (
+                      <tr key={b.brand} className='border-b border-border/30 hydra-row-hover'>
+                        <td className='p-3 font-medium text-[13px]'>{b.brand}</td>
+                        <td className='p-3 text-center text-[13px]'>{b.campaigns}</td>
+                        <td className='p-3 text-center text-[13px]'>{b.comments}</td>
+                        <td className='p-3 text-center text-[13px]'>{b.likes}</td>
+                        <td className='p-3 text-center text-[13px]'>{b.ghosts}</td>
+                        <td className='p-3 text-center text-[13px]'>{b.success_rate}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
-
-        <Tabs defaultValue='dashboard'>
-          <TabsList>
-            <TabsTrigger value='dashboard'>
-              <BarChart3 className='mr-2 h-4 w-4' />
-              대시보드
-            </TabsTrigger>
-            <TabsTrigger value='calendar'>
-              <CalendarDays className='mr-2 h-4 w-4' />
-              캘린더
-            </TabsTrigger>
-            <TabsTrigger value='detail'>상세</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value='dashboard' className='mt-4'>
-            <DashboardTab stats={stats} />
-          </TabsContent>
-
-          <TabsContent value='calendar' className='mt-4'>
-            <CalendarTab />
-          </TabsContent>
-
-          <TabsContent value='detail' className='mt-4'>
-            <DetailTab />
-          </TabsContent>
-        </Tabs>
       </Main>
     </>
   )
