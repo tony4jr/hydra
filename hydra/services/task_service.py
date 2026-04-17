@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 import json
 from sqlalchemy import case, or_
 from sqlalchemy.orm import Session
-from hydra.db.models import Task, ProfileLock, Worker
+from hydra.db.models import Account, Task, ProfileLock, Worker
 from hydra.services.account_limits import can_execute_task
 from hydra.services.video_protection import check_account_video_duplicate, check_account_video_like_duplicate
 
@@ -37,6 +37,18 @@ def fetch_tasks(db: Session, worker: Worker, limit: int = 5) -> list[Task]:
             continue
         if task.task_type not in PREPARATION_TYPES and not worker.allow_campaign:
             continue
+        # Auto-assign account if not set
+        if not task.account_id and task.task_type in ("comment", "reply", "like", "like_boost"):
+            available = db.query(Account).filter(
+                Account.status == "active",
+                ~Account.id.in_(
+                    db.query(ProfileLock.account_id).filter(ProfileLock.released_at.is_(None))
+                ),
+            ).first()
+            if not available:
+                continue  # No available account
+            task.account_id = available.id
+
         if task.account_id:
             existing_lock = db.query(ProfileLock).filter(
                 ProfileLock.account_id == task.account_id,
