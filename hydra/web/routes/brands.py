@@ -34,7 +34,7 @@ class BrandCreate(BaseModel):
 
 @router.get("/api/list")
 def list_brands(db: Session = Depends(get_db)):
-    brands = db.query(Brand).all()
+    brands = db.query(Brand).filter(Brand.status != "deleted").all()
     return [
         {"id": b.id, "name": b.name, "category": b.product_category, "status": b.status}
         for b in brands

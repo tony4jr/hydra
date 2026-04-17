@@ -114,9 +114,9 @@ export function BrandFormDialog({
     }
     setLoading(true)
     try {
-      await fetchApi(`/brands/api/${brand.id}/update`, {
+      await fetchApi(`/brands/api/${brand.id}/update-field`, {
         method: 'POST',
-        body: JSON.stringify({ status: 'deleted' }),
+        body: JSON.stringify({ field: 'status', value: 'deleted' }),
       })
       onOpenChange(false)
       onSuccess()
