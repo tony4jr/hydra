@@ -5,6 +5,7 @@ import random
 from datetime import datetime, UTC
 from hydra.browser.driver import BrowserSession
 from hydra.browser.actions import random_delay, scroll_page, click_like_button, watch_video, handle_ad
+from worker.youtube_habits import maybe_check_notifications, maybe_visit_own_channel
 
 
 class WorkerSession:
@@ -74,6 +75,10 @@ class WorkerSession:
             await scroll_page(page, scrolls=random.randint(2, 5))
         # nothing = 그냥 대기
         await random_delay(2.0, 5.0)
+
+        # 가끔 알림 확인 / 내 채널 방문
+        await maybe_check_notifications(page)
+        await maybe_visit_own_channel(page)
 
     async def _browse_shorts(self, page):
         """숏츠 시청 (자연스러운 패턴)."""
