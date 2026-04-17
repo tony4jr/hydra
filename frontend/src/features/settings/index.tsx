@@ -1,5 +1,5 @@
 import { Outlet } from '@tanstack/react-router'
-import { Monitor, Bell, Palette, Wrench, UserCog, ListChecks } from 'lucide-react'
+import { Palette, Wrench, ListChecks, Settings2 } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { ConfigDrawer } from '@/components/config-drawer'
 import { Header } from '@/components/layout/header'
@@ -11,34 +11,24 @@ import { SidebarNav } from './components/sidebar-nav'
 
 const sidebarNavItems = [
   {
-    title: 'Profile',
+    title: '일반',
     href: '/settings',
-    icon: <UserCog size={18} />,
-  },
-  {
-    title: 'Account',
-    href: '/settings/account',
     icon: <Wrench size={18} />,
   },
   {
-    title: 'Appearance',
-    href: '/settings/appearance',
-    icon: <Palette size={18} />,
-  },
-  {
-    title: 'Notifications',
-    href: '/settings/notifications',
-    icon: <Bell size={18} />,
-  },
-  {
-    title: 'Display',
-    href: '/settings/display',
-    icon: <Monitor size={18} />,
+    title: '행동 패턴',
+    href: '/settings/behavior',
+    icon: <Settings2 size={18} />,
   },
   {
     title: '프리셋',
     href: '/settings/presets',
     icon: <ListChecks size={18} />,
+  },
+  {
+    title: '외관',
+    href: '/settings/appearance',
+    icon: <Palette size={18} />,
   },
 ]
 
@@ -58,10 +48,10 @@ export function Settings() {
       <Main fixed>
         <div className='space-y-0.5'>
           <h1 className='text-2xl font-bold tracking-tight md:text-3xl'>
-            Settings
+            설정
           </h1>
           <p className='text-muted-foreground'>
-            Manage your account settings and set e-mail preferences.
+            API 키, 행동 패턴, 프리셋 등 HYDRA 설정을 관리합니다.
           </p>
         </div>
         <Separator className='my-4 lg:my-6' />
