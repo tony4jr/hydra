@@ -2,12 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from hydra.api.deps import db_dependency
+from hydra.core.config import settings
 from hydra.services import worker_service
 
 router = APIRouter(prefix="/api/workers", tags=["workers"])
 
 class WorkerCreate(BaseModel):
     name: str
+    registration_secret: str
 
 class WorkerCreateResponse(BaseModel):
     worker_id: int
@@ -24,6 +26,8 @@ class HeartbeatResponse(BaseModel):
 
 @router.post("/register", response_model=WorkerCreateResponse)
 def register(body: WorkerCreate, db: Session = Depends(db_dependency)):
+    if body.registration_secret != settings.worker_token_secret:
+        raise HTTPException(status_code=403, detail="Invalid registration secret")
     worker, raw_token = worker_service.register_worker(db, body.name)
     return WorkerCreateResponse(worker_id=worker.id, name=worker.name, token=raw_token)
 

@@ -32,6 +32,7 @@ export function WorkerAddDialog({
   onCreated,
 }: WorkerAddDialogProps) {
   const [name, setName] = useState('')
+  const [registrationSecret, setRegistrationSecret] = useState('')
   const [allowPreparation, setAllowPreparation] = useState(true)
   const [allowCampaign, setAllowCampaign] = useState(true)
   const [creating, setCreating] = useState(false)
@@ -46,6 +47,7 @@ export function WorkerAddDialog({
         method: 'POST',
         body: JSON.stringify({
           name: name.trim(),
+          registration_secret: registrationSecret,
           allow_preparation: allowPreparation,
           allow_campaign: allowCampaign,
         }),
@@ -69,6 +71,7 @@ export function WorkerAddDialog({
   const handleClose = (open: boolean) => {
     if (!open) {
       setName('')
+      setRegistrationSecret('')
       setAllowPreparation(true)
       setAllowCampaign(true)
       setResult(null)
@@ -132,6 +135,16 @@ export function WorkerAddDialog({
                 onChange={(e) => setName(e.target.value)}
               />
             </div>
+            <div className='space-y-2'>
+              <Label htmlFor='registration-secret'>등록 시크릿</Label>
+              <Input
+                id='registration-secret'
+                type='password'
+                placeholder='서버 WORKER_TOKEN_SECRET 값'
+                value={registrationSecret}
+                onChange={(e) => setRegistrationSecret(e.target.value)}
+              />
+            </div>
             <div className='space-y-3'>
               <Label>역할</Label>
               <div className='flex items-center space-x-2'>
@@ -170,7 +183,7 @@ export function WorkerAddDialog({
               </Button>
               <Button
                 onClick={handleCreate}
-                disabled={!name.trim() || creating}
+                disabled={!name.trim() || !registrationSecret.trim() || creating}
               >
                 {creating ? '생성 중...' : '생성'}
               </Button>
