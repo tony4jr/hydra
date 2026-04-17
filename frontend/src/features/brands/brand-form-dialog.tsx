@@ -249,6 +249,21 @@ export function BrandFormDialog({
                   </label>
                 ))}
               </div>
+              <p className='text-xs text-muted-foreground'>
+                프리셋 편집은{' '}
+                <a
+                  href='/settings/presets'
+                  className='underline hover:text-foreground'
+                  onClick={(e) => {
+                    e.preventDefault()
+                    onOpenChange(false)
+                    window.location.href = '/settings/presets'
+                  }}
+                >
+                  설정 &gt; 프리셋
+                </a>
+                에서 가능합니다
+              </p>
             </div>
           )}
           <div className='grid gap-2'>
