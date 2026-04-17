@@ -4,8 +4,11 @@ from sqlalchemy.orm import Session
 from hydra.db.models import Task, ProfileLock, Worker
 
 
+PREPARATION_TYPES = {"login", "channel_setup", "warmup"}
+
+
 def fetch_tasks(db: Session, worker: Worker, limit: int = 5) -> list[Task]:
-    """Worker에게 배정할 태스크 가져오기 (프로필 잠금 고려)."""
+    """Worker에게 배정할 태스크 가져오기 (프로필 잠금 + 역할 필터링)."""
     now = datetime.now(UTC)
     priority_order = case(
         (Task.priority == "urgent", 0),
@@ -26,6 +29,11 @@ def fetch_tasks(db: Session, worker: Worker, limit: int = 5) -> list[Task]:
     for task in tasks:
         if len(assigned) >= limit:
             break
+        # 역할 필터링: 준비/캠페인 태스크 분리
+        if task.task_type in PREPARATION_TYPES and not worker.allow_preparation:
+            continue
+        if task.task_type not in PREPARATION_TYPES and not worker.allow_campaign:
+            continue
         if task.account_id:
             existing_lock = db.query(ProfileLock).filter(
                 ProfileLock.account_id == task.account_id,
