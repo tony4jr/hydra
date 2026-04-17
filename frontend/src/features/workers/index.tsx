@@ -12,19 +12,12 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { fetchApi } from '@/lib/api'
+import { WorkerAddDialog } from './worker-add-dialog'
 
 interface Worker {
   id: number
@@ -35,6 +28,8 @@ interface Worker {
   os_type: string | null
   locked_profiles: number
   running_tasks: number
+  allow_preparation?: boolean
+  allow_campaign?: boolean
 }
 
 interface WorkerSummary {
@@ -71,6 +66,7 @@ const statusBadgeVariant = (s: string) => {
 }
 
 export default function WorkersPage() {
+  const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [workers, setWorkers] = useState<Worker[]>([])
   const [summary, setSummary] = useState<WorkerSummary>({
     online: 0,
@@ -79,7 +75,7 @@ export default function WorkersPage() {
     completed_today: 0,
   })
 
-  useEffect(() => {
+  const loadWorkers = () => {
     fetchApi<{ items: Worker[]; summary: WorkerSummary }>('/api/workers/')
       .then((data) => {
         setWorkers(data.items || [])
@@ -93,6 +89,10 @@ export default function WorkersPage() {
         )
       })
       .catch(() => {})
+  }
+
+  useEffect(() => {
+    loadWorkers()
   }, [])
 
   const summaryCards = [
@@ -132,29 +132,14 @@ export default function WorkersPage() {
               워커 PC 상태 및 관리
             </p>
           </div>
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className='mr-2 h-4 w-4' /> 워커 추가
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>워커 추가</DialogTitle>
-                <DialogDescription>
-                  아래 토큰을 워커 PC의 설정 파일에 입력하세요.
-                </DialogDescription>
-              </DialogHeader>
-              <div className='rounded-lg bg-muted p-4'>
-                <code className='text-sm break-all'>
-                  hydra_wk_xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-                </code>
-              </div>
-              <p className='text-xs text-muted-foreground'>
-                토큰 생성은 API 연결 후 활성화됩니다.
-              </p>
-            </DialogContent>
-          </Dialog>
+          <Button onClick={() => setAddDialogOpen(true)}>
+            <Plus className='mr-2 h-4 w-4' /> 워커 추가
+          </Button>
+          <WorkerAddDialog
+            open={addDialogOpen}
+            onOpenChange={setAddDialogOpen}
+            onCreated={loadWorkers}
+          />
         </div>
 
         {/* Summary cards */}
@@ -229,6 +214,18 @@ export default function WorkersPage() {
                       프로필 잠금
                     </span>
                     <Badge variant='outline'>{worker.locked_profiles}개</Badge>
+                  </div>
+                  <div className='flex items-center gap-1 pt-1'>
+                    {worker.allow_preparation && (
+                      <Badge variant='secondary' className='text-xs'>
+                        준비
+                      </Badge>
+                    )}
+                    {worker.allow_campaign && (
+                      <Badge variant='secondary' className='text-xs'>
+                        캠페인
+                      </Badge>
+                    )}
                   </div>
                 </CardContent>
               </Card>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus } from 'lucide-react'
+import { Pencil, Plus } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -8,24 +8,47 @@ import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { fetchApi } from '@/lib/api'
+import { BrandFormDialog } from './brand-form-dialog'
 
 interface Brand {
   id: number
   name: string
   product_category: string | null
+  core_message: string | null
+  tone_guide: string | null
   status: string
   weekly_campaign_target: number
   auto_campaign_enabled: boolean
+  keywords?: string[]
 }
 
 export default function BrandsPage() {
   const [brands, setBrands] = useState<Brand[]>([])
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create')
+  const [editBrand, setEditBrand] = useState<Brand | null>(null)
 
-  useEffect(() => {
+  const loadBrands = () => {
     fetchApi<Brand[]>('/brands/api/list')
       .then(setBrands)
       .catch(() => setBrands([]))
+  }
+
+  useEffect(() => {
+    loadBrands()
   }, [])
+
+  const openCreate = () => {
+    setDialogMode('create')
+    setEditBrand(null)
+    setDialogOpen(true)
+  }
+
+  const openEdit = (brand: Brand) => {
+    setDialogMode('edit')
+    setEditBrand(brand)
+    setDialogOpen(true)
+  }
 
   return (
     <>
@@ -43,7 +66,7 @@ export default function BrandsPage() {
               브랜드/상품 관리, 홍보 키워드, AI 가이드
             </p>
           </div>
-          <Button>
+          <Button onClick={openCreate}>
             <Plus className='mr-2 h-4 w-4' /> 브랜드 추가
           </Button>
         </div>
@@ -65,13 +88,26 @@ export default function BrandsPage() {
               >
                 <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
                   <CardTitle className='text-lg'>{brand.name}</CardTitle>
-                  <Badge
-                    variant={
-                      brand.status === 'active' ? 'default' : 'secondary'
-                    }
-                  >
-                    {brand.status}
-                  </Badge>
+                  <div className='flex items-center gap-2'>
+                    <Button
+                      variant='ghost'
+                      size='icon'
+                      className='h-7 w-7'
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        openEdit(brand)
+                      }}
+                    >
+                      <Pencil className='h-3.5 w-3.5' />
+                    </Button>
+                    <Badge
+                      variant={
+                        brand.status === 'active' ? 'default' : 'secondary'
+                      }
+                    >
+                      {brand.status}
+                    </Badge>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <p className='text-sm text-muted-foreground'>
@@ -88,12 +124,34 @@ export default function BrandsPage() {
                       </Badge>
                     )}
                   </div>
+                  {brand.keywords && brand.keywords.length > 0 && (
+                    <div className='mt-3'>
+                      <p className='mb-1 text-xs font-medium text-muted-foreground'>
+                        키워드
+                      </p>
+                      <div className='flex flex-wrap gap-1'>
+                        {brand.keywords.map((kw, i) => (
+                          <Badge key={i} variant='outline' className='text-xs'>
+                            {kw}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             ))
           )}
         </div>
       </Main>
+
+      <BrandFormDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        mode={dialogMode}
+        brand={editBrand}
+        onSuccess={loadBrands}
+      />
     </>
   )
 }
