@@ -19,22 +19,39 @@ import { TopNav } from '@/components/layout/top-nav'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { Search } from '@/components/search'
 import { ThemeSwitch } from '@/components/theme-switch'
+import { Badge } from '@/components/ui/badge'
 import { fetchApi } from '@/lib/api'
 import type { DashboardStats, WorkerInfo } from './types'
+
+interface ActiveCampaign {
+  id: number
+  video_title: string
+  brand_name: string
+  scenario: string
+  status: string
+  total_tasks: number
+  completed_tasks: number
+  worker_name?: string
+}
 
 export function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [workers, setWorkers] = useState<WorkerInfo[]>([])
+  const [activeCampaigns, setActiveCampaigns] = useState<ActiveCampaign[]>([])
 
   useEffect(() => {
     async function load() {
       try {
-        const [s, w] = await Promise.all([
+        const [s, w, c] = await Promise.all([
           fetchApi<DashboardStats>('/api/stats'),
           fetchApi<WorkerInfo[]>('/api/workers/'),
+          fetchApi<{ items: ActiveCampaign[] }>(
+            '/campaigns/api/list?status=in_progress'
+          ).catch(() => ({ items: [] })),
         ])
         setStats(s)
         setWorkers(w)
+        setActiveCampaigns(c.items || [])
       } catch {
         // API not available — use empty defaults
       }
@@ -151,19 +168,50 @@ export function Dashboard() {
               </CardHeader>
               <CardContent>
                 <div className='space-y-4'>
-                  {stats?.campaigns?.active ? (
-                    <p className='text-sm text-muted-foreground'>
-                      {stats.campaigns.active}개 캠페인 진행 중
-                    </p>
+                  {activeCampaigns.length > 0 ? (
+                    activeCampaigns.map((c) => {
+                      const progress =
+                        c.total_tasks > 0
+                          ? Math.round(
+                              (c.completed_tasks / c.total_tasks) * 100
+                            )
+                          : 0
+                      return (
+                        <div key={c.id} className='space-y-1'>
+                          <div className='flex items-center justify-between text-sm'>
+                            <span className='font-medium truncate max-w-[60%]'>
+                              {c.brand_name} - {c.video_title || `#${c.id}`}
+                            </span>
+                            <div className='flex items-center gap-2'>
+                              <Badge variant='outline' className='text-xs'>
+                                {c.scenario}
+                              </Badge>
+                              {c.worker_name && (
+                                <span className='flex items-center gap-1 text-xs text-muted-foreground'>
+                                  <Monitor className='h-3 w-3' />
+                                  {c.worker_name}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className='flex items-center gap-2'>
+                            <div className='h-2 flex-1 rounded-full bg-muted'>
+                              <div
+                                className='h-2 rounded-full bg-primary transition-all'
+                                style={{ width: `${progress}%` }}
+                              />
+                            </div>
+                            <span className='text-xs text-muted-foreground whitespace-nowrap'>
+                              {c.completed_tasks}/{c.total_tasks} ({progress}%)
+                            </span>
+                          </div>
+                        </div>
+                      )
+                    })
                   ) : (
-                    <div>
-                      <p className='text-sm font-medium'>
-                        캠페인 데이터 연결 예정
-                      </p>
-                      <p className='text-xs text-muted-foreground'>
-                        API 연결 후 실시간 표시
-                      </p>
-                    </div>
+                    <p className='text-sm text-muted-foreground'>
+                      진행중인 캠페인 없음
+                    </p>
                   )}
                 </div>
               </CardContent>
