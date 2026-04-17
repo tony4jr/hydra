@@ -22,6 +22,7 @@ from hydra.api.presets import router as presets_router
 from hydra.api.websocket import router as ws_router
 from hydra.api.profile_locks import router as profile_locks_router
 from hydra.api.version import router as version_router
+from hydra.api.ai import router as ai_router
 
 @asynccontextmanager
 async def lifespan(app):
@@ -71,6 +72,7 @@ app.include_router(presets_router)
 app.include_router(ws_router)
 app.include_router(profile_locks_router)
 app.include_router(version_router)
+app.include_router(ai_router)
 
 
 @app.get("/", response_class=HTMLResponse)
