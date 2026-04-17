@@ -12,6 +12,7 @@ from hydra.browser.actions import (
     watch_video,
     handle_ad,
     check_ghost,
+    type_human,
 )
 from worker.mouse import click_with_mouse_move
 from worker.login import auto_login
@@ -273,9 +274,62 @@ class TaskExecutor:
         })
 
     async def _handle_channel_setup(self, task: dict, payload: dict, session: WorkerSession) -> str:
-        """채널 설정 — YouTube Studio (향후 구현)."""
-        # placeholder
+        """유튜브 채널 설정 (이름, 아바타)."""
+        page = session.browser.page
+        channel_name = payload.get("channel_name", "")
+        avatar_path = payload.get("avatar_path", "")
+
+        # YouTube Studio 접속
+        await page.goto("https://studio.youtube.com")
+        await random_delay(3.0, 5.0)
+
+        # 채널 커스터마이즈 페이지
+        await page.goto("https://studio.youtube.com/channel/editing/basic")
+        await random_delay(2.0, 4.0)
+
+        # 채널 이름 변경
+        if channel_name:
+            try:
+                name_input = page.locator("input#text-input[aria-label*='이름'], input#given-name-input, #name-container input").first
+                await name_input.wait_for(timeout=10000)
+                await name_input.click()
+                await page.keyboard.press("Control+a")
+                await random_delay(0.3, 0.5)
+                await type_human(page, "input#text-input, input#given-name-input, #name-container input", channel_name)
+                await random_delay(1.0, 2.0)
+            except Exception as e:
+                print(f"[ChannelSetup] Name change failed: {e}")
+
+        # 아바타 업로드
+        if avatar_path:
+            try:
+                # 프로필 사진 변경 버튼 찾기
+                avatar_btn = page.locator("button:has-text('변경'), button:has-text('업로드'), #avatar-editor button").first
+                await avatar_btn.click()
+                await random_delay(1.0, 2.0)
+
+                # 파일 업로드
+                file_input = page.locator("input[type='file']").first
+                await file_input.set_input_files(avatar_path)
+                await random_delay(3.0, 5.0)
+
+                # 완료/저장 버튼
+                done_btn = page.locator("button:has-text('완료'), button:has-text('Done'), #done-button").first
+                await done_btn.click()
+                await random_delay(2.0, 3.0)
+            except Exception as e:
+                print(f"[ChannelSetup] Avatar upload failed: {e}")
+
+        # 게시/저장 버튼
+        try:
+            publish_btn = page.locator("button:has-text('게시'), button:has-text('Publish'), #publish-button").first
+            await publish_btn.click()
+            await random_delay(2.0, 4.0)
+        except Exception:
+            pass
+
         return json.dumps({
             "action": "channel_setup",
-            "status": "not_implemented",
+            "channel_name": channel_name,
+            "avatar_uploaded": bool(avatar_path),
         })
