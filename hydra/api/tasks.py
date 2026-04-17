@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from hydra.db.session import get_db
+from hydra.db.models import Account
 from hydra.services import worker_service, task_service
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
@@ -13,6 +14,7 @@ class TaskResponse(BaseModel):
     priority: str
     payload: str | None
     account_id: int | None
+    adspower_profile_id: str | None = None
 
 
 class TaskCompleteRequest(BaseModel):
@@ -31,7 +33,18 @@ def fetch_tasks(x_worker_token: str = Header(...), db: Session = Depends(get_db)
     if not worker:
         raise HTTPException(status_code=401, detail="Invalid worker token")
     tasks = task_service.fetch_tasks(db, worker)
-    return [TaskResponse(id=t.id, task_type=t.task_type, priority=t.priority, payload=t.payload, account_id=t.account_id) for t in tasks]
+    results = []
+    for t in tasks:
+        account = db.get(Account, t.account_id) if t.account_id else None
+        results.append(TaskResponse(
+            id=t.id,
+            task_type=t.task_type,
+            priority=t.priority,
+            payload=t.payload,
+            account_id=t.account_id,
+            adspower_profile_id=account.adspower_profile_id if account else None,
+        ))
+    return results
 
 
 @router.post("/complete")

@@ -64,8 +64,8 @@ export function CampaignCreateDialog({
       fetchApi<Preset[]>('/api/presets/')
         .then(setPresets)
         .catch(() => setPresets([]))
-      fetchApi<Video[]>('/videos/api/list')
-        .then(setVideos)
+      fetchApi<{ items: Video[] }>('/videos/api/list')
+        .then((data) => setVideos(data.items || []))
         .catch(() => setVideos([]))
       // reset form
       setBrandId('')

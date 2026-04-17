@@ -7,6 +7,8 @@ from worker.config import config
 class ServerClient:
     def __init__(self):
         self.base_url = config.server_url.rstrip("/")
+        if not self.base_url.startswith("https") and "localhost" not in self.base_url and "127.0.0.1" not in self.base_url:
+            print("[WARNING] Server URL is not HTTPS. Credentials may be exposed in transit.")
         self.headers = {"X-Worker-Token": config.worker_token}
         self.http = httpx.Client(timeout=30)
 

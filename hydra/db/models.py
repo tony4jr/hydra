@@ -1,6 +1,6 @@
 """SQLAlchemy models — 15 tables (12 spec + 3 from MKT_TUBE analysis)."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import (
     Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text,
@@ -37,7 +37,7 @@ class Account(Base):
     persona = Column(Text)  # JSON
     role_preference = Column(String)  # seed|witness|agree|any
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     last_active_at = Column(DateTime)
     retired_at = Column(DateTime)
     retired_reason = Column(String)
@@ -82,7 +82,7 @@ class Brand(Base):
     auto_campaign_enabled = Column(Boolean, default=False)
 
     status = Column(String, default="active")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
     # relationships
     keywords = relationship("Keyword", back_populates="brand")
@@ -103,7 +103,7 @@ class Keyword(Base):
     total_comments_posted = Column(Integer, default=0)
     last_searched_at = Column(DateTime)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
     # relationships
     brand = relationship("Brand", back_populates="keywords")
@@ -139,7 +139,7 @@ class Video(Base):
     keyword_id = Column(Integer, ForeignKey("keywords.id"))
     priority = Column(String, default="normal")
 
-    collected_at = Column(DateTime, default=datetime.utcnow)
+    collected_at = Column(DateTime, default=lambda: datetime.now(UTC))
     last_worked_at = Column(DateTime)
 
     # relationships
@@ -175,7 +175,7 @@ class Campaign(Base):
     preset_id = Column(Integer, ForeignKey("presets.id"))
     user_id = Column(Integer)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     completed_at = Column(DateTime)
 
     # relationships
@@ -265,7 +265,7 @@ class ActionLog(Base):
     status = Column(String, default="success")
     error_message = Column(Text)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
     # relationships
     account = relationship("Account", back_populates="action_logs")
@@ -285,7 +285,7 @@ class IpLog(Base):
     ip_address = Column(String, nullable=False)
     device_id = Column(String)
 
-    started_at = Column(DateTime, default=datetime.utcnow)
+    started_at = Column(DateTime, default=lambda: datetime.now(UTC))
     ended_at = Column(DateTime)
 
     __table_args__ = (
@@ -319,7 +319,7 @@ class SystemConfig(Base):
 
     key = Column(String, primary_key=True)
     value = Column(Text, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
 
 class ErrorLog(Base):
@@ -338,7 +338,7 @@ class ErrorLog(Base):
     resolved = Column(Boolean, default=False)
     resolved_at = Column(DateTime)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
     __table_args__ = (
         Index("idx_error_level", "level", "created_at"),
@@ -361,7 +361,7 @@ class ScrapedComment(Base):
     like_count = Column(Integer, default=0)
     time_text = Column(String)  # "2주 전" etc.
 
-    scraped_at = Column(DateTime, default=datetime.utcnow)
+    scraped_at = Column(DateTime, default=lambda: datetime.now(UTC))
     used_for_training = Column(Boolean, default=False)
 
     __table_args__ = (
@@ -384,7 +384,7 @@ class ProfilePool(Base):
     last_used_at = Column(DateTime)
     disabled = Column(Boolean, default=False)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
     __table_args__ = (
         Index("idx_pool_type", "pool_type", "disabled"),
@@ -405,7 +405,7 @@ class ChannelProfileHistory(Base):
     contact = Column(String)
     hashtags = Column(Text)  # JSON
 
-    applied_at = Column(DateTime, default=datetime.utcnow)
+    applied_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
     __table_args__ = (
         Index("idx_profile_history_account", "account_id"),
@@ -433,7 +433,7 @@ class RecoveryEmail(Base):
     last_error = Column(String)                 # latest IMAP / assignment error
 
     notes = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
     __table_args__ = (
         Index("idx_recovery_available", "disabled", "used_by_account_id"),
@@ -460,7 +460,7 @@ class PersonaSlot(Base):
     assigned_account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True)
     used_at = Column(DateTime)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
     __table_args__ = (
         Index("idx_slot_used", "used"),
@@ -485,7 +485,7 @@ class Worker(Base):
     last_heartbeat = Column(DateTime)
     current_version = Column(String)
     os_type = Column(String)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     notes = Column(Text)
 
     tasks = relationship("Task", back_populates="worker")
@@ -515,7 +515,7 @@ class Task(Base):
     assigned_at = Column(DateTime)
     started_at = Column(DateTime)
     completed_at = Column(DateTime)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
     worker = relationship("Worker", back_populates="tasks")
     campaign = relationship("Campaign")
@@ -539,8 +539,8 @@ class Preset(Base):
     description = Column(Text)
     steps = Column(Text, nullable=False)
     user_id = Column(Integer)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
     __table_args__ = (
         Index("idx_presets_code", "code"),
@@ -554,7 +554,7 @@ class ProfileLock(Base):
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False)
     worker_id = Column(Integer, ForeignKey("workers.id"), nullable=False)
     adspower_profile_id = Column(String, nullable=False)
-    locked_at = Column(DateTime, default=datetime.utcnow)
+    locked_at = Column(DateTime, default=lambda: datetime.now(UTC))
     released_at = Column(DateTime)
 
     account = relationship("Account")

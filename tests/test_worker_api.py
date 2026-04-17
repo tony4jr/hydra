@@ -30,14 +30,14 @@ def client():
     engine.dispose()
 
 def test_register_worker(client):
-    resp = client.post("/api/workers/register", json={"name": "PC-1"})
+    resp = client.post("/api/workers/register", json={"name": "PC-1", "registration_secret": ""})
     assert resp.status_code == 200
     data = resp.json()
     assert data["name"] == "PC-1"
     assert "token" in data
 
 def test_heartbeat(client):
-    resp = client.post("/api/workers/register", json={"name": "PC-1"})
+    resp = client.post("/api/workers/register", json={"name": "PC-1", "registration_secret": ""})
     token = resp.json()["token"]
     resp = client.post("/api/workers/heartbeat", json={"version": "1.0.0", "os_type": "windows"}, headers={"X-Worker-Token": token})
     assert resp.status_code == 200
@@ -48,8 +48,8 @@ def test_heartbeat_invalid_token(client):
     assert resp.status_code == 401
 
 def test_list_workers(client):
-    client.post("/api/workers/register", json={"name": "PC-1"})
-    client.post("/api/workers/register", json={"name": "PC-2"})
+    client.post("/api/workers/register", json={"name": "PC-1", "registration_secret": ""})
+    client.post("/api/workers/register", json={"name": "PC-2", "registration_secret": ""})
     resp = client.get("/api/workers/")
     assert resp.status_code == 200
     assert len(resp.json()) == 2

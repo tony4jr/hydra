@@ -87,12 +87,11 @@ function DashboardTab({ stats }: { stats: AnalyticsStats }) {
   const [brandData, setBrandData] = useState<BrandPerformance[]>([])
 
   useEffect(() => {
-    fetchApi<{ items: DailyData[] }>('/analytics/api/daily')
-      .then((data) => setDailyData(data.items || []))
-      .catch(() => setDailyData(mockDailyData))
+    // /analytics/api/daily는 아직 없음 — mock 데이터 사용
+    setDailyData(mockDailyData)
 
-    fetchApi<{ items: BrandPerformance[] }>('/brands/api/performance-summary')
-      .then((data) => setBrandData(data.items || []))
+    fetchApi<BrandPerformance[]>('/brands/api/performance-summary')
+      .then((data) => setBrandData(Array.isArray(data) ? data : []))
       .catch(() => setBrandData(mockBrandData))
   }, [])
 
@@ -230,10 +229,10 @@ function CalendarTab() {
   const [calendarData, setCalendarData] = useState<CalendarDay[]>([])
 
   useEffect(() => {
-    fetchApi<{ items: CalendarDay[] }>(
-      `/dashboard/api/calendar?year=${year}&month=${month}`
+    fetchApi<CalendarDay[]>(
+      `/api/calendar?year=${year}&month=${month}`
     )
-      .then((data) => setCalendarData(data.items || []))
+      .then((data) => setCalendarData(Array.isArray(data) ? data : []))
       .catch(() => setCalendarData([]))
   }, [year, month])
 
@@ -362,8 +361,8 @@ function DetailTab() {
   const [brands, setBrands] = useState<BrandPerformance[]>([])
 
   useEffect(() => {
-    fetchApi<{ items: BrandPerformance[] }>('/brands/api/performance-summary')
-      .then((data) => setBrands(data.items || []))
+    fetchApi<BrandPerformance[]>('/brands/api/performance-summary')
+      .then((data) => setBrands(Array.isArray(data) ? data : []))
       .catch(() => setBrands(mockBrandData))
   }, [])
 
@@ -424,8 +423,14 @@ export default function AnalyticsPage() {
   })
 
   useEffect(() => {
-    fetchApi<AnalyticsStats>('/analytics/api/stats')
-      .then(setStats)
+    // /analytics/api/stats는 아직 없음 — /api/stats 사용
+    fetchApi<any>('/api/stats')
+      .then((data) => setStats({
+        total_comments: data?.today?.comments || 0,
+        total_likes: data?.today?.likes || 0,
+        success_rate: 0,
+        ghost_rate: 0,
+      }))
       .catch(() => {})
   }, [])
 

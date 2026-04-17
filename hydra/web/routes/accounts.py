@@ -10,6 +10,7 @@ from sqlalchemy import func, case
 
 from hydra.db.session import get_db
 from hydra.db.models import Account, ActionLog, CampaignStep, Campaign, ErrorLog
+from hydra.core.crypto import encrypt
 
 router = APIRouter()
 
@@ -440,8 +441,8 @@ def update_account(account_id: int, data: AccountUpdateInput, db: Session = Depe
 
     if data.gmail is not None:
         account.gmail = data.gmail
-    if data.password is not None:
-        account.password = data.password
+    if data.password:
+        account.password = encrypt(data.password)
     if data.recovery_email is not None:
         account.recovery_email = data.recovery_email
     if data.phone_number is not None:

@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-from hydra.db.models import Base, Task
+from hydra.db.models import Account, Base, Task
 from hydra.web.app import app
 from hydra.db.session import get_db
 from hydra.services.worker_service import register_worker
@@ -27,6 +27,10 @@ def client_with_worker():
 
     db = TestSession()
     worker, token = register_worker(db, "PC-1")
+    # Add an active account for auto-assignment
+    account = Account(gmail="test@gmail.com", password="pass", status="active")
+    db.add(account)
+    db.flush()
     task = Task(
         task_type="comment",
         priority="normal",

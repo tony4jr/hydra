@@ -88,12 +88,16 @@ export default function TasksQueuePage() {
   })
 
   useEffect(() => {
-    fetchApi<{ items: Task[]; stats: TaskStats }>('/api/tasks/queue')
+    fetchApi<{ pending: any[]; running: any[]; completed: any[]; summary: any }>('/campaigns/api/queue')
       .then((data) => {
-        setTasks(data.items || [])
-        setStats(
-          data.stats || { pending: 0, running: 0, completed: 0, failed: 0 }
-        )
+        const allTasks = [...(data.pending || []), ...(data.running || []), ...(data.completed || [])]
+        setTasks(allTasks.map((t: any) => ({ id: t.id || 0, task_type: t.type || '', priority: 'normal', status: t.status || '', worker_name: null, scheduled_at: t.scheduled_at || null, created_at: t.created_at || '' })))
+        setStats({
+          pending: (data.pending || []).length,
+          running: (data.running || []).length,
+          completed: (data.completed || []).length,
+          failed: 0,
+        })
       })
       .catch(() => {})
   }, [])

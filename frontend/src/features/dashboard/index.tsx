@@ -30,8 +30,8 @@ export function Dashboard() {
     async function load() {
       try {
         const [s, w] = await Promise.all([
-          fetchApi<DashboardStats>('/api/dashboard/stats'),
-          fetchApi<WorkerInfo[]>('/api/workers'),
+          fetchApi<DashboardStats>('/api/stats'),
+          fetchApi<WorkerInfo[]>('/api/workers/'),
         ])
         setStats(s)
         setWorkers(w)

@@ -68,8 +68,8 @@ export function SettingsPresets() {
   const [saving, setSaving] = useState(false)
 
   const loadPresets = () => {
-    fetchApi<{ items: Preset[] }>('/api/presets/')
-      .then((data) => setPresets(data.items || []))
+    fetchApi<Preset[]>('/api/presets/')
+      .then((data) => setPresets(Array.isArray(data) ? data : []))
       .catch(() => {})
   }
 
