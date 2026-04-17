@@ -112,6 +112,16 @@ def collect_videos(brand_id: int = None, db: Session = Depends(get_db)):
     return {"ok": True, "collected": len(videos)}
 
 
+@router.post("/api/collect/initial")
+def collect_initial(brand_id: int, db: Session = Depends(get_db)):
+    """초기 세팅: 조회수순 대량 수집."""
+    from hydra.services.video_collector import collect_initial_videos
+    if not brand_id:
+        return {"ok": False, "error": "brand_id required"}
+    videos = collect_initial_videos(db, brand_id)
+    return {"ok": True, "collected": len(videos)}
+
+
 @router.post("/api/add-manual")
 def add_video_manual(url: str, keyword_id: int = None, db: Session = Depends(get_db)):
     from hydra.services.video_collector import add_video_manually

@@ -44,3 +44,25 @@ def list_workers(db: Session = Depends(db_dependency)):
     from hydra.db.models import Worker
     workers = db.query(Worker).all()
     return [{"id": w.id, "name": w.name, "status": w.status, "last_heartbeat": w.last_heartbeat, "current_version": w.current_version, "os_type": w.os_type} for w in workers]
+
+
+@router.post("/{worker_id}/pause")
+def pause_worker(worker_id: int, db: Session = Depends(db_dependency)):
+    from hydra.db.models import Worker
+    worker = db.get(Worker, worker_id)
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+    worker.status = "paused"
+    db.commit()
+    return {"ok": True, "status": "paused"}
+
+
+@router.post("/{worker_id}/resume")
+def resume_worker(worker_id: int, db: Session = Depends(db_dependency)):
+    from hydra.db.models import Worker
+    worker = db.get(Worker, worker_id)
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+    worker.status = "online"
+    db.commit()
+    return {"ok": True, "status": "online"}
