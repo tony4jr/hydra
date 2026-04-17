@@ -8,10 +8,10 @@ import {
   Users,
   Monitor,
   Settings,
-  UserCog,
   Wrench,
   Palette,
-  Bell,
+  ListChecks,
+  Settings2,
   Command,
 } from 'lucide-react'
 import { type SidebarData } from '../types'
@@ -83,29 +83,24 @@ export const sidebarData: SidebarData = {
           icon: Settings,
           items: [
             {
-              title: '프로필',
+              title: '일반',
               url: '/settings',
-              icon: UserCog,
+              icon: Wrench,
             },
             {
-              title: '계정 설정',
-              url: '/settings/account',
-              icon: Wrench,
+              title: '행동 패턴',
+              url: '/settings/behavior',
+              icon: Settings2,
+            },
+            {
+              title: '프리셋',
+              url: '/settings/presets',
+              icon: ListChecks,
             },
             {
               title: '외관',
               url: '/settings/appearance',
               icon: Palette,
-            },
-            {
-              title: '알림',
-              url: '/settings/notifications',
-              icon: Bell,
-            },
-            {
-              title: '디스플레이',
-              url: '/settings/display',
-              icon: Monitor,
             },
           ],
         },

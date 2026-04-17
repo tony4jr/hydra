@@ -1,97 +1,84 @@
 import { useEffect, useState } from 'react'
-import {
-  Clock,
-  Loader2,
-  CheckCircle2,
-  XCircle,
-  Pause,
-  Ban,
-} from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
+import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { fetchApi } from '@/lib/api'
+import { useCountUp } from '@/hooks/use-count-up'
 
 interface Task {
   id: number
-  task_type: string
-  priority: string
+  type: string
   status: string
-  worker_name: string | null
-  scheduled_at: string | null
+  content?: string
+  account_name?: string
+  worker_name?: string
+  campaign_id?: number
+  campaign_name?: string
+  scheduled_at?: string | null
+  completed_at?: string | null
   created_at: string
+  progress?: number
+  progress_total?: number
 }
 
-interface TaskStats {
-  pending: number
-  running: number
-  completed: number
-  failed: number
+const ledColor: Record<string, string> = {
+  running: 'bg-[#6c5ce7]',
+  pending: 'bg-[#71717a]',
+  completed: 'bg-[#22c55e]',
+  failed: 'bg-[#ef4444]',
 }
 
-const priorityColor = (p: string) => {
-  switch (p) {
-    case 'urgent':
-      return 'destructive' as const
-    case 'high':
-      return 'default' as const
-    case 'normal':
-      return 'secondary' as const
-    case 'low':
-      return 'outline' as const
-    default:
-      return 'secondary' as const
-  }
-}
-
-const statusColor = (s: string) => {
-  switch (s) {
-    case 'pending':
-      return 'outline' as const
-    case 'running':
-      return 'default' as const
-    case 'completed':
-      return 'secondary' as const
-    case 'failed':
-      return 'destructive' as const
-    default:
-      return 'secondary' as const
-  }
-}
-
-const statusLabel = (s: string) => {
-  switch (s) {
-    case 'pending':
-      return '대기'
-    case 'running':
-      return '진행중'
-    case 'completed':
-      return '완료'
-    case 'failed':
-      return '실패'
-    default:
-      return s
-  }
+function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
+  const animated = useCountUp(value)
+  return (
+    <div className='bg-card rounded-xl border border-border p-4'>
+      <div className='flex items-center gap-2 mb-1'>
+        <div className={`w-2.5 h-2.5 rounded-full ${color}`} />
+        <span className='text-muted-foreground text-[12px]'>{label}</span>
+      </div>
+      <div className='text-[28px] font-bold'>{animated}</div>
+    </div>
+  )
 }
 
 export default function TasksQueuePage() {
   const [tasks, setTasks] = useState<Task[]>([])
-  const [stats, setStats] = useState<TaskStats>({
-    pending: 0,
-    running: 0,
-    completed: 0,
-    failed: 0,
-  })
+  const [loading, setLoading] = useState(true)
+  const [campaignFilter, setCampaignFilter] = useState<string>('all')
+  const [stats, setStats] = useState({ pending: 0, running: 0, completed: 0, failed: 0 })
 
   useEffect(() => {
+    setLoading(true)
     fetchApi<{ pending: any[]; running: any[]; completed: any[]; summary: any }>('/campaigns/api/queue')
-      .then((data) => {
-        const allTasks = [...(data.pending || []), ...(data.running || []), ...(data.completed || [])]
-        setTasks(allTasks.map((t: any) => ({ id: t.id || 0, task_type: t.type || '', priority: 'normal', status: t.status || '', worker_name: null, scheduled_at: t.scheduled_at || null, created_at: t.created_at || '' })))
+      .then(data => {
+        const mapTask = (t: any, status: string): Task => ({
+          id: t.id || 0,
+          type: t.type || t.task_type || '',
+          status,
+          content: t.content || t.description || '',
+          account_name: t.account_name || t.account || null,
+          worker_name: t.worker_name || null,
+          campaign_id: t.campaign_id || null,
+          campaign_name: t.campaign_name || null,
+          scheduled_at: t.scheduled_at || null,
+          completed_at: t.completed_at || null,
+          created_at: t.created_at || '',
+          progress: t.progress || null,
+          progress_total: t.progress_total || null,
+        })
+        const all = [
+          ...(data.running || []).map((t: any) => mapTask(t, 'running')),
+          ...(data.pending || []).map((t: any) => mapTask(t, 'pending')),
+          ...(data.completed || []).map((t: any) => mapTask(t, 'completed')),
+        ]
+        setTasks(all)
         setStats({
           pending: (data.pending || []).length,
           running: (data.running || []).length,
@@ -100,34 +87,16 @@ export default function TasksQueuePage() {
         })
       })
       .catch(() => {})
+      .finally(() => setLoading(false))
   }, [])
 
-  const statCards = [
-    {
-      title: '대기',
-      value: stats.pending,
-      icon: Clock,
-      color: 'text-muted-foreground',
-    },
-    {
-      title: '진행중',
-      value: stats.running,
-      icon: Loader2,
-      color: 'text-blue-500',
-    },
-    {
-      title: '완료',
-      value: stats.completed,
-      icon: CheckCircle2,
-      color: 'text-green-500',
-    },
-    {
-      title: '실패',
-      value: stats.failed,
-      icon: XCircle,
-      color: 'text-red-500',
-    },
-  ]
+  const filtered = campaignFilter === 'all' ? tasks : tasks.filter(t => String(t.campaign_id) === campaignFilter)
+  const campaignIds = [...new Set(tasks.filter(t => t.campaign_id).map(t => ({
+    id: String(t.campaign_id),
+    name: t.campaign_name || `캠페인 #${t.campaign_id}`,
+  })))]
+  // Deduplicate
+  const uniqueCampaigns = campaignIds.filter((v, i, self) => self.findIndex(c => c.id === v.id) === i)
 
   return (
     <>
@@ -138,101 +107,117 @@ export default function TasksQueuePage() {
         </div>
       </Header>
       <Main>
-        <div className='mb-2 flex flex-wrap items-center justify-between space-y-2'>
-          <div>
-            <h2 className='text-2xl font-bold tracking-tight'>작업 큐</h2>
-            <p className='text-muted-foreground'>
-              실시간 작업 대기열 및 진행 상태
-            </p>
-          </div>
-          <div className='flex gap-2'>
-            <Button variant='outline'>
-              <Pause className='mr-2 h-4 w-4' /> 일시정지
-            </Button>
-            <Button variant='outline'>
-              <Ban className='mr-2 h-4 w-4' /> 전체 취소
-            </Button>
-          </div>
-        </div>
-
-        {/* Stat cards */}
-        <div className='mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4'>
-          {statCards.map((card) => (
-            <Card key={card.title}>
-              <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
-                <CardTitle className='text-sm font-medium'>
-                  {card.title}
-                </CardTitle>
-                <card.icon className={`h-4 w-4 ${card.color}`} />
-              </CardHeader>
-              <CardContent>
-                <div className='text-2xl font-bold'>{card.value}</div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        {/* Task table */}
-        <Card>
-          <CardContent className='p-0'>
-            <div className='overflow-auto'>
-              <table className='w-full text-sm'>
-                <thead>
-                  <tr className='border-b bg-muted/50'>
-                    <th className='p-3 text-left font-medium'>ID</th>
-                    <th className='p-3 text-left font-medium'>유형</th>
-                    <th className='p-3 text-center font-medium'>우선순위</th>
-                    <th className='p-3 text-center font-medium'>상태</th>
-                    <th className='p-3 text-left font-medium'>Worker</th>
-                    <th className='p-3 text-right font-medium'>생성시간</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tasks.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={6}
-                        className='p-10 text-center text-muted-foreground'
-                      >
-                        대기 중인 작업이 없습니다. 서버 연결 후 표시됩니다.
-                      </td>
-                    </tr>
-                  ) : (
-                    tasks.map((task) => (
-                      <tr
-                        key={task.id}
-                        className='cursor-pointer border-b hover:bg-muted/50'
-                      >
-                        <td className='p-3 font-mono text-xs'>#{task.id}</td>
-                        <td className='p-3'>{task.task_type}</td>
-                        <td className='p-3 text-center'>
-                          <Badge variant={priorityColor(task.priority)}>
-                            {task.priority}
-                          </Badge>
-                        </td>
-                        <td className='p-3 text-center'>
-                          <Badge variant={statusColor(task.status)}>
-                            {statusLabel(task.status)}
-                          </Badge>
-                        </td>
-                        <td className='p-3'>
-                          {task.worker_name || (
-                            <span className='text-muted-foreground'>-</span>
-                          )}
-                        </td>
-                        <td className='p-3 text-right text-muted-foreground'>
-                          {task.created_at
-                            ? new Date(task.created_at).toLocaleString('ko')
-                            : '-'}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+        <div >
+          <div className='mb-5 flex flex-wrap items-center justify-between gap-2'>
+            <div>
+              <h2 className='text-[22px] font-bold'>작업 큐</h2>
+              <p className='text-muted-foreground text-[13px]'>실시간 태스크 모니터링</p>
             </div>
-          </CardContent>
-        </Card>
+            {uniqueCampaigns.length > 0 && (
+              <Select value={campaignFilter} onValueChange={setCampaignFilter}>
+                <SelectTrigger className='w-48'>
+                  <SelectValue placeholder='캠페인 필터' />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value='all'>전체 캠페인</SelectItem>
+                  {uniqueCampaigns.map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+
+          {/* Stat cards */}
+          {loading ? (
+            <div className='grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5'>
+              {[1, 2, 3, 4].map(i => <Skeleton key={i} className='h-24 rounded-xl' />)}
+            </div>
+          ) : (
+            <div className='grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5'>
+              <StatCard label='대기' value={stats.pending} color='bg-[#71717a]' />
+              <StatCard label='진행중' value={stats.running} color='bg-[#6c5ce7]' />
+              <StatCard label='완료' value={stats.completed} color='bg-[#22c55e]' />
+              <StatCard label='실패' value={stats.failed} color='bg-[#ef4444]' />
+            </div>
+          )}
+
+          {/* Task list */}
+          {loading ? (
+            <div className='space-y-2'>
+              {[1, 2, 3, 4].map(i => <Skeleton key={i} className='h-16 rounded-xl' />)}
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className='bg-card border border-border rounded-xl py-16 text-center'>
+              <p className='text-muted-foreground text-[14px] mb-1'>대기 중인 작업이 없어요</p>
+              <p className='text-muted-foreground/60 text-[12px]'>캠페인이 실행되면 태스크가 여기에 표시됩니다</p>
+            </div>
+          ) : (
+            <div className='space-y-2'>
+              {filtered.map(task => (
+                <div
+                  key={task.id}
+                  className={`bg-card border border-border rounded-xl p-4 ${
+                    task.status === 'pending' || task.status === 'completed' ? 'opacity-60' : ''
+                  }`}
+                >
+                  <div className='flex items-center justify-between'>
+                    <div className='flex items-center gap-3'>
+                      {/* LED */}
+                      <div className={`w-2.5 h-2.5 rounded-full ${ledColor[task.status] || 'bg-gray-500'} ${
+                        task.status === 'running' ? 'animate-pulse' : ''
+                      }`} />
+
+                      <div>
+                        <div className='flex items-center gap-2'>
+                          <span className='text-foreground font-medium text-[14px]'>
+                            {task.type || '작업'}
+                          </span>
+                          {task.content && (
+                            <span className='text-muted-foreground text-[12px] truncate max-w-[200px]'>
+                              {task.content}
+                            </span>
+                          )}
+                        </div>
+                        <div className='flex items-center gap-3 text-muted-foreground text-[11px] mt-0.5'>
+                          {task.account_name && <span>{task.account_name}</span>}
+                          {task.worker_name && <span className='text-primary'>{task.worker_name}</span>}
+                          {task.status === 'pending' && task.scheduled_at && (
+                            <span>예정: {new Date(task.scheduled_at).toLocaleString('ko')}</span>
+                          )}
+                          {task.status === 'completed' && task.completed_at && (
+                            <span>완료: {new Date(task.completed_at).toLocaleString('ko')}</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className='flex items-center gap-2'>
+                      {/* Progress bar for like boost */}
+                      {task.progress != null && task.progress_total != null && task.progress_total > 0 && (
+                        <div className='w-24'>
+                          <div className='hydra-progress-bar'>
+                            <div
+                              className='hydra-progress-fill bg-primary'
+                              style={{ width: `${Math.round(task.progress / task.progress_total * 100)}%` }}
+                            />
+                          </div>
+                          <span className='text-muted-foreground text-[10px]'>{task.progress}/{task.progress_total}</span>
+                        </div>
+                      )}
+
+                      {(task.status === 'pending' || task.status === 'running') && (
+                        <Button variant='ghost' size='icon' className='h-7 w-7 text-muted-foreground hover:text-destructive hydra-btn-press'>
+                          <X className='h-3.5 w-3.5' />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </Main>
     </>
   )

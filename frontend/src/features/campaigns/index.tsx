@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react'
-import { ChevronDown, ChevronRight, Zap } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
+import { Plus, Zap, Pause, Play, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { fetchApi } from '@/lib/api'
+import { useCountUp } from '@/hooks/use-count-up'
+import { CampaignCreateDialog } from './campaign-create-dialog'
 import { DirectCampaignDialog } from './direct-campaign-dialog'
 
 interface Campaign {
@@ -21,160 +21,58 @@ interface Campaign {
   created_at: string
   total_tasks?: number
   completed_tasks?: number
+  worker_name?: string
+  target_count?: number
+  duration_days?: number
 }
 
-interface CampaignListResponse {
-  items: Campaign[]
-  total: number
+const statusLabel: Record<string, string> = {
+  in_progress: '진행중',
+  completed: '완료',
+  planning: '준비중',
+  failed: '실패',
+  paused: '일시정지',
+}
+const statusTag: Record<string, string> = {
+  in_progress: 'hydra-tag-primary',
+  completed: 'hydra-tag-success',
+  planning: 'hydra-tag-muted',
+  failed: 'hydra-tag-danger',
+  paused: 'hydra-tag-warning',
+}
+
+function CampaignStatCard({ label, value }: { label: string; value: number }) {
+  const animated = useCountUp(value)
+  return (
+    <div className='bg-card rounded-xl border border-border p-4'>
+      <span className='text-muted-foreground text-[12px]'>{label}</span>
+      <div className='text-[28px] font-bold'>{animated}</div>
+    </div>
+  )
 }
 
 export default function CampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
-  const [expandedId, setExpandedId] = useState<number | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [createOpen, setCreateOpen] = useState(false)
   const [directOpen, setDirectOpen] = useState(false)
+  const [detailId, setDetailId] = useState<number | null>(null)
 
   const loadCampaigns = () => {
-    fetchApi<CampaignListResponse>('/campaigns/api/list')
+    setLoading(true)
+    fetchApi<{ items: Campaign[]; total: number }>('/campaigns/api/list')
       .then((data) => setCampaigns(data.items || []))
-      .catch(() => {})
+      .catch(() => setCampaigns([]))
+      .finally(() => setLoading(false))
   }
 
   useEffect(() => {
     loadCampaigns()
   }, [])
 
-  const statusColor = (s: string) => {
-    switch (s) {
-      case 'in_progress':
-        return 'default' as const
-      case 'completed':
-        return 'secondary' as const
-      case 'planning':
-        return 'outline' as const
-      case 'failed':
-        return 'destructive' as const
-      default:
-        return 'secondary' as const
-    }
-  }
-
-  const toggleExpand = (id: number) => {
-    setExpandedId((prev) => (prev === id ? null : id))
-  }
-
-  const campaignTable = (items: Campaign[]) => (
-    <Card>
-      <CardContent className='p-0'>
-        <div className='overflow-auto'>
-          <table className='w-full text-sm'>
-            <thead>
-              <tr className='border-b bg-muted/50'>
-                <th className='w-8 p-3'></th>
-                <th className='p-3 text-left font-medium'>영상</th>
-                <th className='p-3 text-left font-medium'>브랜드</th>
-                <th className='p-3 text-center font-medium'>시나리오</th>
-                <th className='p-3 text-center font-medium'>유형</th>
-                <th className='p-3 text-center font-medium'>상태</th>
-                <th className='p-3 text-right font-medium'>생성일</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className='p-10 text-center text-muted-foreground'
-                  >
-                    캠페인이 없습니다.
-                  </td>
-                </tr>
-              ) : (
-                items.map((c) => (
-                  <>
-                    <tr
-                      key={c.id}
-                      className='cursor-pointer border-b hover:bg-muted/50'
-                      onClick={() => toggleExpand(c.id)}
-                    >
-                      <td className='p-3'>
-                        {expandedId === c.id ? (
-                          <ChevronDown className='h-4 w-4 text-muted-foreground' />
-                        ) : (
-                          <ChevronRight className='h-4 w-4 text-muted-foreground' />
-                        )}
-                      </td>
-                      <td className='max-w-[250px] truncate p-3'>
-                        {c.video_title || c.id}
-                      </td>
-                      <td className='p-3'>{c.brand_name || '-'}</td>
-                      <td className='p-3 text-center'>
-                        <Badge variant='outline'>{c.scenario}</Badge>
-                      </td>
-                      <td className='p-3 text-center'>
-                        <Badge variant='outline'>
-                          {c.campaign_type || 'scenario'}
-                        </Badge>
-                      </td>
-                      <td className='p-3 text-center'>
-                        <Badge variant={statusColor(c.status)}>
-                          {c.status}
-                        </Badge>
-                      </td>
-                      <td className='p-3 text-right text-muted-foreground'>
-                        {c.created_at
-                          ? new Date(c.created_at).toLocaleDateString('ko')
-                          : '-'}
-                      </td>
-                    </tr>
-                    {expandedId === c.id && (
-                      <tr key={`${c.id}-detail`} className='border-b'>
-                        <td colSpan={7} className='bg-muted/30 px-6 py-4'>
-                          <div className='grid gap-2 text-sm'>
-                            <div className='flex gap-8'>
-                              <div>
-                                <span className='text-muted-foreground'>
-                                  캠페인 ID:{' '}
-                                </span>
-                                <strong>{c.id}</strong>
-                              </div>
-                              <div>
-                                <span className='text-muted-foreground'>
-                                  유형:{' '}
-                                </span>
-                                <strong>
-                                  {c.campaign_type || 'scenario'}
-                                </strong>
-                              </div>
-                              {c.total_tasks != null && (
-                                <div>
-                                  <span className='text-muted-foreground'>
-                                    진행률:{' '}
-                                  </span>
-                                  <strong>
-                                    {c.completed_tasks ?? 0}/{c.total_tasks}
-                                  </strong>
-                                </div>
-                              )}
-                            </div>
-                            <div>
-                              <span className='text-muted-foreground'>
-                                시나리오:{' '}
-                              </span>
-                              {c.scenario || '-'}
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </CardContent>
-    </Card>
-  )
+  const inProgress = campaigns.filter(c => c.status === 'in_progress').length
+  const completed = campaigns.filter(c => c.status === 'completed').length
+  const total = campaigns.length
 
   return (
     <>
@@ -185,42 +83,138 @@ export default function CampaignsPage() {
         </div>
       </Header>
       <Main>
-        <div className='mb-2 flex flex-wrap items-center justify-between space-y-2'>
-          <div>
-            <h2 className='text-2xl font-bold tracking-tight'>캠페인</h2>
-            <p className='text-muted-foreground'>
-              시나리오 캠페인은 브랜드 주간 목표 기반으로 자동 생성됩니다
-            </p>
+        <div >
+          <div className='mb-5 flex flex-wrap items-center justify-between gap-2'>
+            <div>
+              <h2 className='text-[22px] font-bold'>캠페인</h2>
+              <p className='text-muted-foreground text-[13px]'>
+                어디에, 어떻게, 얼마나 작업할지 관리하세요
+              </p>
+            </div>
+            <div className='flex gap-2'>
+              <Button size="lg" variant='outline' onClick={() => setDirectOpen(true)} className='hydra-btn-press'>
+                <Zap className='mr-2 h-4 w-4' /> 다이렉트
+              </Button>
+              <Button size="lg" onClick={() => setCreateOpen(true)} className='hydra-btn-press'>
+                <Plus className='mr-2 h-4 w-4' /> 캠페인 만들기
+              </Button>
+            </div>
           </div>
-          <div className='flex gap-2'>
-            <Button onClick={() => setDirectOpen(true)}>
-              <Zap className='mr-2 h-4 w-4' /> 다이렉트
-            </Button>
-          </div>
-        </div>
 
-        <Tabs defaultValue='all'>
-          <TabsList>
-            <TabsTrigger value='all'>전체</TabsTrigger>
-            <TabsTrigger value='scenario'>시나리오</TabsTrigger>
-            <TabsTrigger value='direct'>다이렉트</TabsTrigger>
-          </TabsList>
-          <TabsContent value='all' className='mt-4'>
-            {campaignTable(campaigns)}
-          </TabsContent>
-          <TabsContent value='scenario' className='mt-4'>
-            {campaignTable(
-              campaigns.filter((c) => c.campaign_type !== 'direct')
-            )}
-          </TabsContent>
-          <TabsContent value='direct' className='mt-4'>
-            {campaignTable(
-              campaigns.filter((c) => c.campaign_type === 'direct')
-            )}
-          </TabsContent>
-        </Tabs>
+          {/* Stat Cards */}
+          <div className='grid grid-cols-3 gap-3 mb-5'>
+            <CampaignStatCard label='전체 캠페인' value={total} />
+            <CampaignStatCard label='진행중' value={inProgress} />
+            <CampaignStatCard label='완료' value={completed} />
+          </div>
+
+          {loading ? (
+            <div className='space-y-3'>
+              {[1, 2, 3].map(i => (
+                <Skeleton key={i} className='h-28 rounded-xl' />
+              ))}
+            </div>
+          ) : campaigns.length === 0 ? (
+            <div className='bg-card border border-border rounded-xl py-16 text-center'>
+              <p className='text-muted-foreground text-[14px] mb-1'>아직 캠페인이 없어요</p>
+              <p className='text-muted-foreground/60 text-[12px] mb-4'>브랜드를 등록하고 캠페인을 만들어보세요</p>
+              <Button onClick={() => setCreateOpen(true)} variant='outline' className='hydra-btn-press'>
+                <Plus className='mr-2 h-4 w-4' /> 첫 캠페인 만들기
+              </Button>
+            </div>
+          ) : (
+            <div className='space-y-3'>
+              {campaigns.map(c => {
+                const progress = c.total_tasks && c.total_tasks > 0
+                  ? Math.round((c.completed_tasks ?? 0) / c.total_tasks * 100) : 0
+                return (
+                  <div
+                    key={c.id}
+                    className='bg-card border border-border rounded-xl p-5 hydra-card-hover cursor-pointer'
+                    onClick={() => setDetailId(detailId === c.id ? null : c.id)}
+                  >
+                    <div className='flex items-center justify-between mb-2'>
+                      <div className='flex items-center gap-2'>
+                        <span className='text-foreground font-semibold text-[15px]'>
+                          {c.brand_name || '브랜드 미지정'} — {c.video_title || `캠페인 #${c.id}`}
+                        </span>
+                        <span className={`hydra-tag ${statusTag[c.status] || 'hydra-tag-muted'}`}>
+                          {statusLabel[c.status] || c.status}
+                        </span>
+                        <span className={`hydra-tag ${c.campaign_type === 'direct' ? 'hydra-tag-warning' : 'hydra-tag-blue'}`}>
+                          {c.campaign_type === 'direct' ? '다이렉트' : `프리셋 ${c.scenario}`}
+                        </span>
+                      </div>
+                      <span className='text-muted-foreground text-[12px]'>
+                        {c.created_at ? new Date(c.created_at).toLocaleDateString('ko') : ''}
+                      </span>
+                    </div>
+
+                    {/* Progress */}
+                    <div className='hydra-progress-bar mb-2'>
+                      <div
+                        className='hydra-progress-fill bg-gradient-to-r from-primary to-green-500'
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
+                    <div className='flex items-center justify-between text-[12px] text-muted-foreground'>
+                      <span>{c.completed_tasks ?? 0}/{c.total_tasks ?? 0} 태스크 · {progress}%</span>
+                      {c.worker_name && <span className='text-primary'>{c.worker_name}</span>}
+                    </div>
+
+                    {/* Detail Section */}
+                    {detailId === c.id && (
+                      <div className='mt-4 pt-4 border-t border-border/50'>
+                        <div className='grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4'>
+                          <div className='bg-background rounded-lg border border-border/50 p-3 text-center'>
+                            <div className='text-[18px] font-bold'>{c.completed_tasks ?? 0}</div>
+                            <div className='text-[11px] text-muted-foreground'>완료 태스크</div>
+                          </div>
+                          <div className='bg-background rounded-lg border border-border/50 p-3 text-center'>
+                            <div className='text-[18px] font-bold'>{c.total_tasks ?? 0}</div>
+                            <div className='text-[11px] text-muted-foreground'>전체 태스크</div>
+                          </div>
+                          <div className='bg-background rounded-lg border border-border/50 p-3 text-center'>
+                            <div className='text-[18px] font-bold'>{progress}%</div>
+                            <div className='text-[11px] text-muted-foreground'>진행률</div>
+                          </div>
+                          <div className='bg-background rounded-lg border border-border/50 p-3 text-center'>
+                            <div className='text-[18px] font-bold'>{c.scenario || '-'}</div>
+                            <div className='text-[11px] text-muted-foreground'>프리셋</div>
+                          </div>
+                        </div>
+                        <div className='flex gap-2'>
+                          {c.status === 'in_progress' && (
+                            <Button variant='outline' size='sm' className='hydra-btn-press'>
+                              <Pause className='mr-1 h-3 w-3' /> 일시정지
+                            </Button>
+                          )}
+                          {c.status === 'paused' && (
+                            <Button variant='outline' size='sm' className='hydra-btn-press'>
+                              <Play className='mr-1 h-3 w-3' /> 재개
+                            </Button>
+                          )}
+                          {(c.status === 'in_progress' || c.status === 'paused') && (
+                            <Button variant='outline' size='sm' className='text-destructive hover:text-destructive hydra-btn-press'>
+                              <Square className='mr-1 h-3 w-3' /> 중단
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
       </Main>
 
+      <CampaignCreateDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onSuccess={loadCampaigns}
+      />
       <DirectCampaignDialog
         open={directOpen}
         onOpenChange={setDirectOpen}

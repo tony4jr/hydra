@@ -178,6 +178,17 @@ class Campaign(Base):
     preset_id = Column(Integer, ForeignKey("presets.id"))
     user_id = Column(Integer)
 
+    # UI/UX 재설계 — 캠페인이 작업의 모든 것을 관리
+    name = Column(String)                         # 캠페인 이름 (예: "트리코라 — 탈모 캠페인")
+    target_keywords = Column(Text)                # JSON — 타겟 키워드 (영상 검색용)
+    mention_style = Column(Text)                  # 제품 언급 방식
+    selected_presets = Column(Text)               # JSON — 사용할 프리셋 코드 목록
+    sets_per_video = Column(Integer, default=1)   # 영상당 프리셋 세트 수
+    duration_days = Column(Integer)               # 작업 기간 (일)
+    target_count = Column(Integer)                # 목표 영상 수
+    start_date = Column(DateTime)                 # 시작일
+    end_date = Column(DateTime)                   # 종료일
+
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     completed_at = Column(DateTime)
 

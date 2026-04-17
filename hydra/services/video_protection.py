@@ -21,6 +21,23 @@ def check_video_campaign_limit(
     return count < max_campaigns, count
 
 
+def check_video_preset_limit(
+    db: Session,
+    video_id: str,
+    preset_code: str,
+    period_days: int = 7,
+) -> bool:
+    """같은 영상 + 같은 프리셋 = 7일 차단. True=허용."""
+    cutoff = datetime.now(UTC) - timedelta(days=period_days)
+    existing = db.query(Campaign).filter(
+        Campaign.video_id == video_id,
+        Campaign.scenario == preset_code,
+        Campaign.created_at >= cutoff,
+        Campaign.status != "cancelled",
+    ).first()
+    return existing is None
+
+
 def check_account_video_duplicate(
     db: Session,
     account_id: int,

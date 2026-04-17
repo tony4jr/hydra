@@ -1,0 +1,202 @@
+/* ============================================
+   HYDRA Design System — Animations & Effects
+   Tailwind 유틸리티와 충돌하지 않도록
+   애니메이션/효과만 정의
+   ============================================ */
+
+/* === Keyframes === */
+
+@keyframes countUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes toastSlideIn {
+  from { opacity: 0; transform: translateX(100%); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes toastSlideOut {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(100%); }
+}
+
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 4px rgba(34, 197, 94, 0.4); }
+  50% { box-shadow: 0 0 12px rgba(34, 197, 94, 0.7); }
+}
+
+@keyframes progressFill {
+  from { width: 0%; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* === Animation Classes === */
+
+.hydra-page-enter {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.hydra-card-enter {
+  animation: slideUp 0.4s ease-out both;
+}
+.hydra-card-enter:nth-child(1) { animation-delay: 0ms; }
+.hydra-card-enter:nth-child(2) { animation-delay: 50ms; }
+.hydra-card-enter:nth-child(3) { animation-delay: 100ms; }
+.hydra-card-enter:nth-child(4) { animation-delay: 150ms; }
+.hydra-card-enter:nth-child(5) { animation-delay: 200ms; }
+.hydra-card-enter:nth-child(6) { animation-delay: 250ms; }
+
+.hydra-count-up {
+  animation: countUp 0.5s ease-out both;
+}
+
+.hydra-slide-in {
+  animation: slideInRight 0.3s ease-out;
+}
+
+/* === Interactive Effects === */
+
+.hydra-card-hover {
+  transition: border-color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
+}
+.hydra-card-hover:hover {
+  border-color: var(--color-primary, #6c5ce7);
+
+  box-shadow: 0 4px 12px rgba(108, 92, 231, 0.1);
+}
+
+.hydra-btn-press {
+  transition: transform 0.1s ease, opacity 0.1s ease;
+}
+.hydra-btn-press:active {
+  transform: scale(0.97);
+  opacity: 0.9;
+}
+
+.hydra-row-hover {
+  transition: background-color 0.15s ease;
+}
+.hydra-row-hover:hover {
+  background-color: rgba(108, 92, 231, 0.04);
+}
+
+/* === LED Indicators === */
+
+.hydra-led-online {
+  width: 10px;
+  height: 10px;
+  background: #22c55e;
+  border-radius: 50%;
+  flex-shrink: 0;
+  animation: pulseGlow 2s ease-in-out infinite;
+}
+
+.hydra-led-offline {
+  width: 10px;
+  height: 10px;
+  background: #52525b;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.hydra-led-paused {
+  width: 10px;
+  height: 10px;
+  background: #eab308;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* === Progress Bar === */
+
+.hydra-progress-bar {
+  height: 6px;
+  background: var(--color-border, rgba(255,255,255,0.1));
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.hydra-progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  animation: progressFill 0.8s ease-out;
+  transition: width 0.5s ease;
+}
+
+/* === Skeleton === */
+
+.hydra-skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0.05) 25%,
+    rgba(255,255,255,0.1) 50%,
+    rgba(255,255,255,0.05) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 8px;
+}
+
+/* === Toast === */
+
+.hydra-toast {
+  animation: toastSlideIn 0.3s ease-out;
+}
+.hydra-toast-exit {
+  animation: toastSlideOut 0.3s ease-in forwards;
+}
+
+/* === Tags (colored badges) === */
+
+.hydra-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.hydra-tag-primary { background: rgba(108, 92, 231, 0.15); color: #6c5ce7; }
+.hydra-tag-success { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+.hydra-tag-warning { background: rgba(234, 179, 8, 0.15); color: #eab308; }
+.hydra-tag-danger { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+.hydra-tag-ghost { background: rgba(249, 115, 22, 0.15); color: #f97316; }
+.hydra-tag-muted { background: rgba(113, 113, 122, 0.15); color: #71717a; }
+.hydra-tag-blue { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+
+/* === Status Banners === */
+
+.hydra-status-ok {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.12), rgba(34, 197, 94, 0.04));
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+.hydra-status-warn {
+  background: linear-gradient(135deg, rgba(234, 179, 8, 0.12), rgba(234, 179, 8, 0.04));
+  border: 1px solid rgba(234, 179, 8, 0.3);
+}
+.hydra-status-error {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.12), rgba(239, 68, 68, 0.04));
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
