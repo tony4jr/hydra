@@ -12,11 +12,13 @@ from hydra.browser.actions import (
     watch_video,
     handle_ad,
     check_ghost,
+    type_human,
 )
 from worker.mouse import click_with_mouse_move
 from worker.login import auto_login
 from worker.warmup import WarmupExecutor
 from worker.session import WorkerSession
+from worker.comment_behavior import read_comments_before_posting
 
 
 class TaskExecutor:
@@ -44,13 +46,73 @@ class TaskExecutor:
 
     # ── helpers ──────────────────────────────────────────────
 
-    async def _navigate_to_video(self, session: WorkerSession, video_id: str):
-        """영상 페이지로 이동."""
+    async def _navigate_to_video(self, session: WorkerSession, video_id: str, video_title: str = ""):
+        """영상으로 이동 (검색/추천 or 직접 URL)."""
         page = session.browser.page
-        url = f"https://www.youtube.com/watch?v={video_id}"
-        await session.browser.goto(url)
+        use_search = random.random() < 0.7 and video_title  # 70% 검색, 제목 있을 때만
+
+        if use_search:
+            try:
+                # YouTube 홈에서 검색
+                await session.browser.goto("https://www.youtube.com")
+                await random_delay(1.5, 3.0)
+
+                # 검색바 클릭
+                search_btn = page.locator("button#search-icon-legacy, input#search")
+                await search_btn.first.click()
+                await random_delay(0.5, 1.0)
+
+                # 검색어 입력 (영상 제목 일부)
+                search_query = self._make_search_query(video_title)
+                search_input = page.locator("input#search")
+                await search_input.fill("")
+                await type_human(page, "input#search", search_query)
+                await random_delay(0.5, 1.5)
+                await page.keyboard.press("Enter")
+                await random_delay(2.0, 4.0)
+
+                # 검색 결과에서 영상 찾기 (video_id 매칭)
+                found = await self._find_video_in_results(page, video_id, timeout=15)
+                if found:
+                    await handle_ad(page)
+                    return  # 검색으로 성공
+            except Exception:
+                pass  # 검색 실패 → 직접 URL 폴백
+
+        # 직접 URL (폴백 or 30%)
+        await page.goto(f"https://www.youtube.com/watch?v={video_id}")
         await random_delay(2.0, 4.0)
         await handle_ad(page)
+
+    def _make_search_query(self, title: str) -> str:
+        """영상 제목에서 자연스러운 검색어 생성."""
+        # 제목에서 핵심 단어 2~4개 추출
+        words = title.split()
+        if len(words) <= 3:
+            return title
+        num_words = random.randint(2, min(4, len(words)))
+        # 앞쪽 단어 위주 (사람은 제목 앞부분을 기억)
+        selected = words[:num_words]
+        return " ".join(selected)
+
+    async def _find_video_in_results(self, page, video_id: str, timeout: int = 15) -> bool:
+        """검색 결과에서 video_id에 해당하는 영상 클릭."""
+        import time
+        start = time.time()
+        while time.time() - start < timeout:
+            # 검색 결과의 링크들 확인
+            links = page.locator("ytd-video-renderer a#video-title, ytd-video-renderer a#thumbnail")
+            count = await links.count()
+            for i in range(min(count, 20)):
+                href = await links.nth(i).get_attribute("href")
+                if href and video_id in href:
+                    await links.nth(i).click()
+                    await random_delay(2.0, 4.0)
+                    return True
+            # 스크롤해서 더 보기
+            await page.keyboard.press("PageDown")
+            await random_delay(1.0, 2.0)
+        return False
 
     # ── handlers ─────────────────────────────────────────────
 
@@ -60,7 +122,7 @@ class TaskExecutor:
         video_id = payload["video_id"]
         text = payload["text"]
 
-        await self._navigate_to_video(session, video_id)
+        await self._navigate_to_video(session, video_id, payload.get("video_title", ""))
 
         # 영상 잠시 시청
         watch_sec = random.randint(5, 30)
@@ -69,8 +131,8 @@ class TaskExecutor:
         # 댓글 영역으로 스크롤
         await scroll_to_comments(page)
 
-        # 기존 댓글 읽는 시간
-        await random_delay(3.0, 10.0)
+        # 기존 댓글 읽기 (사람처럼)
+        await read_comments_before_posting(page)
 
         # 댓글 작성
         comment_id = await post_comment(page, text)
@@ -89,7 +151,7 @@ class TaskExecutor:
         target_comment_selector = payload.get("target_selector", "")
         text = payload["text"]
 
-        await self._navigate_to_video(session, video_id)
+        await self._navigate_to_video(session, video_id, payload.get("video_title", ""))
 
         # 댓글 영역으로 스크롤
         await scroll_to_comments(page)
@@ -109,7 +171,7 @@ class TaskExecutor:
         page = session.browser.page
         video_id = payload["video_id"]
 
-        await self._navigate_to_video(session, video_id)
+        await self._navigate_to_video(session, video_id, payload.get("video_title", ""))
 
         # 영상 시청
         watch_sec = random.randint(5, 30)
@@ -131,7 +193,7 @@ class TaskExecutor:
         video_id = payload["video_id"]
         target_comment_id = payload.get("target_comment_id", "")
 
-        await self._navigate_to_video(session, video_id)
+        await self._navigate_to_video(session, video_id, payload.get("video_title", ""))
 
         # 영상 잠시 시청
         watch_sec = random.randint(3, 15)
@@ -191,7 +253,7 @@ class TaskExecutor:
         page = session.browser.page
         video_id = payload["video_id"]
 
-        await self._navigate_to_video(session, video_id)
+        await self._navigate_to_video(session, video_id, payload.get("video_title", ""))
 
         # 구독 버튼 클릭
         subscribe_btn = page.locator(
@@ -218,7 +280,8 @@ class TaskExecutor:
         day = payload.get("day", 1)
         persona = payload.get("persona", {})
 
-        executor = WarmupExecutor(session, day=day, persona=persona)
+        session_context = payload.get("session_context", {})
+        executor = WarmupExecutor(session, day=day, persona=persona, session_context=session_context)
         result = await executor.run()
 
         return json.dumps({"action": "warmup", **result})
@@ -229,7 +292,7 @@ class TaskExecutor:
         video_id = payload["video_id"]
         youtube_comment_id = payload.get("youtube_comment_id", "")
 
-        await self._navigate_to_video(session, video_id)
+        await self._navigate_to_video(session, video_id, payload.get("video_title", ""))
 
         # 댓글 영역으로 스크롤
         await scroll_to_comments(page)
@@ -273,9 +336,62 @@ class TaskExecutor:
         })
 
     async def _handle_channel_setup(self, task: dict, payload: dict, session: WorkerSession) -> str:
-        """채널 설정 — YouTube Studio (향후 구현)."""
-        # placeholder
+        """유튜브 채널 설정 (이름, 아바타)."""
+        page = session.browser.page
+        channel_name = payload.get("channel_name", "")
+        avatar_path = payload.get("avatar_path", "")
+
+        # YouTube Studio 접속
+        await page.goto("https://studio.youtube.com")
+        await random_delay(3.0, 5.0)
+
+        # 채널 커스터마이즈 페이지
+        await page.goto("https://studio.youtube.com/channel/editing/basic")
+        await random_delay(2.0, 4.0)
+
+        # 채널 이름 변경
+        if channel_name:
+            try:
+                name_input = page.locator("input#text-input[aria-label*='이름'], input#given-name-input, #name-container input").first
+                await name_input.wait_for(timeout=10000)
+                await name_input.click()
+                await page.keyboard.press("Control+a")
+                await random_delay(0.3, 0.5)
+                await type_human(page, "input#text-input, input#given-name-input, #name-container input", channel_name)
+                await random_delay(1.0, 2.0)
+            except Exception as e:
+                print(f"[ChannelSetup] Name change failed: {e}")
+
+        # 아바타 업로드
+        if avatar_path:
+            try:
+                # 프로필 사진 변경 버튼 찾기
+                avatar_btn = page.locator("button:has-text('변경'), button:has-text('업로드'), #avatar-editor button").first
+                await avatar_btn.click()
+                await random_delay(1.0, 2.0)
+
+                # 파일 업로드
+                file_input = page.locator("input[type='file']").first
+                await file_input.set_input_files(avatar_path)
+                await random_delay(3.0, 5.0)
+
+                # 완료/저장 버튼
+                done_btn = page.locator("button:has-text('완료'), button:has-text('Done'), #done-button").first
+                await done_btn.click()
+                await random_delay(2.0, 3.0)
+            except Exception as e:
+                print(f"[ChannelSetup] Avatar upload failed: {e}")
+
+        # 게시/저장 버튼
+        try:
+            publish_btn = page.locator("button:has-text('게시'), button:has-text('Publish'), #publish-button").first
+            await publish_btn.click()
+            await random_delay(2.0, 4.0)
+        except Exception:
+            pass
+
         return json.dumps({
             "action": "channel_setup",
-            "status": "not_implemented",
+            "channel_name": channel_name,
+            "avatar_uploaded": bool(avatar_path),
         })
