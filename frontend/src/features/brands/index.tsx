@@ -16,6 +16,9 @@ interface Brand {
   product_category: string | null
   core_message: string | null
   tone_guide: string | null
+  promo_keywords: string[] | null
+  target_keywords: string[] | null
+  selected_presets: string[] | null
   status: string
   weekly_campaign_target: number
   auto_campaign_enabled: boolean

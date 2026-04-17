@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -13,11 +14,20 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { fetchApi } from '@/lib/api'
 
+interface Preset {
+  id: number
+  code: string
+  name: string
+}
+
 interface BrandFormData {
   name: string
   product_category: string
   core_message: string
   tone_guide: string
+  promo_keywords: string
+  target_keywords: string
+  selected_presets: string[]
   weekly_campaign_target: number
   auto_campaign_enabled: boolean
 }
@@ -28,6 +38,9 @@ interface Brand {
   product_category: string | null
   core_message: string | null
   tone_guide: string | null
+  promo_keywords: string[] | null
+  target_keywords: string[] | null
+  selected_presets: string[] | null
   status: string
   weekly_campaign_target: number
   auto_campaign_enabled: boolean
@@ -46,6 +59,9 @@ const defaultForm: BrandFormData = {
   product_category: '',
   core_message: '',
   tone_guide: '',
+  promo_keywords: '',
+  target_keywords: '',
+  selected_presets: [],
   weekly_campaign_target: 5,
   auto_campaign_enabled: false,
 }
@@ -58,16 +74,24 @@ export function BrandFormDialog({
   onSuccess,
 }: BrandFormDialogProps) {
   const [form, setForm] = useState<BrandFormData>(defaultForm)
+  const [presets, setPresets] = useState<Preset[]>([])
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     if (open) {
+      fetchApi<Preset[]>('/api/presets/')
+        .then(setPresets)
+        .catch(() => setPresets([]))
+
       if (mode === 'edit' && brand) {
         setForm({
           name: brand.name || '',
           product_category: brand.product_category || '',
           core_message: brand.core_message || '',
           tone_guide: brand.tone_guide || '',
+          promo_keywords: (brand.promo_keywords || []).join(', '),
+          target_keywords: (brand.target_keywords || []).join(', '),
+          selected_presets: brand.selected_presets || [],
           weekly_campaign_target: brand.weekly_campaign_target || 5,
           auto_campaign_enabled: brand.auto_campaign_enabled || false,
         })
@@ -85,9 +109,20 @@ export function BrandFormDialog({
         mode === 'edit' && brand
           ? `/brands/api/${brand.id}/update`
           : '/brands/api/create'
+      const payload = {
+        ...form,
+        promo_keywords: form.promo_keywords
+          .split(',')
+          .map((k) => k.trim())
+          .filter(Boolean),
+        target_keywords: form.target_keywords
+          .split(',')
+          .map((k) => k.trim())
+          .filter(Boolean),
+      }
       await fetchApi(url, {
         method: 'POST',
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       })
       onOpenChange(false)
       onSuccess()
@@ -151,6 +186,67 @@ export function BrandFormDialog({
               rows={3}
             />
           </div>
+          <div className='grid gap-2'>
+            <Label htmlFor='brand-promo'>홍보 키워드</Label>
+            <Textarea
+              id='brand-promo'
+              value={form.promo_keywords}
+              onChange={(e) =>
+                setForm({ ...form, promo_keywords: e.target.value })
+              }
+              placeholder='댓글에 녹일 메시지 키워드 (쉼표로 구분)'
+              rows={2}
+            />
+            <p className='text-xs text-muted-foreground'>
+              쉼표로 구분하여 입력하세요
+            </p>
+          </div>
+          <div className='grid gap-2'>
+            <Label htmlFor='brand-target-kw'>타겟 키워드</Label>
+            <Textarea
+              id='brand-target-kw'
+              value={form.target_keywords}
+              onChange={(e) =>
+                setForm({ ...form, target_keywords: e.target.value })
+              }
+              placeholder='영상 검색용 키워드 (쉼표로 구분)'
+              rows={2}
+            />
+            <p className='text-xs text-muted-foreground'>
+              영상 수집 시 사용할 검색 키워드
+            </p>
+          </div>
+          {presets.length > 0 && (
+            <div className='grid gap-2'>
+              <Label>사용할 프리셋</Label>
+              <div className='max-h-32 space-y-1 overflow-y-auto rounded-md border p-2'>
+                {presets.map((p) => (
+                  <label
+                    key={p.id}
+                    className='flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted'
+                  >
+                    <Checkbox
+                      checked={form.selected_presets.includes(p.code)}
+                      onCheckedChange={(checked) => {
+                        setForm((prev) => ({
+                          ...prev,
+                          selected_presets: checked
+                            ? [...prev.selected_presets, p.code]
+                            : prev.selected_presets.filter((c) => c !== p.code),
+                        }))
+                      }}
+                    />
+                    <span>
+                      <span className='font-mono text-xs text-muted-foreground'>
+                        {p.code}
+                      </span>{' '}
+                      {p.name}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
           <div className='grid gap-2'>
             <Label htmlFor='brand-target'>주간 목표</Label>
             <Input
