@@ -1,14 +1,25 @@
+"""영상 수집 — 신규 (최신순) + 인기 (조회수순)."""
 from datetime import datetime, UTC
 from sqlalchemy.orm import Session
 from hydra.db.models import Brand, Keyword, Video
 
 
-def collect_videos_for_brand(db: Session, brand_id: int, max_per_keyword: int = 10) -> list[dict]:
-    """브랜드의 타겟 키워드로 YouTube 영상 수집.
+def collect_new_videos(db: Session, brand_id: int, max_per_keyword: int = 50) -> list[Video]:
+    """전략 1: 최신순 영상 수집 (4시간마다)."""
+    return _collect_videos(db, brand_id, order="date", max_per_keyword=max_per_keyword)
 
-    실제 YouTube API 호출은 기존 hydra.collection.youtube_api 모듈 사용.
-    이 함수는 수집된 데이터를 DB에 저장하는 역할.
-    """
+
+def collect_popular_videos(db: Session, brand_id: int, max_per_keyword: int = 50) -> list[Video]:
+    """전략 2: 조회수순 영상 수집 (1일 1회)."""
+    return _collect_videos(db, brand_id, order="viewCount", max_per_keyword=max_per_keyword)
+
+
+def collect_initial_videos(db: Session, brand_id: int, max_per_keyword: int = 500) -> list[Video]:
+    """초기 세팅: 조회수순 대량 수집."""
+    return _collect_videos(db, brand_id, order="viewCount", max_per_keyword=max_per_keyword)
+
+
+def _collect_videos(db: Session, brand_id: int, order: str, max_per_keyword: int) -> list[Video]:
     brand = db.get(Brand, brand_id)
     if not brand:
         return []
@@ -21,10 +32,67 @@ def collect_videos_for_brand(db: Session, brand_id: int, max_per_keyword: int = 
     collected = []
     for kw in keywords:
         try:
-            # YouTube API 호출은 별도 모듈 — 여기서는 키워드 검색 시간만 업데이트
+            from hydra.collection.youtube_api import search_videos, enrich_videos
+
+            results = search_videos(kw.text, max_results=max_per_keyword, order=order)
+
+            # 중복 체크용 — 이미 DB에 있는 video_id 필터
+            video_ids = [r["video_id"] for r in results]
+            existing_ids = {
+                v.id for v in db.query(Video.id).filter(Video.id.in_(video_ids)).all()
+            } if video_ids else set()
+
+            new_results = [r for r in results if r["video_id"] not in existing_ids]
+            if not new_results:
+                kw.last_searched_at = datetime.now(UTC)
+                continue
+
+            # 메타데이터 보강
+            new_ids = [r["video_id"] for r in new_results]
+            metadata = enrich_videos(new_ids)
+
+            kw_collected = 0
+            for v_data in new_results:
+                vid = v_data.get("video_id", "")
+                if not vid:
+                    continue
+
+                meta = metadata.get(vid, {})
+
+                # published_at 파싱
+                pub_str = v_data.get("published_at")
+                published = None
+                if pub_str:
+                    try:
+                        published = datetime.fromisoformat(pub_str.replace("Z", "+00:00"))
+                    except (ValueError, AttributeError):
+                        pass
+
+                video = Video(
+                    id=vid,
+                    url=f"https://www.youtube.com/watch?v={vid}",
+                    title=v_data.get("title", ""),
+                    channel_id=v_data.get("channel_id", ""),
+                    channel_title=v_data.get("channel_title", ""),
+                    description=v_data.get("description", ""),
+                    view_count=meta.get("view_count", 0),
+                    like_count=meta.get("like_count", 0),
+                    comment_count=meta.get("comment_count", 0),
+                    duration_sec=meta.get("duration_sec"),
+                    published_at=published,
+                    is_short=meta.get("is_short", False),
+                    comments_enabled=meta.get("comments_enabled", True),
+                    keyword_id=kw.id,
+                    status="available",
+                )
+                db.add(video)
+                collected.append(video)
+                kw_collected += 1
+
             kw.last_searched_at = datetime.now(UTC)
-            collected.append({"keyword_id": kw.id, "keyword": kw.text})
-        except Exception:
+            kw.total_videos_found = (kw.total_videos_found or 0) + kw_collected
+        except Exception as e:
+            print(f"[VideoCollector] Error for keyword '{kw.text}': {e}")
             continue
 
     db.commit()
