@@ -478,6 +478,8 @@ class Worker(Base):
     name = Column(String, nullable=False)
     token_hash = Column(String, nullable=False)
     status = Column(String, default="offline")
+    allow_preparation = Column(Boolean, default=False)
+    allow_campaign = Column(Boolean, default=True)
     ip_method = Column(String, default="adb_mobile")
     ip_config = Column(Text)
     last_heartbeat = Column(DateTime)
