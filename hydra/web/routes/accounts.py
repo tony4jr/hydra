@@ -3,7 +3,7 @@
 import json
 from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case
@@ -86,18 +86,70 @@ def adspower_quota(db: Session = Depends(get_db)):
 
 class ImportRequest(BaseModel):
     path: str
+    auto_process: bool = True  # chain persona + profile creation after import
+
+
+def _auto_process_new_accounts(account_ids: list[int]):
+    """Background: assign personas then queue create_profile tasks for new accounts."""
+    from hydra.db.session import SessionLocal
+    from hydra.ai.agents.persona_agent import batch_assign_personas
+
+    db = SessionLocal()
+    try:
+        accounts = db.query(Account).filter(Account.id.in_(account_ids)).all()
+        batch_assign_personas(db, accounts)
+        # refresh to pick up newly written personas
+        accounts = db.query(Account).filter(Account.id.in_(account_ids)).all()
+        queued = auto_queue_create_profile_tasks(db, accounts)
+        return queued
+    finally:
+        db.close()
 
 
 @router.post("/api/import")
-def import_csv(data: ImportRequest, db: Session = Depends(get_db)):
+def import_csv(
+    data: ImportRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     from hydra.accounts.manager import import_from_csv
     try:
         count = import_from_csv(db, data.path)
-        return {"ok": True, "message": f"{count}개 계정 가져오기 완료"}
     except FileNotFoundError:
         return {"ok": False, "message": "파일을 찾을 수 없습니다"}
     except Exception as e:
         return {"ok": False, "message": str(e)}
+
+    if not count:
+        return {"ok": True, "message": "0개 계정 가져오기 완료", "auto_processing": False}
+
+    # Grab IDs of accounts still in "registered" with no persona/profile — the
+    # most recently imported ones. Using created_at descending narrows to this
+    # batch without needing import_from_csv to return IDs.
+    recent_ids = [
+        a.id for a in (
+            db.query(Account)
+            .filter(Account.persona.is_(None), Account.adspower_profile_id.is_(None))
+            .order_by(Account.id.desc())
+            .limit(count)
+            .all()
+        )
+    ]
+
+    if data.auto_process and recent_ids:
+        background_tasks.add_task(_auto_process_new_accounts, recent_ids)
+        return {
+            "ok": True,
+            "message": f"{count}개 계정 가져오기 완료. 페르소나 배정 + 프로필 생성 태스크 큐잉을 백그라운드에서 진행합니다.",
+            "auto_processing": True,
+            "queued_account_ids": recent_ids,
+        }
+
+    return {
+        "ok": True,
+        "message": f"{count}개 계정 가져오기 완료 (auto_process=false, 수동 단계 필요)",
+        "auto_processing": False,
+    }
 
 
 @router.get("/api/list")
