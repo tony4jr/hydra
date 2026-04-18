@@ -45,7 +45,7 @@ def reschedule_task_for_ip_failure(db, task):
         delay_min = settings.ip_rotation_reschedule_min
         delay_max = settings.ip_rotation_reschedule_max
         task.status = "pending"
-        task.scheduled_at = datetime.utcnow() + timedelta(
+        task.scheduled_at = datetime.now(timezone.utc) + timedelta(
             minutes=random.uniform(delay_min, delay_max)
         )
     db.commit()

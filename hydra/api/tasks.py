@@ -278,3 +278,15 @@ def list_tasks(
         })
 
     return {"stats": stats, "items": items}
+
+
+@router.post("/{task_id}/reschedule-ip-failure")
+def reschedule_ip_failure(task_id: int, db: Session = Depends(get_db)):
+    """Reschedule a task that failed due to IP rotation."""
+    from hydra.db.models import Task
+    from hydra.core.executor import reschedule_task_for_ip_failure
+    task = db.get(Task, task_id)
+    if not task:
+        return {"error": "not found"}
+    reschedule_task_for_ip_failure(db, task)
+    return {"ok": True, "status": task.status, "retry_count": task.retry_count}

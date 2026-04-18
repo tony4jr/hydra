@@ -54,5 +54,16 @@ class ServerClient:
         resp.raise_for_status()
         return resp.json()
 
+    def reschedule_task(self, task_id: int, reason: str = "ip_rotation_failed") -> dict:
+        """태스크 IP 로테이션 실패로 재스케줄 요청."""
+        resp = self.http.post(
+            f"{self.base_url}/api/tasks/{task_id}/reschedule-ip-failure",
+            headers=self.headers,
+            json={"reason": reason},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     def close(self):
         self.http.close()
