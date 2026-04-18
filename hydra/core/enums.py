@@ -194,6 +194,8 @@ class TaskType(StrEnum):
     WARMUP = "warmup"
     GHOST_CHECK = "ghost_check"
     PROFILE_SETUP = "profile_setup"
+    CREATE_PROFILE = "create_profile"
+    RETIRE_PROFILE = "retire_profile"
 
 
 class TaskPriority(StrEnum):
