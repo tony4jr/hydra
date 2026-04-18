@@ -85,6 +85,11 @@ class AdsPowerClient:
         data = self._get("/api/v1/user/list", {"page": page, "page_size": page_size})
         return data.get("list", [])
 
+    def get_profile_count(self) -> int:
+        """Total profiles visible to this AdsPower account."""
+        data = self._get("/api/v1/user/list", {"page": 1, "page_size": 1})
+        return int(data.get("total", 0))
+
     # --- Browser start/stop ---
 
     def start_browser(self, profile_id: str) -> dict:

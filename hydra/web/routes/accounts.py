@@ -13,6 +13,7 @@ from hydra.db.models import Account, ActionLog, CampaignStep, Campaign, ErrorLog
 from hydra.core.crypto import encrypt
 from hydra.browser.fingerprint_bundle import build_fingerprint_payload
 from hydra.core.config import settings
+from hydra.browser.adspower import adspower
 
 router = APIRouter()
 
@@ -64,6 +65,23 @@ def auto_queue_create_profile_tasks(db: Session, accounts: list) -> int:
 
     db.commit()
     return count
+
+
+def compute_quota_report(db: Session) -> dict:
+    adspower_count = adspower.get_profile_count()
+    linked = db.query(Account).filter(Account.adspower_profile_id.isnot(None)).count()
+    quota = settings.adspower_profile_quota
+    return {
+        "adspower_count": adspower_count,
+        "linked_accounts": linked,
+        "quota": quota,
+        "used_ratio": round(adspower_count / quota, 4) if quota > 0 else 0,
+    }
+
+
+@router.get("/api/adspower-quota")
+def adspower_quota(db: Session = Depends(get_db)):
+    return compute_quota_report(db)
 
 
 class ImportRequest(BaseModel):
