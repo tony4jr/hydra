@@ -92,9 +92,22 @@ class AdsPowerClient:
 
     # --- Browser start/stop ---
 
-    def start_browser(self, profile_id: str) -> dict:
-        """Start browser for profile. Returns {ws_endpoint, debug_port, webdriver}."""
-        data = self._get("/api/v1/browser/start", {"user_id": profile_id})
+    def start_browser(self, profile_id: str, extra_args: list[str] | None = None) -> dict:
+        """Start browser for profile. Returns {ws_endpoint, debug_port, webdriver}.
+
+        Always passes `--force-device-scale-factor=1.0` so the Mac host's Retina
+        DPR=2 does not leak through Windows-spoofed profiles. Windows Worker
+        hosts are unaffected (they already have DPR=1).
+        """
+        args = ["--force-device-scale-factor=1.0"]
+        if extra_args:
+            args.extend(extra_args)
+        import json as _json
+        params = {
+            "user_id": profile_id,
+            "launch_args": _json.dumps(args),
+        }
+        data = self._get("/api/v1/browser/start", params)
         ws = data.get("ws", {})
         result = {
             "ws_endpoint": ws.get("puppeteer", ""),
