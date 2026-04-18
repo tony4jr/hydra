@@ -9,10 +9,61 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, case
 
 from hydra.db.session import get_db
-from hydra.db.models import Account, ActionLog, CampaignStep, Campaign, ErrorLog
+from hydra.db.models import Account, ActionLog, CampaignStep, Campaign, ErrorLog, Task
 from hydra.core.crypto import encrypt
+from hydra.browser.fingerprint_bundle import build_fingerprint_payload
+from hydra.core.config import settings
 
 router = APIRouter()
+
+
+def auto_queue_create_profile_tasks(db: Session, accounts: list) -> int:
+    """Enqueue create_profile tasks for accounts with persona but no active profile.
+
+    Returns number of tasks queued.
+    """
+    count = 0
+    for acc in accounts:
+        if acc.adspower_profile_id:
+            continue
+        if not acc.persona:
+            continue
+        try:
+            persona = json.loads(acc.persona)
+        except Exception:
+            continue
+        device_hint = persona.get("device_hint")
+        if not device_hint:
+            continue
+
+        fp_payload = build_fingerprint_payload(device_hint)
+        name = f"hydra_{acc.id}_{acc.gmail.split('@')[0]}"
+        remark_bits = [
+            persona.get("name", ""),
+            f"{persona.get('age','?')}세",
+            persona.get("region", ""),
+            persona.get("occupation", ""),
+        ]
+        remark = " / ".join(b for b in remark_bits if b)
+
+        task = Task(
+            account_id=acc.id,
+            task_type="create_profile",
+            status="pending",
+            payload=json.dumps({
+                "account_id": acc.id,
+                "profile_name": name,
+                "group_id": settings.adspower_group_id,
+                "remark": remark,
+                "device_hint": device_hint,
+                "fingerprint_payload": fp_payload,
+            }, ensure_ascii=False),
+        )
+        db.add(task)
+        count += 1
+
+    db.commit()
+    return count
 
 
 class ImportRequest(BaseModel):
@@ -266,6 +317,19 @@ def batch_assign_personas(db: Session = Depends(get_db)):
     accounts = db.query(Account).filter(Account.persona.is_(None)).all()
     batch_assign_personas(db, accounts)
     return {"ok": True, "count": len(accounts)}
+
+
+@router.post("/api/batch/auto-queue-profiles")
+def batch_auto_queue_profiles(db: Session = Depends(get_db)):
+    """Queue create_profile tasks for any account that has a persona but no profile yet."""
+    accounts = (
+        db.query(Account)
+        .filter(Account.persona.isnot(None),
+                Account.adspower_profile_id.is_(None))
+        .all()
+    )
+    n = auto_queue_create_profile_tasks(db, accounts)
+    return {"ok": True, "queued": n, "total_candidates": len(accounts)}
 
 
 @router.get("/api/{account_id}/metrics")
