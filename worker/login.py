@@ -79,18 +79,18 @@ async def auto_login(
                 log.error("Email 2FA flow failed")
                 return False
 
-        # Step 4: 포스트로그인 프롬프트 (전화/사진) 스킵
-        await _skip_post_login_prompts(page, max_attempts=3)
-
-        # Step 5: 최종 착지 — myaccount 또는 youtube 로 리다이렉트되면 성공으로 본다
+        # Step 4: 최종 착지 먼저 기다림 (myaccount/youtube) — 이후 프롬프트는 안정된
+        # 페이지에서 처리. 네비게이션 중간에 evaluate 하면 context 파괴 에러 난다.
         try:
             await page.wait_for_url(
                 lambda url: "myaccount.google.com" in url or "youtube.com" in url,
                 timeout=post_login_timeout_ms,
             )
         except Exception:
-            # url 매치 실패해도 avatar 로 로그인 상태 체크
             pass
+
+        # Step 5: 포스트로그인 프롬프트 (전화/사진) 스킵
+        await _skip_post_login_prompts(page, max_attempts=3)
         return True
     except Exception as e:
         log.error(f"Login failed: {e}")
@@ -187,20 +187,33 @@ async def _skip_post_login_prompts(page, max_attempts: int = 3):
     """전화번호/프로필 사진 등 로그인 직후 간섭 프롬프트를 '건너뛰기' 로 해소.
 
     Google 은 ko/en/vi 등 locale 에 따라 버튼 텍스트가 다르므로 여러 패턴을 시도.
+    클릭 직후 리다이렉트가 일어나 evaluate 컨텍스트가 파괴될 수 있으므로 예외를
+    무시하고 다음 시도로 넘어간다. 매번 load 대기로 안정된 DOM 을 본다.
     """
     for _ in range(max_attempts):
-        clicked = await page.evaluate(f"""
-            (patterns) => {{
-              const buttons = Array.from(document.querySelectorAll('button, [role="button"], a'))
-                .filter(el => el.offsetParent !== null);
-              const hit = buttons.find(b => {{
-                const label = ((b.getAttribute('aria-label') || '') + ' ' + (b.textContent || '')).toLowerCase();
-                return patterns.some(p => label.includes(p));
-              }});
-              if (hit) {{ hit.click(); return hit.textContent?.trim().slice(0, 40) || hit.getAttribute('aria-label'); }}
-              return null;
-            }}
-        """, SKIP_ARIA_PATTERNS)
+        try:
+            await page.wait_for_load_state("domcontentloaded", timeout=8_000)
+        except Exception:
+            pass
+
+        try:
+            clicked = await page.evaluate(f"""
+                (patterns) => {{
+                  const buttons = Array.from(document.querySelectorAll('button, [role="button"], a'))
+                    .filter(el => el.offsetParent !== null);
+                  const hit = buttons.find(b => {{
+                    const label = ((b.getAttribute('aria-label') || '') + ' ' + (b.textContent || '')).toLowerCase();
+                    return patterns.some(p => label.includes(p));
+                  }});
+                  if (hit) {{ hit.click(); return hit.textContent?.trim().slice(0, 40) || hit.getAttribute('aria-label'); }}
+                  return null;
+                }}
+            """, SKIP_ARIA_PATTERNS)
+        except Exception as e:
+            log.debug(f"skip-prompt evaluate threw (navigation likely): {e}")
+            await random_delay(1.5, 3.0)
+            continue
+
         if not clicked:
             break
         log.info(f"post-login prompt skipped: {clicked}")
