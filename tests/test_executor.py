@@ -3,12 +3,12 @@ from worker.executor import TaskExecutor
 
 def test_executor_has_all_handlers():
     executor = TaskExecutor()
-    expected = {"comment", "reply", "like", "like_boost", "subscribe", "warmup", "ghost_check", "login", "channel_setup"}
+    expected = {"comment", "reply", "like", "like_boost", "subscribe", "warmup", "ghost_check", "login", "channel_setup", "create_profile", "retire_profile"}
     assert set(executor.handlers.keys()) == expected
 
 def test_executor_handler_count():
     executor = TaskExecutor()
-    assert len(executor.handlers) == 9
+    assert len(executor.handlers) == 11
 
 def test_executor_handlers_are_callable():
     executor = TaskExecutor()
