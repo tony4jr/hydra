@@ -9,6 +9,7 @@ from hydra.browser.actions import (
 )
 from worker.session import WorkerSession
 from worker.google_activity import maybe_check_gmail, maybe_google_search
+from worker.language_setup import ensure_korean_language
 from worker.login import ensure_logged_in
 
 class WarmupExecutor:
@@ -25,6 +26,22 @@ class WarmupExecutor:
         """워밍업 세션 실행. 결과 요약 반환."""
         page = self.session.browser.page
         result = {"day": self.day, "actions": []}
+
+        # Day 1 최초: UI 언어를 한국어로 정렬 (idempotent)
+        # Gmail 이 다른 로캘 (예: 베트남어) 로 생성돼 IP/지문은 KR 인데 UI 만
+        # 다른 언어로 나오는 불일치를 워밍업 시작점에서 해소한다.
+        if self.day == 1:
+            try:
+                ok = await ensure_korean_language(page)
+                if ok:
+                    result["actions"].append("language_setup_ko")
+                else:
+                    result["actions"].append("language_setup_failed")
+            except Exception as e:
+                result["actions"].append(f"language_setup_error:{e}")
+            # 언어 설정 끝나면 YouTube 로 복귀
+            await self.session.browser.goto("https://www.youtube.com")
+            await random_delay(2.0, 4.0)
 
         # Google 활동 (Day 2+)
         if self.day >= 2:
