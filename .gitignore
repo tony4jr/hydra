@@ -8,3 +8,4 @@ logs/
 *.pyc
 .DS_Store
 .superpowers/
+.worktrees/
