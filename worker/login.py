@@ -152,28 +152,32 @@ async def _handle_email_2fa(page, recovery_email: str) -> bool:
 
 
 async def _select_recovery_email_challenge(page, recovery_email: str) -> bool:
-    """Challenge 선택 페이지에서 recovery email 옵션 버튼 클릭."""
+    """Challenge 선택 페이지에서 recovery email 옵션 버튼 클릭.
+
+    Google 은 각 옵션을 `div[role="link"]` 로 렌더링하고, 복구 이메일 옵션엔
+    마스킹된 이메일 텍스트 (예: `huy••••••••••••@911•••••.••`) 가 포함된다.
+    이메일 로컬파트 앞 3글자 + `@` + 도메인 앞 3글자 조합으로 매칭하면 locale
+    무관하게 올바른 옵션을 잡을 수 있다.
+    """
     try:
-        # 옵션은 li 또는 div[role="link"] 형태. aria-label 이 recovery 이메일 힌트를 포함.
+        user = recovery_email.split("@")[0][:3].lower()
+        domain = recovery_email.split("@")[1][:3].lower()
         clicked = await page.evaluate(f"""
-            (hintFragment) => {{
-              const items = Array.from(document.querySelectorAll('li, div[role="link"], [jsaction]'))
+            ({{ user, domain }}) => {{
+              const items = Array.from(document.querySelectorAll('[role="link"], [role="button"]'))
                 .filter(el => el.offsetParent !== null);
-              // 복구 이메일 항목 찾기 — 텍스트에 마스킹된 도메인 또는 '이메일' 포함
               const hit = items.find(el => {{
                 const t = (el.textContent || '').toLowerCase();
-                return t.includes(hintFragment) || /email|이메일|thư điện tử|gmail/.test(t);
+                return t.includes(user) && t.includes('@' + domain);
               }});
-              if (hit) {{
-                hit.click();
-                return true;
-              }}
+              if (hit) {{ hit.click(); return true; }}
               return false;
             }}
-        """, recovery_email.split("@")[0][:3])
+        """, {"user": user, "domain": domain})
         if clicked:
             await random_delay(2.0, 4.0)
             return True
+        log.error(f"challenge selection: no option matched user={user}/@{domain}")
     except Exception as e:
         log.error(f"challenge selection error: {e}")
     return False

@@ -91,15 +91,17 @@ async def fetch_2fa_code(
 
         if target_found:
             await asyncio.sleep(1.5)
-            body_text = await page.evaluate("document.body.innerText")
+            # 911panel 은 좌측 .col.col-4 에 리스트, 우측 .col.col-8 에 본문.
+            # body.innerText 전체를 쓰면 옛 메일의 제목 (과거 코드 포함) 까지 섞여
+            # 잘못된 코드를 뽑을 수 있으므로 본문 영역만 타겟한다.
+            body_text = await page.evaluate(
+                "document.querySelector('.col.col-8')?.innerText || ''"
+            )
             matches = CODE_REGEX.findall(body_text)
-            # 첫 6자리 코드 반환 (Google 메일 본문 구조상 코드가 눈에 띄게 표시됨)
             for code in matches:
-                # 전화번호/년도 등 배제 — 연속된 6자리 중 첫 번째가 코드일 확률 높음
-                # 하지만 실제 검증은 Google 에 입력해봐야 알 수 있음
                 log.info(f"911panel: extracted code {code}")
                 return code
-            log.warning("Clicked message but no 6-digit code found; waiting for new mail")
+            log.warning("Clicked message but no 6-digit code found in detail panel; waiting for new mail")
 
         await asyncio.sleep(poll_interval)
         # 인박스 refresh — 최상단에 "INBOX" 섹션을 다시 그리도록
