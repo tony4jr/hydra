@@ -56,6 +56,7 @@ class Account(Base):
     __table_args__ = (
         Index("idx_accounts_status", "status"),
         Index("idx_accounts_warmup", "warmup_group", "status"),
+        UniqueConstraint("adspower_profile_id", name="uq_accounts_adspower_profile_id"),
     )
 
 
@@ -577,4 +578,24 @@ class ProfileLock(Base):
     __table_args__ = (
         Index("idx_locks_account", "account_id"),
         Index("idx_locks_active", "released_at"),
+    )
+
+
+class AccountProfileHistory(Base):
+    __tablename__ = "account_profile_history"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False)
+    worker_id = Column(Integer, ForeignKey("workers.id"), nullable=True)
+    adspower_profile_id = Column(String, nullable=False)
+    fingerprint_snapshot = Column(Text)  # JSON
+    created_source = Column(String, nullable=False, default="auto")  # auto | manual_mapped
+    device_hint = Column(String)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    retired_at = Column(DateTime)
+    retire_reason = Column(String)
+
+    __table_args__ = (
+        Index("idx_profhist_account", "account_id"),
+        Index("idx_profhist_active", "account_id", "retired_at"),
     )
