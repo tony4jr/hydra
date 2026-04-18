@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, UTC
 
 from fastapi import APIRouter, Depends, HTTPException, Header
@@ -6,8 +7,48 @@ from pydantic import BaseModel
 from hydra.db.session import get_db
 from hydra.db.models import Account, Task
 from hydra.services import worker_service, task_service
+from hydra.accounts.manager import record_profile_creation
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
+
+
+def handle_create_profile_result(
+    db, task, result: dict, worker_id: int | None
+):
+    """Server-side post-processing when a create_profile task completes.
+
+    On success + account already has a profile: queue a retire_profile task
+    for the just-created duplicate, and leave the existing account untouched.
+    Otherwise: link profile, record history, flip account to profile_set.
+    """
+    payload = json.loads(task.payload or "{}")
+    account = db.get(Account, task.account_id)
+    profile_id = result.get("profile_id")
+    if not account or not profile_id:
+        return
+
+    if account.adspower_profile_id:
+        retire = Task(
+            account_id=account.id,
+            task_type="retire_profile",
+            status="pending",
+            payload=json.dumps({
+                "profile_id": profile_id,
+                "reason": "duplicate_creation",
+            }),
+        )
+        db.add(retire)
+        db.commit()
+        return
+
+    record_profile_creation(
+        db, account,
+        profile_id=profile_id,
+        worker_id=worker_id,
+        fingerprint_snapshot=payload.get("fingerprint_payload") or {},
+        device_hint=payload.get("device_hint") or "unknown",
+        created_source="auto",
+    )
 
 
 class TaskResponse(BaseModel):
@@ -57,6 +98,9 @@ def complete_task(body: TaskCompleteRequest, x_worker_token: str = Header(...), 
     task = task_service.complete_task(db, body.task_id, body.result)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+    if task.task_type == "create_profile" and task.status == "completed":
+        result_obj = json.loads(task.result) if task.result else {}
+        handle_create_profile_result(db, task, result_obj, worker_id=task.worker_id)
     return {"status": "ok", "task_id": task.id}
 
 
