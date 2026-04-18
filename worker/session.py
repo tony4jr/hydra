@@ -5,40 +5,56 @@ import random
 from datetime import datetime, UTC
 from hydra.browser.driver import BrowserSession
 from hydra.browser.actions import random_delay, scroll_page, click_like_button, watch_video, handle_ad
+from hydra.infra.ip import ensure_safe_ip
+from hydra.infra.ip_errors import IPRotationFailed
 from worker.youtube_habits import maybe_check_notifications, maybe_visit_own_channel
 
 
 class WorkerSession:
     """한 계정의 브라우저 세션. 여러 태스크를 자연스럽게 실행."""
 
-    def __init__(self, profile_id: str, account_id: int, device_id: str | None = None):
+    def __init__(
+        self,
+        profile_id: str,
+        account_id: int,
+        device_id: str | None = None,
+        account=None,
+        worker=None,
+    ):
         self.profile_id = profile_id
         self.account_id = account_id
         self.device_id = device_id
+        self.account = account
+        self.worker = worker
         self.browser: BrowserSession | None = None
         self.tasks_completed = 0
         self.max_tasks_per_session = random.randint(3, 8)
         self.max_session_minutes = random.randint(20, 45)
         self.started_at: datetime | None = None
+        self.ip_log_id: int | None = None
 
-    async def start(self) -> bool:
-        """세션 시작: IP 변경 → 프로필 열기 → YouTube 접속."""
+    async def start(self, db=None) -> bool:
+        """세션 시작: IP 안전 확인 → 프로필 열기 → YouTube 접속.
+
+        IPRotationFailed from ensure_safe_ip propagates so the caller can
+        reschedule the task.
+        """
         try:
-            # IP 변경
-            if self.device_id:
-                from hydra.infra.ip import rotate_ip
-                await rotate_ip(self.device_id)
+            if db is not None and self.account is not None and self.worker is not None:
+                ip_log = await ensure_safe_ip(db, self.account, self.worker)
+                self.ip_log_id = getattr(ip_log, "id", None)
 
-            # AdsPower 프로필 열기 + Playwright CDP 연결
             self.browser = BrowserSession(self.profile_id)
             await self.browser.start()
 
-            # YouTube 접속
-            await self.browser.goto("https://www.youtube.com")
-            await random_delay(2.0, 4.0)
+            if self.browser.page is not None:
+                await self.browser.goto("https://www.youtube.com")
+                await random_delay(2.0, 4.0)
 
             self.started_at = datetime.now(UTC)
             return True
+        except IPRotationFailed:
+            raise
         except Exception as e:
             print(f"[Session] Failed to start: {e}")
             await self.close()
