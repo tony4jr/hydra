@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from hydra.core.config import settings
 from hydra.core.logger import get_logger
 from hydra.db.models import IpLog
+from hydra.infra.ip_errors import IPRotationFailed
 
 log = get_logger("ip")
 
@@ -115,6 +116,50 @@ def check_ip_available(
         .first()
     )
     return conflict is None
+
+
+async def rotate_and_verify(db: Session, device_id: str, account_id: int) -> str:
+    """Toggle mobile data off/on up to N times until a safe IP is obtained.
+
+    "Safe" = not used by another account within `settings.ip_rotation_cooldown_minutes`.
+    Raises `IPRotationFailed` when all attempts exhausted.
+    """
+    previous_ip = await _get_current_ip(device_id)
+
+    max_attempts = settings.ip_rotation_max_attempts
+    for attempt in range(1, max_attempts + 1):
+        log.info(f"IP rotation attempt {attempt}/{max_attempts} (prev: {previous_ip})")
+
+        await _adb_shell(device_id, "svc data disable")
+        await asyncio.sleep(5)
+        await _adb_shell(device_id, "svc data enable")
+        await asyncio.sleep(15)
+
+        try:
+            new_ip = await _get_current_ip(device_id)
+        except Exception as e:
+            log.warning(f"IP check failed (attempt {attempt}): {e}")
+            continue
+
+        if not new_ip or new_ip == previous_ip:
+            log.warning(f"Attempt {attempt}: IP unchanged ({new_ip})")
+            continue
+
+        if check_ip_available(db, new_ip, account_id,
+                               cooldown_minutes=settings.ip_rotation_cooldown_minutes):
+            log.info(f"IP rotated safely: {previous_ip} → {new_ip}")
+            return new_ip
+
+        log.warning(f"Attempt {attempt}: new IP {new_ip} still conflicts with another account")
+        previous_ip = new_ip
+
+    from hydra.infra import telegram
+    telegram.warning(
+        f"⚠️ IP 로테이션 {max_attempts}회 실패 — device={device_id}, account_id={account_id}"
+    )
+    raise IPRotationFailed(
+        f"Failed to obtain safe IP after {max_attempts} attempts (device={device_id})"
+    )
 
 
 def log_ip_usage(db: Session, account_id: int, ip_address: str, device_id: str) -> IpLog:
