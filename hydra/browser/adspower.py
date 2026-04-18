@@ -37,16 +37,40 @@ class AdsPowerClient:
 
     # --- Profile CRUD ---
 
-    def create_profile(self, name: str, group_id: str = "0") -> str:
-        """Create a new browser profile. Returns profile ID."""
-        data = self._post("/api/v1/user/create", {
+    def create_profile(
+        self,
+        name: str,
+        group_id: str = "0",
+        fingerprint_config: dict | None = None,
+        remark: str = "",
+    ) -> str:
+        """Create a new browser profile. Returns profile ID.
+
+        `fingerprint_config` is the AdsPower fingerprint_config dict produced
+        by `hydra.browser.fingerprint_bundle.build_fingerprint_payload`.
+        """
+        from hydra.browser.adspower_errors import (
+            AdsPowerAPIError, AdsPowerQuotaExceeded,
+        )
+
+        body = {
             "name": name,
             "group_id": group_id,
+            "remark": remark,
             "user_proxy_config": {"proxy_soft": "no_proxy"},
-            "fingerprint_config": {
+            "fingerprint_config": fingerprint_config or {
                 "language": ["ko-KR", "ko", "en-US", "en"],
             },
-        })
+        }
+
+        try:
+            data = self._post("/api/v1/user/create", body)
+        except RuntimeError as e:
+            msg = str(e).lower()
+            if any(k in msg for k in ["limit exceeded", "quota", "package limit"]):
+                raise AdsPowerQuotaExceeded(str(e)) from e
+            raise AdsPowerAPIError(str(e)) from e
+
         profile_id = data.get("id", "")
         log.info(f"Created AdsPower profile: {name} → {profile_id}")
         return profile_id
