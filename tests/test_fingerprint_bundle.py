@@ -12,7 +12,7 @@ from hydra.browser.fingerprint_bundle import (
 REQUIRED_TOP_KEYS = {
     "random_ua", "browser_kernel_config", "screen_resolution",
     "hardware_concurrency", "device_memory",
-    "automatic_timezone", "timezone", "language_switch", "language",
+    "automatic_timezone", "timezone", "language_switch",
     "location_switch", "webrtc",
     "canvas", "webgl_image", "audio", "client_rects",
     "webgl", "webgl_config", "fonts",
@@ -31,7 +31,8 @@ def test_payload_has_required_top_keys(hint):
 def test_common_constants_are_fixed():
     p = build_fingerprint_payload("windows_heavy")
     assert p["timezone"] == "Asia/Seoul"
-    assert p["language"] == ["ko-KR", "ko", "en-US", "en"]
+    assert p["language_switch"] == "1"  # IP-based (defers to AdsPower auto-detect from IP country)
+    assert "language" not in p          # no explicit list when IP-based
     assert p["webrtc"] == "disabled"
     assert p["device_name_switch"] == "1"
     assert p["mac_address_config"] == {"model": "1"}
