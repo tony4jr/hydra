@@ -13,6 +13,7 @@ Why mobile data toggle instead of airplane mode:
 """
 
 import asyncio
+import json
 import subprocess
 from datetime import datetime, timezone, timedelta
 
@@ -21,6 +22,7 @@ from sqlalchemy.orm import Session
 from hydra.core.config import settings
 from hydra.core.logger import get_logger
 from hydra.db.models import IpLog
+from hydra.infra.ip_errors import IPRotationFailed
 
 log = get_logger("ip")
 
@@ -93,21 +95,113 @@ async def rotate_ip(device_id: str, max_retries: int = 3) -> str:
     raise RuntimeError(f"IP rotation failed after {max_retries} attempts")
 
 
-def check_ip_available(db: Session, ip_address: str, cooldown_minutes: int = 30) -> bool:
-    """Check if IP was NOT used by another account in the last N minutes.
+def check_ip_available(
+    db: Session,
+    ip_address: str,
+    account_id: int,
+    cooldown_minutes: int = 30,
+) -> bool:
+    """Check if another account used this IP within the cooldown window.
 
-    Spec: same IP + another account within 30min = blocked.
+    Same account re-using its own IP is allowed (real humans reconnect to the
+    same IP naturally). Only cross-account reuse within the window blocks.
     """
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=cooldown_minutes)
-    recent = (
+    conflict = (
         db.query(IpLog)
         .filter(
             IpLog.ip_address == ip_address,
             IpLog.started_at >= cutoff,
+            IpLog.account_id != account_id,
         )
         .first()
     )
-    return recent is None
+    return conflict is None
+
+
+async def rotate_and_verify(db: Session, device_id: str, account_id: int) -> str:
+    """Toggle mobile data off/on up to N times until a safe IP is obtained.
+
+    "Safe" = not used by another account within `settings.ip_rotation_cooldown_minutes`.
+    Raises `IPRotationFailed` when all attempts exhausted.
+    """
+    previous_ip = await _get_current_ip(device_id)
+
+    max_attempts = settings.ip_rotation_max_attempts
+    for attempt in range(1, max_attempts + 1):
+        log.info(f"IP rotation attempt {attempt}/{max_attempts} (prev: {previous_ip})")
+
+        await _adb_shell(device_id, "svc data disable")
+        await asyncio.sleep(5)
+        await _adb_shell(device_id, "svc data enable")
+        await asyncio.sleep(15)
+
+        try:
+            new_ip = await _get_current_ip(device_id)
+        except Exception as e:
+            log.warning(f"IP check failed (attempt {attempt}): {e}")
+            continue
+
+        if not new_ip or new_ip == previous_ip:
+            log.warning(f"Attempt {attempt}: IP unchanged ({new_ip})")
+            continue
+
+        if check_ip_available(db, new_ip, account_id,
+                               cooldown_minutes=settings.ip_rotation_cooldown_minutes):
+            log.info(f"IP rotated safely: {previous_ip} → {new_ip}")
+            return new_ip
+
+        log.warning(f"Attempt {attempt}: new IP {new_ip} still conflicts with another account")
+        previous_ip = new_ip
+
+    from hydra.infra import telegram
+    telegram.warning(
+        f"⚠️ IP 로테이션 {max_attempts}회 실패 — device={device_id}, account_id={account_id}"
+    )
+    raise IPRotationFailed(
+        f"Failed to obtain safe IP after {max_attempts} attempts (device={device_id})"
+    )
+
+
+async def _get_worker_external_ip() -> str:
+    """Fallback: ask the machine for its own external IP (no ADB)."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get("https://ifconfig.me")
+            return resp.text.strip()
+    except Exception:
+        return "0.0.0.0"
+
+
+async def ensure_safe_ip(db: Session, account, worker) -> "IpLog":
+    """Ensure the session uses an IP not claimed by another account in cooldown.
+
+    1. Worker has no adb_device_id → log current machine external IP, skip rotate.
+    2. Query phone IP via ADB.
+    3. No conflict → log and return.
+    4. Conflict → rotate_and_verify → log new IP and return.
+    """
+    ip_config = {}
+    if worker.ip_config:
+        try:
+            ip_config = json.loads(worker.ip_config)
+        except Exception:
+            ip_config = {}
+    device_id = ip_config.get("adb_device_id")
+
+    if not device_id:
+        current_ip = await _get_worker_external_ip()
+        return log_ip_usage(db, account.id, current_ip, "none")
+
+    current_ip = await _get_current_ip(device_id)
+
+    if check_ip_available(db, current_ip, account.id,
+                          cooldown_minutes=settings.ip_rotation_cooldown_minutes):
+        return log_ip_usage(db, account.id, current_ip, device_id)
+
+    new_ip = await rotate_and_verify(db, device_id, account.id)
+    return log_ip_usage(db, account.id, new_ip, device_id)
 
 
 def log_ip_usage(db: Session, account_id: int, ip_address: str, device_id: str) -> IpLog:

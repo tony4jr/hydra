@@ -1,5 +1,6 @@
 """Worker 메인 앱 — heartbeat + task fetch + execute loop."""
 import asyncio
+import hashlib
 import signal
 import sys
 from collections import defaultdict
@@ -7,6 +8,8 @@ from datetime import datetime, UTC
 from worker.config import config
 from worker.client import ServerClient
 from worker.executor import TaskExecutor
+from hydra.db.session import SessionLocal
+from hydra.db.models import Account, Worker
 
 
 class WorkerApp:
@@ -82,46 +85,70 @@ class WorkerApp:
     async def _execute_session(self, tasks: list, profile_id: str, account_id: int):
         """한 계정의 세션 — 여러 태스크를 자연스럽게 실행."""
         from worker.session import WorkerSession
+        from hydra.infra.ip_errors import IPRotationFailed
 
-        session = WorkerSession(
-            profile_id, account_id, device_id=config.adb_device_id
-        )
-
-        if not await session.start():
-            for task in tasks:
-                try:
-                    self.client.fail_task(task["id"], "Session start failed")
-                except Exception:
-                    pass
-            return
-
+        db = SessionLocal()
         try:
-            for task in tasks:
-                if not await session.should_continue():
-                    print(f"[Worker] Session limit reached, skipping remaining tasks")
-                    break
+            account = db.get(Account, account_id) if account_id else None
+            token_hash = hashlib.sha256(config.worker_token.encode()).hexdigest()
+            worker = db.query(Worker).filter(Worker.token_hash == token_hash).first()
 
-                if session.tasks_completed > 0:
-                    await session.do_natural_browsing()
+            session = WorkerSession(
+                profile_id, account_id,
+                device_id=config.adb_device_id,
+                account=account,
+                worker=worker,
+            )
 
-                task_id = task["id"]
-                task_type = task["task_type"]
-                print(f"[Worker] Executing task {task_id} ({task_type})")
-
-                try:
-                    result = await self.executor.execute(task, session)
-                    self.client.complete_task(task_id, result)
-                    session.tasks_completed += 1
-                    print(f"[Worker] Task {task_id} completed")
-                except Exception as e:
-                    error = str(e)
-                    print(f"[Worker] Task {task_id} failed: {error}")
+            try:
+                started = await session.start(db=db)
+            except IPRotationFailed:
+                # IP rotation failed — reschedule each task via server API
+                print(f"[Worker] IP rotation failed, rescheduling {len(tasks)} task(s)")
+                for task in tasks:
                     try:
-                        self.client.fail_task(task_id, error)
+                        self.client.reschedule_task(task["id"], reason="ip_rotation_failed")
+                    except Exception as e:
+                        print(f"[Worker] Failed to reschedule task {task['id']}: {e}")
+                return
+
+            if not started:
+                for task in tasks:
+                    try:
+                        self.client.fail_task(task["id"], "Session start failed")
                     except Exception:
                         pass
+                return
+
+            try:
+                for task in tasks:
+                    if not await session.should_continue():
+                        print(f"[Worker] Session limit reached, skipping remaining tasks")
+                        break
+
+                    if session.tasks_completed > 0:
+                        await session.do_natural_browsing()
+
+                    task_id = task["id"]
+                    task_type = task["task_type"]
+                    print(f"[Worker] Executing task {task_id} ({task_type})")
+
+                    try:
+                        result = await self.executor.execute(task, session)
+                        self.client.complete_task(task_id, result)
+                        session.tasks_completed += 1
+                        print(f"[Worker] Task {task_id} completed")
+                    except Exception as e:
+                        error = str(e)
+                        print(f"[Worker] Task {task_id} failed: {error}")
+                        try:
+                            self.client.fail_task(task_id, error)
+                        except Exception:
+                            pass
+            finally:
+                await session.close()
         finally:
-            await session.close()
+            db.close()
 
 
 def main():

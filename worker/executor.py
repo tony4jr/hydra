@@ -19,6 +19,7 @@ from worker.login import auto_login
 from worker.warmup import WarmupExecutor
 from worker.session import WorkerSession
 from worker.comment_behavior import read_comments_before_posting
+from hydra.browser.adspower import adspower
 
 
 class TaskExecutor:
@@ -33,6 +34,8 @@ class TaskExecutor:
             "ghost_check": self._handle_ghost_check,
             "login": self._handle_login,
             "channel_setup": self._handle_channel_setup,
+            "create_profile": self._handle_create_profile,
+            "retire_profile": self._handle_retire_profile,
         }
 
     async def execute(self, task: dict, session: WorkerSession) -> str:
@@ -432,4 +435,34 @@ class TaskExecutor:
             "action": "channel_setup",
             "channel_name": channel_name,
             "avatar_uploaded": bool(avatar_path),
+        })
+
+    async def _handle_create_profile(self, task, payload, session):
+        """Create an AdsPower profile with the given fingerprint bundle.
+
+        session is unused — this handler doesn't need a browser.
+        """
+        name = payload["profile_name"]
+        group_id = payload.get("group_id", "0")
+        remark = payload.get("remark", "")
+        fingerprint_config = payload.get("fingerprint_payload") or {}
+
+        profile_id = adspower.create_profile(
+            name=name,
+            group_id=group_id,
+            fingerprint_config=fingerprint_config,
+            remark=remark,
+        )
+        return json.dumps({
+            "profile_id": profile_id,
+            "account_id": payload["account_id"],
+            "device_hint": payload.get("device_hint"),
+        })
+
+    async def _handle_retire_profile(self, task, payload, session):
+        profile_id = payload["profile_id"]
+        adspower.delete_profile(profile_id)
+        return json.dumps({
+            "retired_profile_id": profile_id,
+            "reason": payload.get("reason", ""),
         })

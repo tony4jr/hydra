@@ -3,32 +3,153 @@
 import json
 from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case
 
 from hydra.db.session import get_db
-from hydra.db.models import Account, ActionLog, CampaignStep, Campaign, ErrorLog
+from hydra.db.models import Account, ActionLog, CampaignStep, Campaign, ErrorLog, Task
 from hydra.core.crypto import encrypt
+from hydra.browser.fingerprint_bundle import build_fingerprint_payload
+from hydra.core.config import settings
+from hydra.browser.adspower import adspower
 
 router = APIRouter()
 
 
+def auto_queue_create_profile_tasks(db: Session, accounts: list) -> int:
+    """Enqueue create_profile tasks for accounts with persona but no active profile.
+
+    Returns number of tasks queued.
+    """
+    count = 0
+    for acc in accounts:
+        if acc.adspower_profile_id:
+            continue
+        if not acc.persona:
+            continue
+        try:
+            persona = json.loads(acc.persona)
+        except Exception:
+            continue
+        device_hint = persona.get("device_hint")
+        if not device_hint:
+            continue
+
+        fp_payload = build_fingerprint_payload(device_hint)
+        name = f"hydra_{acc.id}_{acc.gmail.split('@')[0]}"
+        remark_bits = [
+            persona.get("name", ""),
+            f"{persona.get('age','?')}세",
+            persona.get("region", ""),
+            persona.get("occupation", ""),
+        ]
+        remark = " / ".join(b for b in remark_bits if b)
+
+        task = Task(
+            account_id=acc.id,
+            task_type="create_profile",
+            status="pending",
+            payload=json.dumps({
+                "account_id": acc.id,
+                "profile_name": name,
+                "group_id": settings.adspower_group_id,
+                "remark": remark,
+                "device_hint": device_hint,
+                "fingerprint_payload": fp_payload,
+            }, ensure_ascii=False),
+        )
+        db.add(task)
+        count += 1
+
+    db.commit()
+    return count
+
+
+def compute_quota_report(db: Session) -> dict:
+    adspower_count = adspower.get_profile_count()
+    linked = db.query(Account).filter(Account.adspower_profile_id.isnot(None)).count()
+    quota = settings.adspower_profile_quota
+    return {
+        "adspower_count": adspower_count,
+        "linked_accounts": linked,
+        "quota": quota,
+        "used_ratio": round(adspower_count / quota, 4) if quota > 0 else 0,
+    }
+
+
+@router.get("/api/adspower-quota")
+def adspower_quota(db: Session = Depends(get_db)):
+    return compute_quota_report(db)
+
+
 class ImportRequest(BaseModel):
     path: str
+    auto_process: bool = True  # chain persona + profile creation after import
+
+
+def _auto_process_new_accounts(account_ids: list[int]):
+    """Background: assign personas then queue create_profile tasks for new accounts."""
+    from hydra.db.session import SessionLocal
+    from hydra.ai.agents.persona_agent import batch_assign_personas
+
+    db = SessionLocal()
+    try:
+        accounts = db.query(Account).filter(Account.id.in_(account_ids)).all()
+        batch_assign_personas(db, accounts)
+        # refresh to pick up newly written personas
+        accounts = db.query(Account).filter(Account.id.in_(account_ids)).all()
+        queued = auto_queue_create_profile_tasks(db, accounts)
+        return queued
+    finally:
+        db.close()
 
 
 @router.post("/api/import")
-def import_csv(data: ImportRequest, db: Session = Depends(get_db)):
+def import_csv(
+    data: ImportRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     from hydra.accounts.manager import import_from_csv
     try:
         count = import_from_csv(db, data.path)
-        return {"ok": True, "message": f"{count}개 계정 가져오기 완료"}
     except FileNotFoundError:
         return {"ok": False, "message": "파일을 찾을 수 없습니다"}
     except Exception as e:
         return {"ok": False, "message": str(e)}
+
+    if not count:
+        return {"ok": True, "message": "0개 계정 가져오기 완료", "auto_processing": False}
+
+    # Grab IDs of accounts still in "registered" with no persona/profile — the
+    # most recently imported ones. Using created_at descending narrows to this
+    # batch without needing import_from_csv to return IDs.
+    recent_ids = [
+        a.id for a in (
+            db.query(Account)
+            .filter(Account.persona.is_(None), Account.adspower_profile_id.is_(None))
+            .order_by(Account.id.desc())
+            .limit(count)
+            .all()
+        )
+    ]
+
+    if data.auto_process and recent_ids:
+        background_tasks.add_task(_auto_process_new_accounts, recent_ids)
+        return {
+            "ok": True,
+            "message": f"{count}개 계정 가져오기 완료. 페르소나 배정 + 프로필 생성 태스크 큐잉을 백그라운드에서 진행합니다.",
+            "auto_processing": True,
+            "queued_account_ids": recent_ids,
+        }
+
+    return {
+        "ok": True,
+        "message": f"{count}개 계정 가져오기 완료 (auto_process=false, 수동 단계 필요)",
+        "auto_processing": False,
+    }
 
 
 @router.get("/api/list")
@@ -266,6 +387,19 @@ def batch_assign_personas(db: Session = Depends(get_db)):
     accounts = db.query(Account).filter(Account.persona.is_(None)).all()
     batch_assign_personas(db, accounts)
     return {"ok": True, "count": len(accounts)}
+
+
+@router.post("/api/batch/auto-queue-profiles")
+def batch_auto_queue_profiles(db: Session = Depends(get_db)):
+    """Queue create_profile tasks for any account that has a persona but no profile yet."""
+    accounts = (
+        db.query(Account)
+        .filter(Account.persona.isnot(None),
+                Account.adspower_profile_id.is_(None))
+        .all()
+    )
+    n = auto_queue_create_profile_tasks(db, accounts)
+    return {"ok": True, "queued": n, "total_candidates": len(accounts)}
 
 
 @router.get("/api/{account_id}/metrics")

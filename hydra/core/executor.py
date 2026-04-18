@@ -7,13 +7,14 @@ executes it through a real browser session.
 import asyncio
 import json
 import random
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from sqlalchemy.orm import Session
 
 from hydra.core.logger import get_logger
 from hydra.core.enums import StepStatus, ActionType
 from hydra.core.campaign import generate_step_content
+from hydra.core.config import settings
 from hydra.core.scheduler import mark_done, mark_failed
 from hydra.browser.driver import open_browser
 from hydra.browser import actions
@@ -24,8 +25,30 @@ from hydra.ghost.detector import report_ghost_check
 from hydra.like_boost.engine import complete_boost, schedule_like_boost
 from hydra.infra import telegram
 from hydra.infra.ip import rotate_ip, log_ip_usage, end_ip_usage, check_ip_available
+from hydra.infra.ip_errors import IPRotationFailed
 
 log = get_logger("executor")
+
+
+def reschedule_task_for_ip_failure(db, task):
+    """Bump retry_count and push task forward. Escalate to failed at threshold."""
+    task.retry_count = (task.retry_count or 0) + 1
+    task.error_message = "ip_rotation_failed"
+
+    max_retries = settings.ip_rotation_task_retry_max
+    if task.retry_count >= max_retries:
+        task.status = "failed"
+        telegram.warning(
+            f"태스크 {task.id} IP 로테이션 {max_retries}회 누적 실패 → 폐기"
+        )
+    else:
+        delay_min = settings.ip_rotation_reschedule_min
+        delay_max = settings.ip_rotation_reschedule_max
+        task.status = "pending"
+        task.scheduled_at = datetime.now(timezone.utc) + timedelta(
+            minutes=random.uniform(delay_min, delay_max)
+        )
+    db.commit()
 
 
 async def execute_step(db: Session, step: CampaignStep, device_id: str | None = None):
@@ -55,7 +78,7 @@ async def execute_step(db: Session, step: CampaignStep, device_id: str | None = 
         current_ip = None
         if device_id:
             current_ip = await rotate_ip(device_id)
-            if not check_ip_available(db, current_ip):
+            if not check_ip_available(db, current_ip, account.id):
                 # IP was recently used by another account — rotate again
                 current_ip = await rotate_ip(device_id)
 

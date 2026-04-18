@@ -37,16 +37,40 @@ class AdsPowerClient:
 
     # --- Profile CRUD ---
 
-    def create_profile(self, name: str, group_id: str = "0") -> str:
-        """Create a new browser profile. Returns profile ID."""
-        data = self._post("/api/v1/user/create", {
+    def create_profile(
+        self,
+        name: str,
+        group_id: str = "0",
+        fingerprint_config: dict | None = None,
+        remark: str = "",
+    ) -> str:
+        """Create a new browser profile. Returns profile ID.
+
+        `fingerprint_config` is the AdsPower fingerprint_config dict produced
+        by `hydra.browser.fingerprint_bundle.build_fingerprint_payload`.
+        """
+        from hydra.browser.adspower_errors import (
+            AdsPowerAPIError, AdsPowerQuotaExceeded,
+        )
+
+        body = {
             "name": name,
             "group_id": group_id,
+            "remark": remark,
             "user_proxy_config": {"proxy_soft": "no_proxy"},
-            "fingerprint_config": {
+            "fingerprint_config": fingerprint_config or {
                 "language": ["ko-KR", "ko", "en-US", "en"],
             },
-        })
+        }
+
+        try:
+            data = self._post("/api/v1/user/create", body)
+        except RuntimeError as e:
+            msg = str(e).lower()
+            if any(k in msg for k in ["limit exceeded", "quota", "package limit"]):
+                raise AdsPowerQuotaExceeded(str(e)) from e
+            raise AdsPowerAPIError(str(e)) from e
+
         profile_id = data.get("id", "")
         log.info(f"Created AdsPower profile: {name} → {profile_id}")
         return profile_id
@@ -61,11 +85,29 @@ class AdsPowerClient:
         data = self._get("/api/v1/user/list", {"page": page, "page_size": page_size})
         return data.get("list", [])
 
+    def get_profile_count(self) -> int:
+        """Total profiles visible to this AdsPower account."""
+        data = self._get("/api/v1/user/list", {"page": 1, "page_size": 1})
+        return int(data.get("total", 0))
+
     # --- Browser start/stop ---
 
-    def start_browser(self, profile_id: str) -> dict:
-        """Start browser for profile. Returns {ws_endpoint, debug_port, webdriver}."""
-        data = self._get("/api/v1/browser/start", {"user_id": profile_id})
+    def start_browser(self, profile_id: str, extra_args: list[str] | None = None) -> dict:
+        """Start browser for profile. Returns {ws_endpoint, debug_port, webdriver}.
+
+        Always passes `--force-device-scale-factor=1.0` so the Mac host's Retina
+        DPR=2 does not leak through Windows-spoofed profiles. Windows Worker
+        hosts are unaffected (they already have DPR=1).
+        """
+        args = ["--force-device-scale-factor=1.0"]
+        if extra_args:
+            args.extend(extra_args)
+        import json as _json
+        params = {
+            "user_id": profile_id,
+            "launch_args": _json.dumps(args),
+        }
+        data = self._get("/api/v1/browser/start", params)
         ws = data.get("ws", {})
         result = {
             "ws_endpoint": ws.get("puppeteer", ""),

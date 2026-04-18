@@ -69,6 +69,18 @@ class Settings(BaseSettings):
     backup_interval_hours: int = 4
     backup_retention_days: int = 7
 
+    # === Fingerprint / Profile ===
+    adspower_group_id: str = "0"
+    adspower_profile_quota: int = 100
+    enable_fingerprint_bundle: bool = True
+
+    # === IP rotation ===
+    ip_rotation_cooldown_minutes: int = 30
+    ip_rotation_max_attempts: int = 3
+    ip_rotation_task_retry_max: int = 5
+    ip_rotation_reschedule_min: int = 5
+    ip_rotation_reschedule_max: int = 10
+
     # === Worker ===
     worker_token_secret: str = ""
     server_url: str = "http://localhost:8000"
