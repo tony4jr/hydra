@@ -18,7 +18,7 @@ from hydra.core.config import settings
 from hydra.core.logger import get_logger
 from hydra.core import crypto
 from hydra.core.enums import AccountStatus, WarmupGroup, WARMUP_DAYS
-from hydra.db.models import Account
+from hydra.db.models import Account, AccountProfileHistory
 from hydra.browser.adspower import adspower
 from hydra.infra import telegram
 
@@ -68,15 +68,91 @@ def import_from_csv(db: Session, csv_path: str | Path) -> int:
     return count
 
 
-def create_adspower_profile(db: Session, account: Account) -> str:
-    """Create AdsPower browser profile for account."""
+def record_profile_creation(
+    db: Session,
+    account: Account,
+    *,
+    profile_id: str,
+    worker_id: int | None,
+    fingerprint_snapshot: dict,
+    device_hint: str,
+    created_source: str = "auto",
+) -> AccountProfileHistory:
+    """Atomically link an AdsPower profile to an account and record history.
+
+    Raises:
+        ValueError: if the account already has an active profile.
+    """
+    if account.adspower_profile_id:
+        raise ValueError(
+            f"Account {account.id} ({account.gmail}) already has an active profile: "
+            f"{account.adspower_profile_id}"
+        )
+
+    account.adspower_profile_id = profile_id
+    account.status = AccountStatus.PROFILE_SET
+
+    history = AccountProfileHistory(
+        account_id=account.id,
+        worker_id=worker_id,
+        adspower_profile_id=profile_id,
+        fingerprint_snapshot=json.dumps(fingerprint_snapshot, ensure_ascii=False),
+        created_source=created_source,
+        device_hint=device_hint,
+    )
+    db.add(history)
+    db.commit()
+    log.info(f"Profile {profile_id} linked to {account.gmail} (source={created_source})")
+    return history
+
+
+def retire_profile_record(db: Session, account: Account, reason: str):
+    """Mark the account's active profile as retired. Idempotent."""
+    if not account.adspower_profile_id:
+        return
+    active = (
+        db.query(AccountProfileHistory)
+        .filter_by(account_id=account.id, retired_at=None)
+        .first()
+    )
+    if active:
+        active.retired_at = datetime.now(timezone.utc)
+        active.retire_reason = reason
+    account.adspower_profile_id = None
+    db.commit()
+    log.info(f"Profile retired for {account.gmail} (reason={reason})")
+
+
+def create_adspower_profile(
+    db: Session,
+    account: Account,
+    *,
+    fingerprint_config: dict | None = None,
+    device_hint: str = "windows_heavy",
+) -> str:
+    """Server-side convenience: create profile synchronously on Worker-less setups.
+
+    In production, prefer queueing a `create_profile` task so a Worker handles
+    the AdsPower API call (Worker has the local AdsPower instance).
+    """
+    from hydra.browser.fingerprint_bundle import build_fingerprint_payload
     name = f"hydra_{account.id}_{account.gmail.split('@')[0]}"
+    if fingerprint_config is None:
+        fingerprint_config = build_fingerprint_payload(device_hint)
 
     for attempt in range(3):
         try:
-            profile_id = adspower.create_profile(name)
-            account.adspower_profile_id = profile_id
-            db.commit()
+            profile_id = adspower.create_profile(
+                name=name,
+                group_id=settings.adspower_group_id,
+                fingerprint_config=fingerprint_config,
+            )
+            record_profile_creation(
+                db, account,
+                profile_id=profile_id, worker_id=None,
+                fingerprint_snapshot=fingerprint_config,
+                device_hint=device_hint,
+            )
             return profile_id
         except Exception as e:
             log.warning(f"AdsPower profile creation attempt {attempt+1} failed: {e}")

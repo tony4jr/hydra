@@ -84,3 +84,65 @@ def test_retire_then_recreate_keeps_history(db_session):
     assert len(rows) == 2
     assert rows[0].retired_at is not None
     assert rows[1].retired_at is None
+
+
+def test_record_profile_creation_inserts_history(db_session):
+    from hydra.db.models import Account, AccountProfileHistory
+    from hydra.accounts.manager import record_profile_creation
+
+    acc = Account(gmail="rr@g.com", password="x", status="registered")
+    db_session.add(acc)
+    db_session.commit()
+
+    fp = {"random_ua": {"ua_system_version": ["Windows 11"]}}
+    record_profile_creation(
+        db_session, acc, profile_id="k1bim9ga", worker_id=None,
+        fingerprint_snapshot=fp, device_hint="windows_heavy",
+        created_source="auto",
+    )
+
+    db_session.refresh(acc)
+    assert acc.adspower_profile_id == "k1bim9ga"
+    assert acc.status == "profile_set"
+
+    rows = db_session.query(AccountProfileHistory).filter_by(account_id=acc.id).all()
+    assert len(rows) == 1
+    assert rows[0].retired_at is None
+    assert rows[0].device_hint == "windows_heavy"
+
+
+def test_record_profile_creation_refuses_if_already_active(db_session):
+    from hydra.db.models import Account
+    from hydra.accounts.manager import record_profile_creation
+
+    acc = Account(gmail="rr2@g.com", password="x",
+                  adspower_profile_id="existing", status="profile_set")
+    db_session.add(acc)
+    db_session.commit()
+
+    with pytest.raises(ValueError, match="already has an active profile"):
+        record_profile_creation(
+            db_session, acc, profile_id="new",
+            worker_id=None, fingerprint_snapshot={}, device_hint="x",
+        )
+
+
+def test_retire_profile_record_sets_retired_at_and_nulls_account_field(db_session):
+    from hydra.db.models import Account, AccountProfileHistory
+    from hydra.accounts.manager import record_profile_creation, retire_profile_record
+
+    acc = Account(gmail="rr3@g.com", password="x", status="registered")
+    db_session.add(acc)
+    db_session.commit()
+    record_profile_creation(
+        db_session, acc, profile_id="old", worker_id=None,
+        fingerprint_snapshot={}, device_hint="windows_heavy",
+    )
+
+    retire_profile_record(db_session, acc, reason="ghost")
+
+    db_session.refresh(acc)
+    assert acc.adspower_profile_id is None
+    row = db_session.query(AccountProfileHistory).filter_by(account_id=acc.id).one()
+    assert row.retired_at is not None
+    assert row.retire_reason == "ghost"
