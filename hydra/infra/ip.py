@@ -13,6 +13,7 @@ Why mobile data toggle instead of airplane mode:
 """
 
 import asyncio
+import json
 import subprocess
 from datetime import datetime, timezone, timedelta
 
@@ -160,6 +161,47 @@ async def rotate_and_verify(db: Session, device_id: str, account_id: int) -> str
     raise IPRotationFailed(
         f"Failed to obtain safe IP after {max_attempts} attempts (device={device_id})"
     )
+
+
+async def _get_worker_external_ip() -> str:
+    """Fallback: ask the machine for its own external IP (no ADB)."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get("https://ifconfig.me")
+            return resp.text.strip()
+    except Exception:
+        return "0.0.0.0"
+
+
+async def ensure_safe_ip(db: Session, account, worker) -> "IpLog":
+    """Ensure the session uses an IP not claimed by another account in cooldown.
+
+    1. Worker has no adb_device_id → log current machine external IP, skip rotate.
+    2. Query phone IP via ADB.
+    3. No conflict → log and return.
+    4. Conflict → rotate_and_verify → log new IP and return.
+    """
+    ip_config = {}
+    if worker.ip_config:
+        try:
+            ip_config = json.loads(worker.ip_config)
+        except Exception:
+            ip_config = {}
+    device_id = ip_config.get("adb_device_id")
+
+    if not device_id:
+        current_ip = await _get_worker_external_ip()
+        return log_ip_usage(db, account.id, current_ip, "none")
+
+    current_ip = await _get_current_ip(device_id)
+
+    if check_ip_available(db, current_ip, account.id,
+                          cooldown_minutes=settings.ip_rotation_cooldown_minutes):
+        return log_ip_usage(db, account.id, current_ip, device_id)
+
+    new_ip = await rotate_and_verify(db, device_id, account.id)
+    return log_ip_usage(db, account.id, new_ip, device_id)
 
 
 def log_ip_usage(db: Session, account_id: int, ip_address: str, device_id: str) -> IpLog:

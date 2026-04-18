@@ -146,3 +146,81 @@ async def test_rotate_and_verify_raises_after_three_failures(db_session, monkeyp
 
     with pytest.raises(IPRotationFailed):
         await ip_mod.rotate_and_verify(db_session, "DEV", a.id)
+
+
+import json as _json
+
+
+@pytest.mark.asyncio
+async def test_ensure_safe_ip_returns_iplog_when_current_ip_safe(db_session, monkeypatch):
+    from hydra.infra import ip as ip_mod
+    from hydra.db.models import Worker
+
+    a = _add_account(db_session, "a@g.com")
+    w = Worker(name="w1", token_hash="h", status="online",
+               ip_config=_json.dumps({"adb_device_id": "DEV"}))
+    db_session.add(w)
+    db_session.commit()
+
+    async def fake_get_ip(device_id):
+        return "1.1.1.1"
+
+    monkeypatch.setattr(ip_mod, "_get_current_ip", fake_get_ip)
+
+    log = await ip_mod.ensure_safe_ip(db_session, a, w)
+    assert log.ip_address == "1.1.1.1"
+    assert log.account_id == a.id
+    assert log.device_id == "DEV"
+
+
+@pytest.mark.asyncio
+async def test_ensure_safe_ip_rotates_on_conflict(db_session, monkeypatch):
+    from hydra.infra import ip as ip_mod
+    from hydra.db.models import Worker
+
+    a = _add_account(db_session, "a@g.com")
+    b = _add_account(db_session, "b@g.com")
+    w = Worker(name="w1", token_hash="h", status="online",
+               ip_config=_json.dumps({"adb_device_id": "DEV"}))
+    db_session.add(w)
+    _add_ip_log(db_session, a.id, "1.1.1.1", minutes_ago=2)
+    db_session.commit()
+
+    sequence = iter(["1.1.1.1", "1.1.1.1", "2.2.2.2"])
+
+    async def fake_get_ip(device_id):
+        return next(sequence)
+
+    async def fake_shell(*args, **kwargs):
+        return ""
+
+    async def fake_sleep(_):
+        return None
+
+    monkeypatch.setattr(ip_mod, "_get_current_ip", fake_get_ip)
+    monkeypatch.setattr(ip_mod, "_adb_shell", fake_shell)
+    monkeypatch.setattr(ip_mod.asyncio, "sleep", fake_sleep)
+
+    log = await ip_mod.ensure_safe_ip(db_session, b, w)
+    assert log.ip_address == "2.2.2.2"
+    assert log.account_id == b.id
+
+
+@pytest.mark.asyncio
+async def test_ensure_safe_ip_skips_rotation_when_no_device_id(db_session, monkeypatch):
+    from hydra.infra import ip as ip_mod
+    from hydra.db.models import Worker
+
+    a = _add_account(db_session, "a@g.com")
+    w = Worker(name="w2", token_hash="h", status="online", ip_config=None)
+    db_session.add(w)
+    db_session.commit()
+
+    async def fake_external():
+        return "6.6.6.6"
+
+    monkeypatch.setattr(ip_mod, "_get_worker_external_ip", fake_external)
+
+    log = await ip_mod.ensure_safe_ip(db_session, a, w)
+    assert log.ip_address == "6.6.6.6"
+    assert log.device_id == "none"
