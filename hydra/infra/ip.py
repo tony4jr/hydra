@@ -93,21 +93,28 @@ async def rotate_ip(device_id: str, max_retries: int = 3) -> str:
     raise RuntimeError(f"IP rotation failed after {max_retries} attempts")
 
 
-def check_ip_available(db: Session, ip_address: str, cooldown_minutes: int = 30) -> bool:
-    """Check if IP was NOT used by another account in the last N minutes.
+def check_ip_available(
+    db: Session,
+    ip_address: str,
+    account_id: int,
+    cooldown_minutes: int = 30,
+) -> bool:
+    """Check if another account used this IP within the cooldown window.
 
-    Spec: same IP + another account within 30min = blocked.
+    Same account re-using its own IP is allowed (real humans reconnect to the
+    same IP naturally). Only cross-account reuse within the window blocks.
     """
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=cooldown_minutes)
-    recent = (
+    conflict = (
         db.query(IpLog)
         .filter(
             IpLog.ip_address == ip_address,
             IpLog.started_at >= cutoff,
+            IpLog.account_id != account_id,
         )
         .first()
     )
-    return recent is None
+    return conflict is None
 
 
 def log_ip_usage(db: Session, account_id: int, ip_address: str, device_id: str) -> IpLog:

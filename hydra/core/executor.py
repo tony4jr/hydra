@@ -55,7 +55,7 @@ async def execute_step(db: Session, step: CampaignStep, device_id: str | None = 
         current_ip = None
         if device_id:
             current_ip = await rotate_ip(device_id)
-            if not check_ip_available(db, current_ip):
+            if not check_ip_available(db, current_ip, account.id):
                 # IP was recently used by another account — rotate again
                 current_ip = await rotate_ip(device_id)
 
