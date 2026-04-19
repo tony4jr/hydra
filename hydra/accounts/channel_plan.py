@@ -198,7 +198,9 @@ def _build_avatar(rng, persona: dict, slot) -> dict:
             "policy": "set_during_warmup",
             "plan": {
                 "topic": topic,
-                "set_at_warmup_day": rng.randint(10, 14),
+                # set_at_warmup_day: 과거 스케줄 필드. 현재는 온보딩 세션에서
+                # 바로 업로드하므로 정보성으로만 유지 (실행 로직이 참조하지 않음).
+                "set_at_warmup_day": 0,
             },
         }
     return {"policy": "default", "plan": None}
@@ -225,7 +227,6 @@ def generate_channel_plan(slot, persona: dict | None = None) -> dict[str, Any]:
     handle = _build_handle(rng, persona or {}, slot)
     description = _build_description(rng, persona or {}, slot)
     avatar = _build_avatar(rng, persona or {}, slot)
-    rename_day = rng.randint(2, 11)
 
     return {
         "title": title,
@@ -234,5 +235,7 @@ def generate_channel_plan(slot, persona: dict | None = None) -> dict[str, Any]:
         "description": description,
         "avatar_policy": avatar["policy"],
         "avatar_plan": avatar["plan"],
-        "rename_at_warmup_day": rename_day,
+        # rename_at_warmup_day: 과거 스케줄 필드. 현재는 온보딩 세션에서 바로
+        # 이름을 변경하므로 0 (실행 로직이 참조하지 않음).
+        "rename_at_warmup_day": 0,
     }

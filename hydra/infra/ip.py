@@ -177,10 +177,12 @@ async def _get_worker_external_ip() -> str:
 async def ensure_safe_ip(db: Session, account, worker) -> "IpLog":
     """Ensure the session uses an IP not claimed by another account in cooldown.
 
-    1. Worker has no adb_device_id → log current machine external IP, skip rotate.
-    2. Query phone IP via ADB.
-    3. No conflict → log and return.
-    4. Conflict → rotate_and_verify → log new IP and return.
+    1. Resolve adb_device_id: prefer worker.ip_config JSON, fallback to
+       settings.adb_device_id (.env 로 Worker PC 런타임에서 설정된 값).
+    2. Worker.ip_config 비어있고 env 도 없으면 경고 + 외부 IP 만 기록.
+    3. Query phone IP via ADB.
+    4. No conflict → log and return.
+    5. Conflict → rotate_and_verify → log new IP and return.
     """
     ip_config = {}
     if worker.ip_config:
@@ -188,9 +190,13 @@ async def ensure_safe_ip(db: Session, account, worker) -> "IpLog":
             ip_config = json.loads(worker.ip_config)
         except Exception:
             ip_config = {}
-    device_id = ip_config.get("adb_device_id")
+    device_id = ip_config.get("adb_device_id") or settings.adb_device_id or None
 
     if not device_id:
+        log.warning(
+            f"ensure_safe_ip: no adb_device_id for worker={getattr(worker,'id','?')} "
+            "(checked worker.ip_config + settings.adb_device_id) — IP rotation skipped"
+        )
         current_ip = await _get_worker_external_ip()
         return log_ip_usage(db, account.id, current_ip, "none")
 

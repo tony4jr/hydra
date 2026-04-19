@@ -8,6 +8,7 @@ from hydra.db.session import get_db
 from hydra.db.models import Account, Task
 from hydra.services import worker_service, task_service
 from hydra.accounts.manager import record_profile_creation
+from hydra.core import crypto
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
@@ -49,6 +50,51 @@ def handle_create_profile_result(
         device_hint=payload.get("device_hint") or "unknown",
         created_source="auto",
     )
+
+    # 프로필 링크 직후 온보딩 태스크 자동 큐잉. Worker 가 pull 해서 로그인 +
+    # 언어 설정 + 자연 탐색 + 채널 커스터마이즈 를 한 세션에서 수행.
+    enqueue_onboard_task(db, account)
+
+
+def enqueue_onboard_task(db, account):
+    """계정 1개에 대해 'onboard' 태스크를 큐잉. 이미 대기 중이면 중복 방지."""
+    existing = (
+        db.query(Task)
+        .filter(
+            Task.account_id == account.id,
+            Task.task_type == "onboard",
+            Task.status.in_(["pending", "running", "assigned"]),
+        )
+        .first()
+    )
+    if existing:
+        return
+
+    try:
+        persona = json.loads(account.persona) if account.persona else {}
+    except Exception:
+        persona = {}
+
+    try:
+        password = crypto.decrypt(account.password) if account.password else ""
+    except Exception:
+        password = ""
+
+    payload = {
+        "account_id": account.id,
+        "email": account.gmail,
+        "password": password,
+        "recovery_email": account.recovery_email,
+        "persona": persona,
+    }
+    task = Task(
+        account_id=account.id,
+        task_type="onboard",
+        status="pending",
+        payload=json.dumps(payload, ensure_ascii=False),
+    )
+    db.add(task)
+    db.commit()
 
 
 class TaskResponse(BaseModel):

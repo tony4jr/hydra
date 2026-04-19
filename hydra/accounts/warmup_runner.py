@@ -1,15 +1,17 @@
-"""Warmup session runner — makes warmup accounts act like real users.
+"""[DEPRECATED] Flat warmup session runner.
 
-Spec 2.1.4:
-Warmup period allows:
-  - Video watching (keyword related + unrelated mix)
-  - Home feed scrolling
-  - Search
-  - Likes (video + other people's comments)
-  - Subscribe (1~2 related channels/day)
-  - NO comments, NO replies, NO promo
+⚠️ 이 모듈은 구현(flat, no Day 1/2/3) 이고 `worker/warmup.py` 의 `WarmupExecutor`
+(Day-differentiated 로직) 과 기능이 중복된다. 프로덕션 경로는 Worker 가 pull 하는
+`warmup` 태스크를 통해 `WarmupExecutor` 를 사용해야 함 (아래 포함된 함수는
+레거시 경로 — 스케줄러/creator 라우트의 직접 호출을 위해 유지 중).
 
-This runs like session_runner but with restrictions.
+향후 작업 (다음 리팩터):
+1. /api/warmup 엔드포인트가 `run_warmup_session` 직접 호출 대신 `warmup` 태스크
+   큐잉하도록 변경
+2. `run_all_warmups` 의 병렬 호출도 동일 방식으로 교체
+3. 본 파일 삭제
+
+현재는 WarmupExecutor 경로와 공존. 새 기능은 `worker/warmup.py` 에 추가할 것.
 """
 
 import asyncio

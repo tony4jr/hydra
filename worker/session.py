@@ -101,11 +101,12 @@ class WorkerSession:
         await self.browser.goto("https://www.youtube.com/shorts")
         await random_delay(1.5, 3.0)
 
-        num_shorts = random.randint(2, 15)
+        num_shorts = random.randint(2, 10)  # 15 → 10 (데이터 절감)
         for _ in range(num_shorts):
+            # full_watch 가중치 20 → 10, skip ↑ (데이터 절감)
             behavior = random.choices(
                 ["skip", "short_watch", "full_watch", "rewatch"],
-                weights=[40, 30, 20, 5],
+                weights=[55, 30, 10, 5],
             )[0]
 
             if behavior == "skip":
@@ -113,9 +114,9 @@ class WorkerSession:
             elif behavior == "short_watch":
                 await random_delay(3.0, 10.0)
             elif behavior == "full_watch":
-                await random_delay(15.0, 60.0)
+                await random_delay(15.0, 30.0)  # 60 → 30
             elif behavior == "rewatch":
-                await random_delay(15.0, 40.0)
+                await random_delay(15.0, 25.0)  # 40 → 25
                 continue  # 다시 보기 — 스와이프 안 함
 
             # 가끔 좋아요
@@ -141,7 +142,7 @@ class WorkerSession:
             await thumbnails.nth(idx).click()
             await random_delay(2.0, 4.0)
             await handle_ad(page)
-            duration = random.randint(10, 180)
+            duration = random.randint(10, 45)  # 180 → 45 (데이터 절감)
             await watch_video(page, duration)
 
     async def close(self):

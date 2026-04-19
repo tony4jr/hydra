@@ -36,6 +36,7 @@ class TaskExecutor:
             "channel_setup": self._handle_channel_setup,
             "create_profile": self._handle_create_profile,
             "retire_profile": self._handle_retire_profile,
+            "onboard": self._handle_onboard,
         }
 
     async def execute(self, task: dict, session: WorkerSession) -> str:
@@ -466,3 +467,36 @@ class TaskExecutor:
             "retired_profile_id": profile_id,
             "reason": payload.get("reason", ""),
         })
+
+    async def _handle_onboard(self, task, payload, session):
+        """최초 온보딩 세션 — 로그인 + 언어 설정 + 자연 탐색 + 채널 커스터마이즈.
+
+        worker/onboard_session.run_onboard_session 에 모든 로직 위임.
+        session 은 이미 WorkerSession.start() 이후 상태 (ensure_safe_ip 완료).
+        """
+        from worker.onboard_session import run_onboard_session
+
+        persona = payload.get("persona") or {}
+        if isinstance(persona, str):
+            try:
+                persona = json.loads(persona)
+            except Exception:
+                persona = {}
+
+        page = session.browser.page
+        result = await run_onboard_session(
+            page,
+            persona=persona,
+            email=payload.get("email"),
+            password=payload.get("password"),
+            recovery_email=payload.get("recovery_email"),
+            duration_min_sec=payload.get("duration_min_sec", 300),
+            duration_max_sec=payload.get("duration_max_sec", 900),
+        )
+        return json.dumps({
+            "ok": result.ok,
+            "duration_sec": result.duration_sec,
+            "actions": result.actions,
+            "searched_query": result.searched_query,
+            "error": result.error,
+        }, ensure_ascii=False)

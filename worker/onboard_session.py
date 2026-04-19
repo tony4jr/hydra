@@ -25,6 +25,10 @@ from playwright.async_api import Page
 
 from hydra.browser.actions import random_delay, scroll_page, watch_video, handle_ad, click_like_button
 from hydra.core.logger import get_logger
+from worker.channel_actions import (
+    pick_avatar_file, rename_channel, set_description, upload_avatar,
+)
+from worker.data_saver import enable_data_saver
 from worker.language_setup import ensure_korean_language
 from worker.login import auto_login, check_logged_in
 from worker.search_pool import pick as pick_query
@@ -95,6 +99,14 @@ async def run_onboard_session(
         log.warning(f"language setup error: {e}")
         result.actions.append(f"language_error:{e}")
 
+    # Data Saver 모드 활성화 — 모바일 데이터 소비 감소 (144p 강제는 탐지 리스크라
+    # 대신 실사용자도 많이 쓰는 "데이터 세이버" 옵션으로 480p 이하 캡)
+    try:
+        if await enable_data_saver(page):
+            result.actions.append("data_saver_on")
+    except Exception as e:
+        log.debug(f"data_saver skipped: {e}")
+
     # 언어 설정 후 YouTube 홈으로 — 여기서부터 자연 탐색
     try:
         await page.goto(YOUTUBE_HOME, wait_until="domcontentloaded")
@@ -163,6 +175,50 @@ async def run_onboard_session(
     except Exception:
         pass
 
+    # ── 5) 채널 맞춤 설정 — 이름 / 설명 / 아바타 ─────────────────────
+    # "유튜브 구경하고 마음에 드니 프로필 꾸미자" 흐름. persona.channel_plan 에
+    # 미리 결정된 title/description/avatar_plan 을 사용.
+    plan = (persona or {}).get("channel_plan") or {}
+    if plan:
+        await random_delay(3.0, 6.0)
+
+        # 이름 변경 (title 이 있으면 무조건 실행 — 100% 계정)
+        title = plan.get("title") or ""
+        if title:
+            try:
+                if await rename_channel(page, title):
+                    result.actions.append(f"rename:{title}")
+                    # description 은 15% 계정만 비어있지 않음
+                    desc = plan.get("description") or ""
+                    if desc:
+                        if await set_description(page, desc):
+                            result.actions.append("set_description")
+            except Exception as e:
+                log.warning(f"rename_channel error: {e}")
+                result.actions.append(f"rename_error:{e}")
+
+        # 아바타 업로드 — avatar_policy == "set_during_warmup" 인 50% 계정
+        if plan.get("avatar_policy") == "set_during_warmup":
+            avatar_path = pick_avatar_file(persona, plan)
+            if avatar_path:
+                try:
+                    if await upload_avatar(page, avatar_path):
+                        result.actions.append(
+                            f"upload_avatar:{avatar_path.rsplit('/', 1)[-1]}"
+                        )
+                except Exception as e:
+                    log.warning(f"upload_avatar error: {e}")
+                    result.actions.append(f"avatar_error:{e}")
+
+        # 설정 끝나면 유튜브 홈으로 돌아와 마지막에 한 번 더 둘러보기
+        try:
+            await page.goto(YOUTUBE_HOME, wait_until="domcontentloaded")
+            await random_delay(2.0, 4.0)
+            await scroll_page(page, scrolls=random.randint(1, 2))
+            result.actions.append("post_channel_scroll")
+        except Exception:
+            pass
+
     result.duration_sec = int(time.time() - started)
     result.ok = True
     log.info(
@@ -202,7 +258,8 @@ async def _watch_home_video(page: Page):
     except Exception:
         pass
 
-    duration = random.randint(10, 90)
+    # 데이터 절감을 위해 시청 시간 축소 (10~45s, 기존 10~90s)
+    duration = random.randint(10, 45)
     try:
         await watch_video(page, duration)
     except Exception:
@@ -233,9 +290,10 @@ async def _browse_shorts(page: Page):
 
     num_shorts = random.randint(2, 8)
     for _ in range(num_shorts):
+        # 데이터 절감: full_watch 가중치 25 → 10, skip 가중치 ↑
         behavior = random.choices(
             ["skip", "short_watch", "full_watch", "rewatch"],
-            weights=[40, 30, 25, 5],
+            weights=[55, 30, 10, 5],
         )[0]
 
         if behavior == "skip":
@@ -243,9 +301,9 @@ async def _browse_shorts(page: Page):
         elif behavior == "short_watch":
             await random_delay(3.0, 10.0)
         elif behavior == "full_watch":
-            await random_delay(15.0, 45.0)
+            await random_delay(15.0, 30.0)  # 45 → 30
         elif behavior == "rewatch":
-            await random_delay(15.0, 30.0)
+            await random_delay(15.0, 25.0)
             continue
 
         if random.random() < 0.05:
@@ -299,7 +357,7 @@ async def _do_search(page: Page, query: str):
     except Exception:
         pass
 
-    duration = random.randint(15, 80)
+    duration = random.randint(15, 40)  # 80 → 40 (데이터 절감)
     try:
         await watch_video(page, duration)
     except Exception:

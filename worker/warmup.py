@@ -11,6 +11,9 @@ from worker.session import WorkerSession
 from worker.google_activity import maybe_check_gmail, maybe_google_search
 from worker.language_setup import ensure_korean_language
 from worker.login import ensure_logged_in
+from worker.subscription_hygiene import (
+    maybe_subscribe_if_korean, maybe_unsubscribe_non_korean,
+)
 
 class WarmupExecutor:
     """워밍업 세션 실행기."""
@@ -43,11 +46,15 @@ class WarmupExecutor:
             await self.session.browser.goto("https://www.youtube.com")
             await random_delay(2.0, 4.0)
 
+        # 채널 이름/아바타/설명은 온보딩 세션에서 이미 완료됨 — 여기선 처리하지 않음.
+        # (worker/onboard_session.py 의 마지막 단계 참조)
+
         # Google 활동 (Day 2+)
         if self.day >= 2:
             if await maybe_check_gmail(page, probability=0.3):
                 result["actions"].append("gmail_check")
-            if await maybe_google_search(page, self.occupation, probability=0.4):
+            age = int(self.persona.get("age", 25))
+            if await maybe_google_search(page, age=age, probability=0.4):
                 result["actions"].append("google_search")
             # YouTube로 복귀
             await self.session.browser.goto("https://www.youtube.com")
@@ -85,13 +92,22 @@ class WarmupExecutor:
                 except Exception:
                     pass
 
-        # 구독 (Day 2+, 30%)
-        if self.day >= 2 and random.random() < 0.3:
-            subscribe_btn = page.locator("ytd-subscribe-button-renderer button")
+        # 구독 (Day 2+, 30% 확률 + 한국어 컨텍스트에서만)
+        if self.day >= 2:
             try:
-                if await subscribe_btn.count() > 0:
-                    await subscribe_btn.first.click()
-                    result["actions"].append("subscribe")
+                if await maybe_subscribe_if_korean(page, probability=0.3):
+                    result["actions"].append("subscribe_kr")
+            except Exception:
+                pass
+
+        # 구독 관리 — 한국 외 채널 1~2개 조용히 해지 (Day 2+, 30% 확률)
+        if self.day >= 2:
+            try:
+                removed = await maybe_unsubscribe_non_korean(
+                    page, max_actions=2, probability=0.3,
+                )
+                if removed:
+                    result["actions"].append(f"unsubscribe_non_kr:{removed}")
             except Exception:
                 pass
 

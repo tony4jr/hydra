@@ -2,15 +2,7 @@
 import random
 
 from hydra.browser.actions import random_delay, type_human, scroll_page
-
-SEARCH_QUERIES = {
-    "대학생": ["과제 마감일", "대학생 할인", "아르바이트 추천", "시험 공부법"],
-    "회사원": ["퇴근 후 운동", "점심 맛집", "연차 사용법", "이직 준비"],
-    "자영업": ["소상공인 대출", "매출 관리", "가게 인테리어", "배달 앱 수수료"],
-    "주부": ["아이 간식 레시피", "육아 꿀팁", "주부 재테크", "집안일 꿀팁"],
-    "프리랜서": ["프리랜서 세금", "재택근무 환경", "포트폴리오", "작업 카페"],
-    "default": ["오늘 날씨", "맛집 추천", "영화 추천", "뉴스", "운동법"],
-}
+from worker.search_pool import pick as pick_query
 
 
 async def maybe_check_gmail(page, probability=0.3):
@@ -36,11 +28,14 @@ async def maybe_check_gmail(page, probability=0.3):
     return True
 
 
-async def maybe_google_search(page, occupation="default", probability=0.4):
+async def maybe_google_search(page, age: int | None = None, *, probability: float = 0.4,
+                               occupation: str | None = None):
+    """Google 검색. age 가 주어지면 search_pool 의 해당 age bucket 에서 쿼리 픽.
+    occupation 은 backward-compat 용 — 무시되지만 시그니처 유지.
+    """
     if random.random() > probability:
         return False
-    queries = SEARCH_QUERIES.get(occupation, SEARCH_QUERIES["default"])
-    query = random.choice(queries)
+    query = pick_query(age if age is not None else 25)
     await page.goto("https://www.google.com")
     await random_delay(1.5, 3.0)
     await type_human(page, "textarea[name='q'], input[name='q']", query)

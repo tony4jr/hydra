@@ -196,6 +196,7 @@ class TaskType(StrEnum):
     PROFILE_SETUP = "profile_setup"
     CREATE_PROFILE = "create_profile"
     RETIRE_PROFILE = "retire_profile"
+    ONBOARD = "onboard"
 
 
 class TaskPriority(StrEnum):

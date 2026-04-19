@@ -7,7 +7,7 @@ from hydra.services.account_limits import can_execute_task
 from hydra.services.video_protection import check_account_video_duplicate, check_account_video_like_duplicate
 
 
-PREPARATION_TYPES = {"login", "channel_setup", "warmup"}
+PREPARATION_TYPES = {"login", "channel_setup", "warmup", "onboard"}
 
 
 def fetch_tasks(db: Session, worker: Worker, limit: int = 5) -> list[Task]:

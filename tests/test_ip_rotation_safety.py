@@ -220,7 +220,36 @@ async def test_ensure_safe_ip_skips_rotation_when_no_device_id(db_session, monke
         return "6.6.6.6"
 
     monkeypatch.setattr(ip_mod, "_get_worker_external_ip", fake_external)
+    # settings.adb_device_id 에 .env 값이 있어도 이 테스트에선 fallback도 차단
+    monkeypatch.setattr(ip_mod.settings, "adb_device_id", "")
 
     log = await ip_mod.ensure_safe_ip(db_session, a, w)
     assert log.ip_address == "6.6.6.6"
     assert log.device_id == "none"
+
+
+@pytest.mark.asyncio
+async def test_ensure_safe_ip_falls_back_to_settings_adb_device(db_session, monkeypatch):
+    """worker.ip_config 가 비어있어도 settings.adb_device_id 있으면 ADB 사용."""
+    from hydra.infra import ip as ip_mod
+    from hydra.db.models import Worker
+
+    a = _add_account(db_session, "fb@g.com")
+    w = Worker(name="wfb", token_hash="h", status="online", ip_config=None)
+    db_session.add(w)
+    db_session.commit()
+
+    monkeypatch.setattr(ip_mod.settings, "adb_device_id", "ENV_DEV")
+
+    captured = {}
+
+    async def fake_get_ip(device_id):
+        captured["device_id"] = device_id
+        return "7.7.7.7"
+
+    monkeypatch.setattr(ip_mod, "_get_current_ip", fake_get_ip)
+
+    log = await ip_mod.ensure_safe_ip(db_session, a, w)
+    assert captured["device_id"] == "ENV_DEV"
+    assert log.ip_address == "7.7.7.7"
+    assert log.device_id == "ENV_DEV"
