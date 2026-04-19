@@ -31,6 +31,8 @@ class Account(Base):
     warmup_group = Column(String)  # A~E
     warmup_start_date = Column(DateTime)
     warmup_end_date = Column(DateTime)
+    warmup_day = Column(Integer, nullable=False, default=0)  # 0=미시작, 1~3=진행, >3=졸업
+    onboard_completed_at = Column(DateTime)
 
     ghost_count = Column(Integer, default=0)
 

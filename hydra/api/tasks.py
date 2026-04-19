@@ -57,13 +57,21 @@ def handle_create_profile_result(
 
 
 def enqueue_onboard_task(db, account):
-    """계정 1개에 대해 'onboard' 태스크를 큐잉. 이미 대기 중이면 중복 방지."""
+    """계정 1개에 대해 'onboard' 태스크를 큐잉.
+
+    중복 방지:
+    - 이미 완료됐으면 (onboard_completed_at 세팅) skip
+    - 이미 대기/실행 중인 태스크 있으면 skip
+    """
+    if account.onboard_completed_at:
+        return
+
     existing = (
         db.query(Task)
         .filter(
             Task.account_id == account.id,
             Task.task_type == "onboard",
-            Task.status.in_(["pending", "running", "assigned"]),
+            Task.status.in_(["pending", "running", "assigned", "completed"]),
         )
         .first()
     )
@@ -95,6 +103,49 @@ def enqueue_onboard_task(db, account):
     )
     db.add(task)
     db.commit()
+
+
+def enqueue_warmup_task(db, account, day: int | None = None) -> Task | None:
+    """계정 1개에 대해 'warmup' 태스크를 큐잉. 이미 대기/실행 중이면 skip.
+
+    day: 명시 안 하면 account.warmup_day 사용 (0이면 1로 시작).
+    스텝 기반이라 날짜 계산 없음 — 태스크가 성공하면 worker 가 warmup_day 를 증가시킴.
+    """
+    existing = (
+        db.query(Task)
+        .filter(
+            Task.account_id == account.id,
+            Task.task_type == "warmup",
+            Task.status.in_(["pending", "running", "assigned"]),
+        )
+        .first()
+    )
+    if existing:
+        return None
+
+    if day is None:
+        day = max(1, account.warmup_day or 1)
+
+    try:
+        persona = json.loads(account.persona) if account.persona else None
+    except Exception:
+        persona = None
+
+    task = Task(
+        account_id=account.id,
+        task_type="warmup",
+        priority="normal",
+        status="pending",
+        payload=json.dumps({
+            "day": day,
+            "persona": persona,
+            "account_gmail": account.gmail,
+        }, ensure_ascii=False),
+        scheduled_at=datetime.now(UTC),
+    )
+    db.add(task)
+    db.commit()
+    return task
 
 
 class TaskResponse(BaseModel):
@@ -144,9 +195,20 @@ def complete_task(body: TaskCompleteRequest, x_worker_token: str = Header(...), 
     task = task_service.complete_task(db, body.task_id, body.result)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    if task.task_type == "create_profile" and task.status == "completed":
-        result_obj = json.loads(task.result) if task.result else {}
-        handle_create_profile_result(db, task, result_obj, worker_id=task.worker_id)
+    if task.status == "completed":
+        if task.task_type == "create_profile":
+            result_obj = json.loads(task.result) if task.result else {}
+            handle_create_profile_result(db, task, result_obj, worker_id=task.worker_id)
+        elif task.task_type == "onboard":
+            account = db.get(Account, task.account_id) if task.account_id else None
+            if account and not account.onboard_completed_at:
+                account.onboard_completed_at = datetime.now(UTC)
+                db.commit()
+        elif task.task_type == "warmup":
+            account = db.get(Account, task.account_id) if task.account_id else None
+            if account and account.status == "warmup":
+                account.warmup_day = (account.warmup_day or 0) + 1
+                db.commit()
     return {"status": "ok", "task_id": task.id}
 
 
@@ -174,43 +236,25 @@ def create_warmup_tasks(
     db: Session = Depends(get_db),
 ):
     """워밍업 태스크 일괄 생성."""
-    import json
-
-    created = []
+    created = 0
     for account_id in body.account_ids:
         account = db.get(Account, account_id)
         if not account:
             continue
 
-        persona = None
-        if account.persona:
-            try:
-                persona = json.loads(account.persona)
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-        task = Task(
-            account_id=account_id,
-            task_type="warmup",
-            priority="normal",
-            status="pending",
-            payload=json.dumps({
-                "day": body.day,
-                "persona": persona,
-                "account_gmail": account.gmail,
-            }, ensure_ascii=False),
-            scheduled_at=datetime.now(UTC),
-        )
-        db.add(task)
-        created.append(task)
-
-        # 계정 상태를 warmup으로 변경
+        # 계정 상태를 warmup으로 전환 (최초 진입 시 warmup_day=1)
         if account.status in ("registered", "profile_set"):
             account.status = "warmup"
+            if not account.warmup_day:
+                account.warmup_day = 1
             account.warmup_group = f"day_{body.day}"
+            db.flush()
+
+        if enqueue_warmup_task(db, account, day=body.day):
+            created += 1
 
     db.commit()
-    return {"ok": True, "created": len(created)}
+    return {"ok": True, "created": created}
 
 
 # --- 캠페인 일괄 취소 ---

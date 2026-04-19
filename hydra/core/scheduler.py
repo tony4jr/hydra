@@ -240,13 +240,23 @@ async def run_periodic_jobs():
                     log.error(f"Full collection failed: {e}")
                 last_collection_all = now
 
-            # 6h: run warmup sessions for warmup accounts
+            # 6h: enqueue warmup tasks for WARMUP-status accounts (dedupe in helper)
             if (now - last_warmup_run).total_seconds() >= 21600:
-                from hydra.accounts.warmup_runner import run_all_warmups
+                from hydra.api.tasks import enqueue_warmup_task
                 try:
-                    await run_all_warmups(device_id=_device_id)
+                    warmups = (
+                        db.query(Account)
+                        .filter(Account.status == "warmup")
+                        .all()
+                    )
+                    queued = 0
+                    for acct in warmups:
+                        if enqueue_warmup_task(db, acct):
+                            queued += 1
+                    if queued:
+                        log.info(f"Enqueued {queued} warmup tasks")
                 except Exception as e:
-                    log.error(f"Warmup run failed: {e}")
+                    log.error(f"Warmup enqueue failed: {e}")
                 last_warmup_run = now
 
             # Daily report at 23:00 UTC

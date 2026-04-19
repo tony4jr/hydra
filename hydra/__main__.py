@@ -85,9 +85,20 @@ def main():
         db.close()
 
     elif cmd == "warmup":
-        from hydra.accounts.warmup_runner import run_all_warmups
-        device = sys.argv[2] if len(sys.argv) > 2 else None
-        asyncio.run(run_all_warmups(device_id=device))
+        # 모든 WARMUP 상태 계정에 warmup 태스크 큐잉 (Worker 가 pull 해서 실행).
+        from hydra.db.session import SessionLocal
+        from hydra.db.models import Account
+        from hydra.api.tasks import enqueue_warmup_task
+        db = SessionLocal()
+        try:
+            warmups = db.query(Account).filter(Account.status == "warmup").all()
+            queued = 0
+            for acct in warmups:
+                if enqueue_warmup_task(db, acct):
+                    queued += 1
+            print(f"Enqueued {queued} warmup tasks (scanned {len(warmups)} accounts)")
+        finally:
+            db.close()
 
     elif cmd == "report":
         from hydra.infra.daily_report import send_daily_report

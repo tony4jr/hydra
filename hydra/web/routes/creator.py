@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from hydra.accounts.creator import create_account
 from hydra.accounts.tfa_setup import setup_totp
-from hydra.accounts.warmup_runner import run_warmup_session
+from hydra.api.tasks import enqueue_warmup_task
 from hydra.core.config import settings
 from hydra.core.logger import get_logger
 from hydra.db.models import Account
@@ -70,24 +70,19 @@ async def api_setup_totp(req: TotpRequest, bg: BackgroundTasks):
 
 class WarmupRequest(BaseModel):
     account_id: int
-    device_id: str | None = None
-
-
-async def _warmup_task(account_id: int, device_id: str | None):
-    db = SessionLocal()
-    try:
-        acct = db.query(Account).get(account_id)
-        if acct:
-            await run_warmup_session(acct, device_id=device_id)
-    finally:
-        db.close()
+    device_id: str | None = None  # legacy, unused — Worker 가 자체 device 사용
 
 
 @router.post("/api/warmup")
-async def api_warmup(req: WarmupRequest, bg: BackgroundTasks):
-    device_id = _resolve_device(req.device_id)
-    bg.add_task(_warmup_task, req.account_id, device_id)
-    return {"ok": True, "account_id": req.account_id, "device_id": device_id or "(none)"}
+def api_warmup(req: WarmupRequest, db: Session = Depends(get_db)):
+    """계정에 warmup 태스크 큐잉. Worker 가 pull 해서 실행."""
+    acct = db.get(Account, req.account_id)
+    if not acct:
+        return {"ok": False, "error": "account_not_found"}
+    task = enqueue_warmup_task(db, acct)
+    if not task:
+        return {"ok": True, "account_id": req.account_id, "skipped": "already_queued"}
+    return {"ok": True, "account_id": req.account_id, "task_id": task.id}
 
 
 @router.get("/api/status")

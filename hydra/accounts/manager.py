@@ -170,6 +170,8 @@ def transition(db: Session, account: Account, new_status: AccountStatus, reason:
         days = WARMUP_DAYS.get(account.warmup_group, 7)
         account.warmup_start_date = datetime.now(timezone.utc)
         account.warmup_end_date = datetime.now(timezone.utc) + timedelta(days=days)
+        if not account.warmup_day:
+            account.warmup_day = 1
 
     elif new_status == AccountStatus.ACTIVE:
         account.last_active_at = datetime.now(timezone.utc)
@@ -195,13 +197,16 @@ def transition(db: Session, account: Account, new_status: AccountStatus, reason:
 
 
 def check_warmup_graduation(db: Session) -> list[Account]:
-    """Check and graduate accounts that completed warmup period."""
-    now = datetime.now(timezone.utc)
+    """Check and graduate accounts that completed warmup period.
+
+    스텝 기반: warmup_day > 3 이면 졸업. 날짜 기반 조건 제거 — 스케줄러 지연/
+    일시정지 등으로 달력일 계산이 틀어지는 것을 방지.
+    """
     ready = (
         db.query(Account)
         .filter(
             Account.status == AccountStatus.WARMUP,
-            Account.warmup_end_date <= now,
+            Account.warmup_day > 3,
         )
         .all()
     )
