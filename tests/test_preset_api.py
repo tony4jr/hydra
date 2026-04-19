@@ -115,3 +115,32 @@ def test_delete_system_preset_fails(client):
     system_preset = [p for p in resp.json() if p["is_system"]][0]
     resp = client.delete(f"/api/presets/{system_preset['id']}")
     assert resp.status_code == 400
+
+
+def test_update_system_preset_forbidden(client):
+    resp = client.get("/api/presets/")
+    system_preset = [p for p in resp.json() if p["is_system"]][0]
+    resp = client.put(f"/api/presets/{system_preset['id']}", json={"name": "Hacked"})
+    assert resp.status_code == 403
+
+
+def test_clone_preset(client):
+    resp = client.get("/api/presets/")
+    system_preset = [p for p in resp.json() if p["is_system"]][0]
+    resp = client.post(f"/api/presets/{system_preset['id']}/clone", json={})
+    assert resp.status_code == 200
+    clone = resp.json()
+    assert clone["code"].endswith("_copy")
+    assert clone["id"] != system_preset["id"]
+
+    # Cloned preset is editable
+    upd = client.put(f"/api/presets/{clone['id']}", json={"name": "Edited"})
+    assert upd.status_code == 200
+
+
+def test_clone_preset_unique_code(client):
+    resp = client.get("/api/presets/")
+    system_preset = [p for p in resp.json() if p["is_system"]][0]
+    r1 = client.post(f"/api/presets/{system_preset['id']}/clone", json={})
+    r2 = client.post(f"/api/presets/{system_preset['id']}/clone", json={})
+    assert r1.json()["code"] != r2.json()["code"]

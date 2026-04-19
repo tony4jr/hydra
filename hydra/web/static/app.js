@@ -52,7 +52,7 @@ function hint(t) { return `<div style="font-size:11px;color:var(--text2);margin-
 async function renderPage() {
     const el = document.getElementById('content');
     const pages = {dashboard:renderDashboard,health:renderHealth,accounts:renderAccounts,brands:renderBrands,
-        campaigns:renderCampaigns,queue:renderQueue,keywords:renderKeywords,videos:renderVideos,
+        campaigns:renderCampaigns,queue:renderQueue,presets:renderPresets,keywords:renderKeywords,videos:renderVideos,
         settings:renderSettings,logs:renderLogs,pools:renderPools,export:renderExport};
     if (pages[currentPage]) pages[currentPage](el);
 }
@@ -621,6 +621,183 @@ async function quickCamp(vid){
         </div></div>`;
 }
 async function doQuickCamp(vid){const r=await api('/campaigns/api/create',{method:'POST',body:{video_id:vid,brand_id:parseInt(document.getElementById('qc-brand').value),scenario:document.getElementById('qc-sc').value||null}});if(r.error){toast('오류: '+r.error);return;}toast(`캠페인 #${r.id} 생성됨`);document.querySelector('.modal-overlay').remove();}
+
+// ==================== 프리셋 ====================
+const PRESET_ROLES = ['seed','asker','agree','witness','curious','fan','info','qa'];
+const PRESET_STEP_TYPES = ['comment','reply'];
+
+async function renderPresets(el){
+    const presets = await api('/api/presets/');
+    el.innerHTML = `<h1 class="page-title">프리셋</h1>
+        ${hint('시나리오별 댓글·대댓글 구성을 관리합니다. 시스템 프리셋은 보기 전용이며, "복사해서 편집"으로 사용자 버전을 만드세요.')}
+        <div class="filter-bar">
+            <button class="btn btn-primary" onclick="showPresetCreate()">새 프리셋 만들기</button>
+        </div>
+        <div id="preset-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px">
+            ${presets.map(presetCard).join('')}
+        </div>
+        <div id="modal-container"></div>`;
+}
+
+function presetCard(p){
+    const badge = p.is_system
+        ? '<span class="badge badge-pending" style="font-size:10px">시스템</span>'
+        : '<span class="badge badge-active" style="font-size:10px">커스텀</span>';
+    const actions = p.is_system
+        ? `<button class="btn btn-sm btn-outline" onclick="viewPreset(${p.id})">보기</button>
+           <button class="btn btn-sm btn-primary" onclick="clonePreset(${p.id})">복사해서 편집</button>`
+        : `<button class="btn btn-sm btn-outline" onclick="viewPreset(${p.id})">편집</button>
+           <button class="btn btn-sm btn-danger" onclick="deletePreset(${p.id},'${(p.name||'').replace(/'/g,"\\'")}')">삭제</button>`;
+    return `<div class="card"><div class="card-body">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <div style="font-weight:600;font-size:15px">${p.code} · ${p.name}</div>${badge}
+        </div>
+        <div style="color:var(--text2);font-size:13px;min-height:36px">${p.description||'설명 없음'}</div>
+        <div style="color:var(--text2);font-size:12px;margin-top:6px">스텝 ${p.step_count}개</div>
+        <div style="display:flex;gap:6px;margin-top:10px">${actions}</div>
+    </div></div>`;
+}
+
+async function clonePreset(id){
+    const r = await api(`/api/presets/${id}/clone`, {method:'POST', body:{}});
+    if(r.detail){toast('복사 실패: '+r.detail);return;}
+    toast(`복사본 생성됨: ${r.code}`);
+    renderPresets(document.getElementById('content'));
+}
+
+async function deletePreset(id, name){
+    if(!confirm(`"${name}" 프리셋을 삭제하시겠습니까?\n삭제된 프리셋은 복구할 수 없습니다.`))return;
+    const r = await api(`/api/presets/${id}`, {method:'DELETE'});
+    if(r.detail){toast('삭제 실패: '+r.detail);return;}
+    toast('삭제됨');
+    renderPresets(document.getElementById('content'));
+}
+
+async function viewPreset(id){
+    const p = await api(`/api/presets/${id}`);
+    if(p.detail){toast('조회 실패: '+p.detail);return;}
+    showPresetEditor(p);
+}
+
+function showPresetCreate(){
+    showPresetEditor({id:null, name:'', code:'', description:'', is_system:false, steps:[]});
+}
+
+function showPresetEditor(p){
+    const readonly = p.is_system;
+    const readonlyAttr = readonly ? 'readonly' : '';
+    const readonlyHint = readonly
+        ? '<div style="color:var(--yellow);font-size:12px;margin-bottom:12px">⚠ 시스템 프리셋입니다. 편집하려면 "복사해서 편집"을 사용하세요.</div>'
+        : '';
+    document.getElementById('modal-container').innerHTML = `
+        <div class="modal-overlay show" onclick="if(event.target===this)this.remove()">
+        <div class="modal" style="max-width:780px">
+            <h2 class="modal-title">${p.id?'프리셋 편집':'새 프리셋'}${p.code?` · ${p.code}`:''}</h2>
+            ${readonlyHint}
+            <div class="form-row">
+                <div class="form-group"><label>이름</label>
+                    <input id="pe-name" value="${(p.name||'').replace(/"/g,'&quot;')}" ${readonlyAttr}></div>
+                <div class="form-group"><label>코드</label>
+                    <input id="pe-code" value="${(p.code||'').replace(/"/g,'&quot;')}" ${p.id?'readonly':''}>
+                    ${p.id?'':hint('예: CUSTOM_A, X1 — 대소문자/숫자/언더스코어')}</div>
+            </div>
+            <div class="form-group"><label>설명</label>
+                <textarea id="pe-desc" rows="2" ${readonlyAttr}>${p.description||''}</textarea></div>
+            <h3 style="font-size:14px;margin:14px 0 6px">스텝 구성</h3>
+            ${hint('위에서 아래로 순서대로 실행됩니다. target="main"=영상에 댓글, "step_N"=해당 스텝의 댓글에 답글, "existing_top"=기존 인기 댓글에 답글.')}
+            <div id="pe-steps" style="display:flex;flex-direction:column;gap:8px">
+                ${(p.steps||[]).map((s,i)=>presetStepRow(s,i,readonly)).join('')}
+            </div>
+            ${readonly?'':`<button class="btn btn-sm btn-outline" style="margin-top:8px" onclick="addPresetStep()">+ 스텝 추가</button>`}
+            <div class="modal-actions">
+                <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">${readonly?'닫기':'취소'}</button>
+                ${readonly?'':`<button class="btn btn-primary" onclick="savePreset(${p.id||'null'})">저장</button>`}
+            </div>
+        </div></div>`;
+}
+
+function presetStepRow(s, idx, readonly){
+    const ro = readonly ? 'readonly' : '';
+    const roSel = readonly ? 'disabled' : '';
+    return `<div class="pe-step" data-idx="${idx}" style="border:1px solid var(--border);border-radius:8px;padding:10px;background:var(--card)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <div style="font-weight:600;font-size:13px;color:var(--text2)">스텝 ${idx+1}</div>
+            ${readonly?'':`<button class="btn btn-sm btn-danger" style="margin-left:auto" onclick="removePresetStep(${idx})">삭제</button>`}
+        </div>
+        <div class="form-row-3" style="gap:8px">
+            <div class="form-group"><label style="font-size:11px">역할</label>
+                <select class="pe-role" ${roSel}>${PRESET_ROLES.map(r=>`<option value="${r}" ${s.role===r?'selected':''}>${ROLE_KO[r]||r}</option>`).join('')}</select></div>
+            <div class="form-group"><label style="font-size:11px">유형</label>
+                <select class="pe-type" ${roSel}>${PRESET_STEP_TYPES.map(t=>`<option value="${t}" ${s.type===t?'selected':''}>${t==='comment'?'댓글':'답글'}</option>`).join('')}</select></div>
+            <div class="form-group"><label style="font-size:11px">타겟</label>
+                <input class="pe-target" value="${s.target||'main'}" ${ro}></div>
+        </div>
+        <div class="form-row-3" style="gap:8px">
+            <div class="form-group"><label style="font-size:11px">톤</label>
+                <input class="pe-tone" value="${s.tone||''}" ${ro}></div>
+            <div class="form-group"><label style="font-size:11px">좋아요 수</label>
+                <input type="number" min="0" class="pe-like" value="${s.like_count!=null?s.like_count:0}" ${ro}></div>
+            <div class="form-group"><label style="font-size:11px">지연 min~max (분)</label>
+                <div style="display:flex;gap:4px">
+                    <input type="number" min="0" class="pe-dmin" value="${s.delay_min!=null?s.delay_min:0}" style="width:50%" ${ro}>
+                    <input type="number" min="0" class="pe-dmax" value="${s.delay_max!=null?s.delay_max:0}" style="width:50%" ${ro}></div></div>
+        </div>
+    </div>`;
+}
+
+function addPresetStep(){
+    const box = document.getElementById('pe-steps');
+    const idx = box.children.length;
+    const empty = {role:'seed', type:'comment', target:'main', tone:'', like_count:0, delay_min:0, delay_max:0};
+    box.insertAdjacentHTML('beforeend', presetStepRow(empty, idx, false));
+}
+
+function removePresetStep(idx){
+    const box = document.getElementById('pe-steps');
+    const steps = collectPresetSteps();
+    steps.splice(idx, 1);
+    box.innerHTML = steps.map((s,i)=>presetStepRow(s,i,false)).join('');
+}
+
+function collectPresetSteps(){
+    const rows = document.querySelectorAll('#pe-steps .pe-step');
+    return Array.from(rows).map((row, i)=>({
+        step_number: i+1,
+        role: row.querySelector('.pe-role').value,
+        type: row.querySelector('.pe-type').value,
+        target: row.querySelector('.pe-target').value.trim() || 'main',
+        tone: row.querySelector('.pe-tone').value,
+        like_count: parseInt(row.querySelector('.pe-like').value) || 0,
+        delay_min: parseInt(row.querySelector('.pe-dmin').value) || 0,
+        delay_max: parseInt(row.querySelector('.pe-dmax').value) || 0,
+    }));
+}
+
+async function savePreset(id){
+    const name = document.getElementById('pe-name').value.trim();
+    const code = document.getElementById('pe-code').value.trim();
+    const description = document.getElementById('pe-desc').value;
+    const steps = collectPresetSteps();
+    if(!name){toast('이름을 입력하세요');return;}
+    if(!id && !code){toast('코드를 입력하세요');return;}
+    if(steps.length===0){toast('스텝을 최소 1개 추가하세요');return;}
+    // 지연 검증
+    for(let i=0;i<steps.length;i++){
+        if(steps[i].delay_max < steps[i].delay_min){
+            toast(`스텝 ${i+1}: 지연 max는 min 이상이어야 합니다`);return;
+        }
+    }
+    let r;
+    if(id){
+        r = await api(`/api/presets/${id}`, {method:'PUT', body:{name, description, steps}});
+    } else {
+        r = await api('/api/presets/', {method:'POST', body:{name, code, description, steps}});
+    }
+    if(r.detail){toast('저장 실패: '+r.detail);return;}
+    toast('저장됨');
+    document.querySelector('.modal-overlay').remove();
+    renderPresets(document.getElementById('content'));
+}
 
 // ==================== 설정 ====================
 async function renderSettings(el){

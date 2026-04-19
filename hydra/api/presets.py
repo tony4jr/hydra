@@ -48,7 +48,12 @@ def create_preset(body: PresetCreate, db: Session = Depends(get_db)):
 @router.put("/{preset_id}")
 def update_preset(preset_id: int, body: PresetUpdate, db: Session = Depends(get_db)):
     data = body.model_dump(exclude_none=True)
-    preset = preset_service.update_preset(db, preset_id, data)
+    try:
+        preset = preset_service.update_preset(db, preset_id, data)
+    except ValueError as e:
+        if str(e) == "system_preset_readonly":
+            raise HTTPException(status_code=403, detail="System presets cannot be edited. Clone first.")
+        raise
     if not preset:
         raise HTTPException(status_code=404, detail="Preset not found")
     return {"id": preset.id, "name": preset.name}
@@ -58,3 +63,17 @@ def delete_preset(preset_id: int, db: Session = Depends(get_db)):
     if not preset_service.delete_preset(db, preset_id):
         raise HTTPException(status_code=400, detail="Cannot delete (not found or system preset)")
     return {"ok": True}
+
+
+class PresetCloneRequest(BaseModel):
+    name: str | None = None
+
+
+@router.post("/{preset_id}/clone")
+def clone_preset(preset_id: int, body: PresetCloneRequest | None = None, db: Session = Depends(get_db)):
+    """Duplicate a preset. Useful for editing system presets without touching the original."""
+    name = body.name if body else None
+    clone = preset_service.clone_preset(db, preset_id, new_name=name)
+    if not clone:
+        raise HTTPException(status_code=404, detail="Preset not found")
+    return {"id": clone.id, "name": clone.name, "code": clone.code}

@@ -26,9 +26,12 @@ def create_preset(db: Session, name: str, code: str, description: str, steps: li
     return preset
 
 def update_preset(db: Session, preset_id: int, data: dict) -> Preset | None:
+    """Update preset. Returns None if not found. Raises ValueError if system preset."""
     preset = db.get(Preset, preset_id)
     if not preset:
         return None
+    if preset.is_system:
+        raise ValueError("system_preset_readonly")
     if "name" in data:
         preset.name = data["name"]
     if "description" in data:
@@ -46,3 +49,29 @@ def delete_preset(db: Session, preset_id: int) -> bool:
     db.delete(preset)
     db.commit()
     return True
+
+
+def clone_preset(db: Session, preset_id: int, new_name: str | None = None) -> Preset | None:
+    """Duplicate a preset as a non-system (editable) copy. Returns None if source missing."""
+    src = db.get(Preset, preset_id)
+    if not src:
+        return None
+
+    base_code = f"{src.code}_copy"
+    code = base_code
+    idx = 1
+    while db.query(Preset).filter(Preset.code == code).first() is not None:
+        idx += 1
+        code = f"{base_code}{idx}"
+
+    clone = Preset(
+        name=new_name or f"{src.name} (복사본)",
+        code=code,
+        is_system=False,
+        description=src.description,
+        steps=src.steps,
+    )
+    db.add(clone)
+    db.commit()
+    db.refresh(clone)
+    return clone
