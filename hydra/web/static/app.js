@@ -985,6 +985,19 @@ function settingsLikes(c){
         <div class="form-row">
             <div class="form-group"><label>최소</label><input type="number" data-key="like_boost.surrounding_min" value="${c['like_boost.surrounding_min']||2}"></div>
             <div class="form-group"><label>최대</label><input type="number" data-key="like_boost.surrounding_max" value="${c['like_boost.surrounding_max']||5}"></div></div>
+        <h3 style="font-size:14px;margin:20px 0 4px">세션 타이밍</h3>${hint('부스트 태스크 1회 실행 시 브라우저 내부 동작 속도. 너무 빠르면 봇 티남, 너무 느리면 처리량 감소.')}
+        <div class="form-row">
+            <div class="form-group"><label>영상 시청 min (초)</label><input type="number" min="0" data-key="like_boost.watch_sec_min" value="${c['like_boost.watch_sec_min']||3}"></div>
+            <div class="form-group"><label>영상 시청 max (초)</label><input type="number" min="0" data-key="like_boost.watch_sec_max" value="${c['like_boost.watch_sec_max']||15}"></div></div>
+        <div class="form-row">
+            <div class="form-group"><label>스크롤 대기 min (초)</label><input type="number" min="0" step="0.1" data-key="like_boost.scroll_delay_min" value="${c['like_boost.scroll_delay_min']||2.0}"></div>
+            <div class="form-group"><label>스크롤 대기 max (초)</label><input type="number" min="0" step="0.1" data-key="like_boost.scroll_delay_max" value="${c['like_boost.scroll_delay_max']||5.0}"></div></div>
+        <div class="form-row">
+            <div class="form-group"><label>위장 좋아요 개수 min</label><input type="number" min="0" data-key="like_boost.surrounding_count_min" value="${c['like_boost.surrounding_count_min']||2}"></div>
+            <div class="form-group"><label>위장 좋아요 개수 max</label><input type="number" min="0" data-key="like_boost.surrounding_count_max" value="${c['like_boost.surrounding_count_max']||4}"></div></div>
+        <div class="form-row">
+            <div class="form-group"><label>클릭 간격 min (초)</label><input type="number" min="0" step="0.1" data-key="like_boost.click_delay_min" value="${c['like_boost.click_delay_min']||1.0}"></div>
+            <div class="form-group"><label>클릭 간격 max (초)</label><input type="number" min="0" step="0.1" data-key="like_boost.click_delay_max" value="${c['like_boost.click_delay_max']||3.0}"></div></div>
         <button class="btn btn-primary" style="margin-top:16px" onclick="saveLikes()">설정 저장</button>
     </div></div>`;
 }

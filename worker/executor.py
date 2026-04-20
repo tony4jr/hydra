@@ -235,18 +235,30 @@ class TaskExecutor:
         video_id = payload["video_id"]
         target_comment_id = payload.get("target_comment_id", "")
 
+        # 타이밍 설정 로드 (대시보드 Settings > 좋아요 부스팅 > 세션 타이밍)
+        from hydra.db.session import SessionLocal
+        from hydra.services.like_boost_config import load as load_lb_cfg
+        _db = SessionLocal()
+        try:
+            tc = load_lb_cfg(_db)
+        finally:
+            _db.close()
+
         await self._navigate_to_video(session, video_id, payload.get("video_title", ""))
 
         # 영상 잠시 시청
-        watch_sec = random.randint(3, 15)
+        watch_sec = random.randint(tc["like_boost.watch_sec_min"], tc["like_boost.watch_sec_max"])
         await watch_video(page, watch_sec)
 
         # 댓글 영역으로 스크롤
         await scroll_to_comments(page)
-        await random_delay(2.0, 5.0)
+        await random_delay(tc["like_boost.scroll_delay_min"], tc["like_boost.scroll_delay_max"])
 
-        # 위장용 주변 댓글 좋아요 (2~4개)
-        camouflage_count = random.randint(2, 4)
+        # 위장용 주변 댓글 좋아요
+        camouflage_count = random.randint(
+            tc["like_boost.surrounding_count_min"],
+            tc["like_boost.surrounding_count_max"],
+        )
         camouflaged = 0
         comment_buttons = page.locator(
             "ytd-comment-thread-renderer ytd-menu-renderer "
@@ -263,7 +275,10 @@ class TaskExecutor:
                 try:
                     await comment_buttons.nth(idx).click()
                     camouflaged += 1
-                    await random_delay(1.0, 3.0)
+                    await random_delay(
+                        tc["like_boost.click_delay_min"],
+                        tc["like_boost.click_delay_max"],
+                    )
                 except Exception:
                     pass
 
