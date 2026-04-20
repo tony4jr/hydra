@@ -25,7 +25,7 @@ from playwright.async_api import Page
 
 from hydra.browser.actions import (
     human_click, random_delay, scroll_page, watch_video, handle_ad, click_like_button,
-    set_speed_multiplier, set_typing_style,
+    set_speed_multiplier, set_typing_style, set_activity_multiplier, rep_count,
 )
 from hydra.core.logger import get_logger
 from worker.channel_actions import (
@@ -53,6 +53,22 @@ class OnboardSessionResult:
     searched_query: str | None = None
     error: str | None = None
     otp_secret: str | None = None  # pyotp base32 시크릿 (등록 성공 시). caller 가 DB 저장.
+    # critical_failures: 재시도 필요한 실패들 (브라우저 끊김, 중요 단계 실패 등).
+    # 비어있지 않으면 complete_task 가 account 를 warmup 으로 전이하지 않음.
+    critical_failures: list[str] = field(default_factory=list)
+
+
+def _is_connection_error(e: BaseException) -> bool:
+    """브라우저/드라이버 연결 끊김 관련 예외인지 판별."""
+    msg = str(e)
+    return any(
+        s in msg for s in (
+            "Connection closed",
+            "Target page, context or browser has been closed",
+            "browser has been closed",
+            "Protocol error",
+        )
+    )
 
 
 async def run_onboard_session(
@@ -74,12 +90,14 @@ async def run_onboard_session(
     result = OnboardSessionResult(ok=False)
     started = time.time()
 
-    # 세션 템포 + 타이핑 스타일 설정 — persona 별로 다른 프로파일 (anti-detection)
+    # 세션 템포 + 타이핑 스타일 + 활동량 설정 — persona 별 프로파일 (anti-detection)
     speed = (persona or {}).get("speed_multiplier") or random.uniform(0.6, 1.8)
     set_speed_multiplier(speed)
     typing_style = (persona or {}).get("typing_style") or random.choice(["typist", "typist", "paster"])
     set_typing_style(typing_style)
-    log.info(f"onboard: speed={speed:.2f} typing={typing_style}")
+    activity = (persona or {}).get("activity_multiplier") or random.uniform(0.6, 1.5)
+    set_activity_multiplier(activity)
+    log.info(f"onboard: speed={speed:.2f} typing={typing_style} activity={activity:.2f}")
 
     # ── 0) 로그인 확인 / 수행 ────────────────────────────────────────
     try:
@@ -123,11 +141,19 @@ async def run_onboard_session(
                 result.actions.append(f"google_name:{persona_name}")
         except Exception as e:
             log.warning(f"update_account_name error: {e}")
+            if _is_connection_error(e):
+                result.critical_failures.append("update_account_name:disconnected")
+                result.error = f"browser disconnected during account name update: {e}"
+                return result
         try:
             if await update_legal_name(page, persona_name, password=password):
                 result.actions.append("google_legal_name")
         except Exception as e:
             log.warning(f"update_legal_name error: {e}")
+            if _is_connection_error(e):
+                result.critical_failures.append("update_legal_name:disconnected")
+                result.error = f"browser disconnected during legal name update: {e}"
+                return result
 
     # ── 1.7) OTP Authenticator 시크릿 등록 (2FA 최종 활성화는 전화번호 필요해서 보통 실패) ──
     # 시크릿만 확보해도 가치 있음: 향후 Google 이 TOTP 챌린지 요구하면 pyotp 로 대응 가능.
@@ -165,7 +191,7 @@ async def run_onboard_session(
 
     # ── 2) 초기 홈 스크롤 (도착하자마자 바로 둘러보기) ───────────────
     try:
-        await scroll_page(page, scrolls=random.randint(2, 5))
+        await scroll_page(page, scrolls=rep_count(2, 5))
         result.actions.append(f"scroll_initial")
     except Exception as e:
         log.debug(f"initial scroll failed: {e}")
@@ -219,7 +245,7 @@ async def run_onboard_session(
     try:
         await page.goto(YOUTUBE_HOME, wait_until="domcontentloaded")
         await random_delay(2.0, 4.0)
-        await scroll_page(page, scrolls=random.randint(1, 3))
+        await scroll_page(page, scrolls=rep_count(1, 3))
         result.actions.append("final_scroll")
     except Exception:
         pass
@@ -242,9 +268,15 @@ async def run_onboard_session(
                     if desc:
                         if await set_description(page, desc):
                             result.actions.append("set_description")
+                else:
+                    result.critical_failures.append("rename_channel:returned_false")
             except Exception as e:
                 log.warning(f"rename_channel error: {e}")
                 result.actions.append(f"rename_error:{e}")
+                if _is_connection_error(e):
+                    result.critical_failures.append("rename_channel:disconnected")
+                    result.error = f"browser disconnected during channel rename: {e}"
+                    return result
 
         # 아바타 업로드 — avatar_policy == "set_during_warmup" 인 50% 계정
         if plan.get("avatar_policy") == "set_during_warmup":
@@ -255,24 +287,32 @@ async def run_onboard_session(
                         result.actions.append(
                             f"upload_avatar:{avatar_path.rsplit('/', 1)[-1]}"
                         )
+                    else:
+                        result.critical_failures.append("upload_avatar:returned_false")
                 except Exception as e:
                     log.warning(f"upload_avatar error: {e}")
                     result.actions.append(f"avatar_error:{e}")
+                    if _is_connection_error(e):
+                        result.critical_failures.append("upload_avatar:disconnected")
+                        result.error = f"browser disconnected during avatar upload: {e}"
+                        return result
 
         # 설정 끝나면 유튜브 홈으로 돌아와 마지막에 한 번 더 둘러보기
         try:
             await page.goto(YOUTUBE_HOME, wait_until="domcontentloaded")
             await random_delay(2.0, 4.0)
-            await scroll_page(page, scrolls=random.randint(1, 2))
+            await scroll_page(page, scrolls=rep_count(1, 2))
             result.actions.append("post_channel_scroll")
         except Exception:
             pass
 
     result.duration_sec = int(time.time() - started)
-    result.ok = True
+    # critical_failures 있으면 ok=False → complete_task 가 warmup 전이 skip + 재시도 유도
+    result.ok = len(result.critical_failures) == 0
     log.info(
         f"onboard done: {result.duration_sec}s, actions={len(result.actions)}, "
-        f"searched={result.searched_query!r}"
+        f"searched={result.searched_query!r}, ok={result.ok}, "
+        f"critical_failures={result.critical_failures or 'none'}"
     )
     return result
 
@@ -282,7 +322,7 @@ async def run_onboard_session(
 async def _scroll_home(page: Page):
     await page.goto(YOUTUBE_HOME, wait_until="domcontentloaded")
     await random_delay(2.0, 4.0)
-    await scroll_page(page, scrolls=random.randint(2, 5))
+    await scroll_page(page, scrolls=rep_count(2, 5))
 
 
 async def _watch_home_video(page: Page):
@@ -337,7 +377,7 @@ async def _browse_shorts(page: Page):
         return
     await random_delay(1.5, 3.0)
 
-    num_shorts = random.randint(2, 8)
+    num_shorts = rep_count(2, 8)
     for _ in range(num_shorts):
         # 데이터 절감: full_watch 가중치 25 → 10, skip 가중치 ↑
         behavior = random.choices(

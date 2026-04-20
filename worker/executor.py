@@ -510,7 +510,7 @@ class TaskExecutor:
             duration_max_sec=payload.get("duration_max_sec", 300),
         )
 
-        # OTP 시크릿 등록됐으면 DB 에 암호화 저장
+        # OTP 시크릿 등록됐으면 DB 에 암호화 저장 (실패해도 시크릿은 확보됐으니 먼저 저장)
         if result.otp_secret and session.account_id:
             from hydra.db.session import SessionLocal
             from hydra.db.models import Account
@@ -524,11 +524,21 @@ class TaskExecutor:
             finally:
                 _db.close()
 
+        # critical_failures 있으면 예외 raise → worker 가 fail_task 로 처리 → retry_count
+        # 증가 후 재스케줄. max_retries 초과 시 최종 failed. 이미 성공한 단계(google_name,
+        # otp 등)는 DB 에 반영됐으니 재시도 시 idempotent 하게 skip 됨.
+        if result.critical_failures:
+            raise RuntimeError(
+                f"onboard critical failure(s): {','.join(result.critical_failures)}"
+                + (f" — {result.error}" if result.error else "")
+            )
+
         return json.dumps({
             "ok": result.ok,
             "duration_sec": result.duration_sec,
             "actions": result.actions,
             "searched_query": result.searched_query,
             "otp_registered": bool(result.otp_secret),
+            "critical_failures": result.critical_failures,
             "error": result.error,
         }, ensure_ascii=False)

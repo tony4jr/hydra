@@ -163,6 +163,8 @@ def build_persona(slot: PersonaSlot, rng: random.Random) -> dict:
         "speed_multiplier": round(rng.uniform(0.6, 1.8), 2),
         # 타이핑 스타일 — typist: 한 글자씩 타이핑, paster: clipboard 붙여넣기
         "typing_style": rng.choice(["typist", "typist", "paster"]),
+        # 활동량 배수 — 조용한 유저(0.6) vs 활발한 유저(1.5). 스크롤/숏츠 반복 횟수에 곱해짐.
+        "activity_multiplier": round(rng.uniform(0.6, 1.5), 2),
     }
     # channel_plan 추가 (기존 로직 재사용)
     persona["channel_plan"] = generate_channel_plan(slot, persona)

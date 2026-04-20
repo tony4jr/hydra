@@ -25,6 +25,9 @@ _speed_multiplier: contextvars.ContextVar[float] = contextvars.ContextVar(
 _typing_style: contextvars.ContextVar[str] = contextvars.ContextVar(
     "hydra_typing_style", default="typist"  # typist | paster
 )
+_activity_multiplier: contextvars.ContextVar[float] = contextvars.ContextVar(
+    "hydra_activity_multiplier", default=1.0
+)
 
 
 def set_speed_multiplier(value: float) -> None:
@@ -47,6 +50,26 @@ def set_typing_style(style: str) -> None:
 
 def get_typing_style() -> str:
     return _typing_style.get()
+
+
+def set_activity_multiplier(value: float) -> None:
+    """Context-local 활동량 배수. 스크롤/숏츠/클릭 반복 횟수에 곱해짐.
+
+    0.5 = 조용한 유저(적게 클릭), 1.5 = 활발한 유저(많이 클릭).
+    """
+    _activity_multiplier.set(max(0.3, min(3.0, float(value))))
+
+
+def get_activity_multiplier() -> float:
+    return _activity_multiplier.get()
+
+
+def rep_count(base_min: int, base_max: int) -> int:
+    """반복 횟수 선택. activity_multiplier 적용. 최소 1 보장."""
+    mult = _activity_multiplier.get()
+    lo = max(1, int(base_min * mult))
+    hi = max(lo, int(base_max * mult))
+    return random.randint(lo, hi)
 
 
 def _paste_modifier() -> str:

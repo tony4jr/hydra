@@ -6,7 +6,7 @@ from datetime import datetime, UTC
 from hydra.browser.driver import BrowserSession
 from hydra.browser.actions import (
     human_click, random_delay, scroll_page, click_like_button, watch_video, handle_ad,
-    set_speed_multiplier, set_typing_style,
+    set_speed_multiplier, set_typing_style, set_activity_multiplier,
 )
 from hydra.infra.ip import ensure_safe_ip
 from hydra.infra.ip_errors import IPRotationFailed
@@ -43,18 +43,21 @@ class WorkerSession:
         reschedule the task.
         """
         try:
-            # persona 기반 세션 템포 + 타이핑 스타일 설정 (anti-detection)
+            # persona 기반 세션 템포 + 타이핑 스타일 + 활동량 설정 (anti-detection)
             try:
                 if self.account is not None and self.account.persona:
                     p = json.loads(self.account.persona)
                     set_speed_multiplier(p.get("speed_multiplier") or random.uniform(0.6, 1.8))
                     set_typing_style(p.get("typing_style") or random.choice(["typist", "typist", "paster"]))
+                    set_activity_multiplier(p.get("activity_multiplier") or random.uniform(0.6, 1.5))
                 else:
                     set_speed_multiplier(random.uniform(0.6, 1.8))
                     set_typing_style(random.choice(["typist", "typist", "paster"]))
+                    set_activity_multiplier(random.uniform(0.6, 1.5))
             except Exception:
                 set_speed_multiplier(random.uniform(0.6, 1.8))
                 set_typing_style("typist")
+                set_activity_multiplier(1.0)
 
             if db is not None and self.account is not None and self.worker is not None:
                 ip_log = await ensure_safe_ip(db, self.account, self.worker)
