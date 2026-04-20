@@ -10,6 +10,7 @@ from playwright.async_api import Page
 
 from hydra.core.config import settings
 from hydra.core.logger import get_logger
+from worker.mouse import human_click  # re-export for callers using actions module
 
 log = get_logger("actions")
 

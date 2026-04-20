@@ -14,7 +14,7 @@
 import random
 import re
 
-from hydra.browser.actions import random_delay
+from hydra.browser.actions import human_click, random_delay
 from hydra.core.logger import get_logger
 
 log = get_logger("subscription")
@@ -58,7 +58,7 @@ async def maybe_subscribe_if_korean(page, probability: float = 0.3) -> bool:
         text = (await btn.inner_text(timeout=2000)).strip().lower()
         if "구독 중" in text or "subscribed" in text or "구독중" in text:
             return False
-        await btn.click(timeout=5000)
+        await human_click(btn, timeout=5000)
         await random_delay(1.5, 3.0)
         return True
     except Exception as e:

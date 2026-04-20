@@ -1,7 +1,7 @@
 """Gmail 확인 + Google 검색 — 자연스러운 쿠키 축적."""
 import random
 
-from hydra.browser.actions import random_delay, type_human, scroll_page
+from hydra.browser.actions import human_click, random_delay, type_human, scroll_page
 from worker.search_pool import pick as pick_query
 
 
@@ -20,7 +20,7 @@ async def maybe_check_gmail(page, probability=0.3):
         clicks = random.randint(1, min(2, count))
         for _ in range(clicks):
             idx = random.randint(0, min(count - 1, 5))
-            await emails.nth(idx).click()
+            await human_click(emails.nth(idx))
             await random_delay(3.0, 8.0)
             await page.go_back()
             await random_delay(1.0, 3.0)
@@ -48,7 +48,7 @@ async def maybe_google_search(page, age: int | None = None, *, probability: floa
         clicks = random.randint(1, min(2, count))
         for _ in range(clicks):
             idx = random.randint(0, min(count - 1, 4))
-            await results.nth(idx).click()
+            await human_click(results.nth(idx))
             await random_delay(5.0, 15.0)
             await page.go_back()
             await random_delay(1.0, 3.0)

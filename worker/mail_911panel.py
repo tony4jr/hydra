@@ -18,6 +18,7 @@ import asyncio
 import re
 from playwright.async_api import Page
 
+from hydra.browser.actions import human_click
 from hydra.core.logger import get_logger
 
 log = get_logger("mail_911panel")
@@ -66,7 +67,7 @@ async def fetch_2fa_code(
 
     await page.locator("input#input-24").fill(recovery_email)
     # 폼 버튼은 1개 (검사 버튼)
-    await page.locator("button").first.click()
+    await human_click(page.locator("button").first)
     await asyncio.sleep(2)
 
     deadline = asyncio.get_event_loop().time() + wait_seconds
@@ -107,7 +108,7 @@ async def fetch_2fa_code(
         # 인박스 refresh — 최상단에 "INBOX" 섹션을 다시 그리도록
         try:
             # 검사 버튼 재클릭 (리스트 갱신)
-            await page.locator("button").first.click()
+            await human_click(page.locator("button").first)
         except Exception:
             pass
         await asyncio.sleep(1)

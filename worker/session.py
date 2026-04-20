@@ -4,7 +4,7 @@ import json
 import random
 from datetime import datetime, UTC
 from hydra.browser.driver import BrowserSession
-from hydra.browser.actions import random_delay, scroll_page, click_like_button, watch_video, handle_ad
+from hydra.browser.actions import human_click, random_delay, scroll_page, click_like_button, watch_video, handle_ad
 from hydra.infra.ip import ensure_safe_ip
 from hydra.infra.ip_errors import IPRotationFailed
 from worker.youtube_habits import maybe_check_notifications, maybe_visit_own_channel
@@ -139,7 +139,7 @@ class WorkerSession:
         count = await thumbnails.count()
         if count > 0:
             idx = random.randint(0, min(count - 1, 9))
-            await thumbnails.nth(idx).click()
+            await human_click(thumbnails.nth(idx))
             await random_delay(2.0, 4.0)
             await handle_ad(page)
             duration = random.randint(10, 45)  # 180 → 45 (데이터 절감)

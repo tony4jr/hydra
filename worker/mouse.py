@@ -33,12 +33,51 @@ async def move_mouse_naturally(page, target_x, target_y):
 
 async def click_with_mouse_move(page, selector):
     element = page.locator(selector).first
-    box = await element.bounding_box()
-    if not box:
-        await element.click()
+    await human_click(element)
+
+
+async def human_click(locator, timeout: int = 10_000) -> None:
+    """사람처럼 element 를 클릭.
+
+    - bounding box 안의 "중심 근방 (20~80%)" 랜덤 위치 선택 (정중앙 회피)
+    - 베지어 곡선 마우스 경로로 이동 (봇 특유의 직선 이동 회피)
+    - 클릭 직전 짧은 랜덤 pause
+
+    box 를 못 구하면 (디태치된 요소, shadow DOM 일부 등) 기본 `.click()` 폴백.
+    """
+    try:
+        await locator.wait_for(state="visible", timeout=timeout)
+    except Exception:
+        pass
+
+    box = None
+    try:
+        box = await locator.bounding_box()
+    except Exception:
+        box = None
+
+    if not box or box.get("width", 0) < 2 or box.get("height", 0) < 2:
+        # 폴백 — Playwright 기본 클릭 (element 자체가 타겟)
+        await locator.click(timeout=timeout)
         return
-    target_x = int(box["x"] + random.uniform(5, box["width"] - 5))
-    target_y = int(box["y"] + random.uniform(3, box["height"] - 3))
+
+    page = None
+    try:
+        page = locator.page  # Playwright Locator 은 .page 속성 보유
+    except Exception:
+        pass
+
+    # 정중앙 회피 — 20~80% 내 랜덤
+    rx = random.uniform(0.2, 0.8)
+    ry = random.uniform(0.2, 0.8)
+    target_x = box["x"] + rx * box["width"]
+    target_y = box["y"] + ry * box["height"]
+
+    if page is None:
+        # 폴백 — 기본 클릭
+        await locator.click(timeout=timeout)
+        return
+
     await move_mouse_naturally(page, target_x, target_y)
-    await asyncio.sleep(random.uniform(0.05, 0.15))
+    await asyncio.sleep(random.uniform(0.04, 0.18))
     await page.mouse.click(target_x, target_y)

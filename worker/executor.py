@@ -3,6 +3,7 @@ import json
 import random
 
 from hydra.browser.actions import (
+    human_click,
     random_delay,
     scroll_page,
     scroll_to_comments,
@@ -63,7 +64,7 @@ class TaskExecutor:
 
                 # 검색바 클릭
                 search_btn = page.locator("button#search-icon-legacy, input#search")
-                await search_btn.first.click()
+                await human_click(search_btn.first)
                 await random_delay(0.5, 1.0)
 
                 # 검색어 입력 (영상 제목 일부)
@@ -110,7 +111,7 @@ class TaskExecutor:
             for i in range(min(count, 20)):
                 href = await links.nth(i).get_attribute("href")
                 if href and video_id in href:
-                    await links.nth(i).click()
+                    await human_click(links.nth(i))
                     await random_delay(2.0, 4.0)
                     return True
             # 스크롤해서 더 보기
@@ -273,7 +274,7 @@ class TaskExecutor:
             )
             for idx in indices:
                 try:
-                    await comment_buttons.nth(idx).click()
+                    await human_click(comment_buttons.nth(idx))
                     camouflaged += 1
                     await random_delay(
                         tc["like_boost.click_delay_min"],
@@ -292,7 +293,7 @@ class TaskExecutor:
             )
             try:
                 if await target_like.count() > 0:
-                    await target_like.first.click()
+                    await human_click(target_like.first)
                     target_liked = True
             except Exception:
                 pass
@@ -359,10 +360,10 @@ class TaskExecutor:
         sort_button = page.locator("yt-sort-filter-sub-menu-renderer tp-yt-paper-dropdown-menu")
         try:
             if await sort_button.count() > 0:
-                await sort_button.first.click()
+                await human_click(sort_button.first)
                 await random_delay(0.5, 1.0)
                 newest = page.locator("tp-yt-paper-listbox a, yt-dropdown-menu a").nth(1)
-                await newest.click()
+                await human_click(newest)
                 await random_delay(2.0, 4.0)
         except Exception:
             pass
@@ -411,7 +412,7 @@ class TaskExecutor:
             try:
                 name_input = page.locator("input#text-input[aria-label*='이름'], input#given-name-input, #name-container input").first
                 await name_input.wait_for(timeout=10000)
-                await name_input.click()
+                await human_click(name_input)
                 await page.keyboard.press("Control+a")
                 await random_delay(0.3, 0.5)
                 await type_human(page, "input#text-input, input#given-name-input, #name-container input", channel_name)
@@ -424,7 +425,7 @@ class TaskExecutor:
             try:
                 # 프로필 사진 변경 버튼 찾기
                 avatar_btn = page.locator("button:has-text('변경'), button:has-text('업로드'), #avatar-editor button").first
-                await avatar_btn.click()
+                await human_click(avatar_btn)
                 await random_delay(1.0, 2.0)
 
                 # 파일 업로드
@@ -434,7 +435,7 @@ class TaskExecutor:
 
                 # 완료/저장 버튼
                 done_btn = page.locator("button:has-text('완료'), button:has-text('Done'), #done-button").first
-                await done_btn.click()
+                await human_click(done_btn)
                 await random_delay(2.0, 3.0)
             except Exception as e:
                 print(f"[ChannelSetup] Avatar upload failed: {e}")
@@ -442,7 +443,7 @@ class TaskExecutor:
         # 게시/저장 버튼
         try:
             publish_btn = page.locator("button:has-text('게시'), button:has-text('Publish'), #publish-button").first
-            await publish_btn.click()
+            await human_click(publish_btn)
             await random_delay(2.0, 4.0)
         except Exception:
             pass
@@ -505,13 +506,29 @@ class TaskExecutor:
             email=payload.get("email"),
             password=payload.get("password"),
             recovery_email=payload.get("recovery_email"),
-            duration_min_sec=payload.get("duration_min_sec", 300),
-            duration_max_sec=payload.get("duration_max_sec", 900),
+            duration_min_sec=payload.get("duration_min_sec", 120),
+            duration_max_sec=payload.get("duration_max_sec", 300),
         )
+
+        # OTP 시크릿 등록됐으면 DB 에 암호화 저장
+        if result.otp_secret and session.account_id:
+            from hydra.db.session import SessionLocal
+            from hydra.db.models import Account
+            from hydra.core import crypto
+            _db = SessionLocal()
+            try:
+                acct = _db.get(Account, session.account_id)
+                if acct and not acct.totp_secret:
+                    acct.totp_secret = crypto.encrypt(result.otp_secret)
+                    _db.commit()
+            finally:
+                _db.close()
+
         return json.dumps({
             "ok": result.ok,
             "duration_sec": result.duration_sec,
             "actions": result.actions,
             "searched_query": result.searched_query,
+            "otp_registered": bool(result.otp_secret),
             "error": result.error,
         }, ensure_ascii=False)

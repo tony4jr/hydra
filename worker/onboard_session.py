@@ -23,12 +23,15 @@ import time
 from dataclasses import dataclass, field
 from playwright.async_api import Page
 
-from hydra.browser.actions import random_delay, scroll_page, watch_video, handle_ad, click_like_button
+from hydra.browser.actions import human_click, random_delay, scroll_page, watch_video, handle_ad, click_like_button
 from hydra.core.logger import get_logger
 from worker.channel_actions import (
     pick_avatar_file, rename_channel, set_description, upload_avatar,
 )
-from worker.data_saver import enable_data_saver
+from worker.data_saver import enable_data_saver, set_primary_video_language
+from worker.google_account import (
+    register_otp_authenticator, update_account_name, update_legal_name,
+)
 from worker.language_setup import ensure_korean_language
 from worker.login import auto_login, check_logged_in
 from worker.search_pool import pick as pick_query
@@ -46,6 +49,7 @@ class OnboardSessionResult:
     actions: list[str] = field(default_factory=list)
     searched_query: str | None = None
     error: str | None = None
+    otp_secret: str | None = None  # pyotp base32 시크릿 (등록 성공 시). caller 가 DB 저장.
 
 
 async def run_onboard_session(
@@ -55,8 +59,8 @@ async def run_onboard_session(
     email: str | None = None,
     password: str | None = None,
     recovery_email: str | None = None,
-    duration_min_sec: int = 300,   # 5 min
-    duration_max_sec: int = 900,   # 15 min
+    duration_min_sec: int = 120,   # 2 min
+    duration_max_sec: int = 300,   # 5 min
     search_probability: float = 0.6,
 ) -> OnboardSessionResult:
     """자연 탐색 온보딩. 이미 열린 page (AdsPower + Playwright CDP 연결)를 받음.
@@ -99,6 +103,33 @@ async def run_onboard_session(
         log.warning(f"language setup error: {e}")
         result.actions.append(f"language_error:{e}")
 
+    # ── 1.5) Google 계정 이름(display + legal)을 한국어 풀네임으로 교체 ───
+    # persona.name 은 실제 한국 이름(예: "박민재"). display name 과 legal name
+    # 두 곳 다 바꿔 채널↔계정 언어 불일치 리스크 제거.
+    persona_name = (persona or {}).get("name") or ""
+    if persona_name:
+        try:
+            if await update_account_name(page, persona_name, password=password):
+                result.actions.append(f"google_name:{persona_name}")
+        except Exception as e:
+            log.warning(f"update_account_name error: {e}")
+        try:
+            if await update_legal_name(page, persona_name, password=password):
+                result.actions.append("google_legal_name")
+        except Exception as e:
+            log.warning(f"update_legal_name error: {e}")
+
+    # ── 1.7) OTP Authenticator 시크릿 등록 (2FA 최종 활성화는 전화번호 필요해서 보통 실패) ──
+    # 시크릿만 확보해도 가치 있음: 향후 Google 이 TOTP 챌린지 요구하면 pyotp 로 대응 가능.
+    if password:
+        try:
+            otp_secret, activated = await register_otp_authenticator(page, password)
+            if otp_secret:
+                result.otp_secret = otp_secret
+                result.actions.append(f"otp_registered{':activated' if activated else ''}")
+        except Exception as e:
+            log.warning(f"register_otp_authenticator error: {e}")
+
     # Data Saver 모드 활성화 — 모바일 데이터 소비 감소 (144p 강제는 탐지 리스크라
     # 대신 실사용자도 많이 쓰는 "데이터 세이버" 옵션으로 480p 이하 캡)
     try:
@@ -106,6 +137,14 @@ async def run_onboard_session(
             result.actions.append("data_saver_on")
     except Exception as e:
         log.debug(f"data_saver skipped: {e}")
+
+    # YT 기본 시청 언어를 한국어로 설정 — 같은 /account_playback 페이지 내 "언어" 섹션.
+    # Google 추천/자동 번역이 참조하는 언어 선호도. UI 언어와는 별개 설정.
+    try:
+        if await set_primary_video_language(page, "한국어"):
+            result.actions.append("primary_video_language_ko")
+    except Exception as e:
+        log.debug(f"set_primary_video_language skipped: {e}")
 
     # 언어 설정 후 YouTube 홈으로 — 여기서부터 자연 탐색
     try:
@@ -247,7 +286,7 @@ async def _watch_home_video(page: Page):
         return
     idx = random.randint(0, min(count - 1, 9))
     try:
-        await thumbnails.nth(idx).click(timeout=5_000)
+        await human_click(thumbnails.nth(idx), timeout=5_000)
     except Exception:
         return
     await random_delay(2.0, 5.0)
@@ -330,7 +369,7 @@ async def _do_search(page: Page, query: str):
     try:
         search_input = page.locator("input#search")
         await search_input.wait_for(timeout=10_000)
-        await search_input.click()
+        await human_click(search_input)
         await search_input.fill("")
         await type_human(page, "input#search", query)
         await random_delay(0.5, 1.5)
@@ -347,7 +386,7 @@ async def _do_search(page: Page, query: str):
         return
     idx = random.randint(0, min(count - 1, 4))
     try:
-        await results.nth(idx).click(timeout=5_000)
+        await human_click(results.nth(idx), timeout=5_000)
     except Exception:
         return
     await random_delay(2.0, 4.0)

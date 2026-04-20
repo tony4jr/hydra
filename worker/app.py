@@ -72,7 +72,7 @@ class WorkerApp:
             if tasks:
                 tasks_by_account = defaultdict(list)
                 for task in tasks:
-                    key = (task.get("profile_id", ""), task.get("account_id", 0))
+                    key = (task.get("adspower_profile_id") or "", task.get("account_id", 0))
                     tasks_by_account[key].append(task)
 
                 for (profile_id, account_id), account_tasks in tasks_by_account.items():

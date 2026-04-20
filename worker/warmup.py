@@ -3,6 +3,7 @@ import random
 import json
 from datetime import datetime, UTC
 from hydra.browser.actions import (
+    human_click,
     random_delay, scroll_page, click_like_button,
     post_comment, watch_video, handle_ad, scroll_to_comments,
     check_ghost,
@@ -135,10 +136,10 @@ class WarmupExecutor:
 
                 # 최신순 전환
                 sort_btn = page.locator("#sort-menu tp-yt-paper-button, #sort-menu button").first
-                await sort_btn.click()
+                await human_click(sort_btn)
                 await random_delay(0.5, 1.0)
                 newest = page.locator("tp-yt-paper-listbox a, div[role='option']").nth(1)
-                await newest.click()
+                await human_click(newest)
                 await random_delay(2.0, 4.0)
 
                 ghost_result = await check_ghost(page, comment_id)

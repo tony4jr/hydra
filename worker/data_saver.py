@@ -9,7 +9,7 @@ UI 경로: YouTube 홈 → 오른쪽 상단 프로필 메뉴 → 설정 → "동
 """
 import random
 
-from hydra.browser.actions import random_delay
+from hydra.browser.actions import human_click, random_delay
 from hydra.core.logger import get_logger
 
 log = get_logger("data_saver")
@@ -67,3 +67,75 @@ async def enable_data_saver(page) -> bool:
         return True
     log.debug("Data saver radio not found on page (locale/layout change?)")
     return False
+
+
+async def set_primary_video_language(page, lang_display: str = "한국어") -> bool:
+    """YouTube 기본 시청 언어 추가. 같은 /account_playback 페이지의 "언어" 섹션.
+
+    Google 추천 엔진 / 자동 번역이 참조하는 사용자 언어 선호도. 한국 페르소나 계정
+    은 '한국어' 를 기본 시청 언어로 지정하는 게 자연스러움. 이미 지정됐으면 skip.
+    실패해도 치명적 아님 → 조용히 False.
+    """
+    try:
+        await page.goto(
+            "https://www.youtube.com/account_playback",
+            wait_until="domcontentloaded",
+        )
+        await random_delay(2.5, 4.0)
+    except Exception as e:
+        log.debug(f"account_playback navigation failed: {e}")
+        return False
+
+    # "언어 추가 또는 수정" 링크 클릭 → 언어 선택 다이얼로그
+    try:
+        edit_link = page.locator("a", has_text="언어 추가 또는 수정").first
+        await human_click(edit_link, timeout=6_000)
+        await random_delay(2.0, 3.5)
+    except Exception as e:
+        log.debug(f"primary language edit link not found: {e}")
+        return False
+
+    # 이미 선택됐는지 확인 (대상 언어가 이미 check 상태면 skip)
+    try:
+        already = await page.evaluate(
+            """(target) => {
+                const rows = Array.from(document.querySelectorAll('yt-list-item-view-model'));
+                for (const r of rows) {
+                    if ((r.innerText||'').trim() === target) {
+                        const cb = r.querySelector('input[type="checkbox"]');
+                        return cb ? cb.checked : false;
+                    }
+                }
+                return false;
+            }""",
+            lang_display,
+        )
+        if already:
+            # 이미 선택 — 변경 없이 취소
+            try:
+                await human_click(page.locator("button", has_text="취소").last, timeout=3_000)
+            except Exception:
+                pass
+            log.info(f"primary video language already '{lang_display}' — skip")
+            return True
+    except Exception:
+        pass
+
+    try:
+        search = page.locator("input[placeholder='검색']").first
+        await search.fill(lang_display)
+        await random_delay(1.0, 2.0)
+        # 해당 언어 항목 클릭
+        item = page.locator("yt-list-item-view-model", has_text=lang_display).first
+        await human_click(item, timeout=5_000)
+        await random_delay(0.8, 1.5)
+        # 확인
+        confirm = page.locator("button", has_text="확인").last
+        await human_click(confirm, timeout=5_000)
+        await random_delay(2.5, 4.0)
+    except Exception as e:
+        log.warning(f"primary language selection failed: {e}")
+        return False
+
+    log.info(f"primary video language set to '{lang_display}'")
+    return True

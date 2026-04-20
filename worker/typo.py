@@ -2,6 +2,8 @@
 import random
 import asyncio
 
+from worker.mouse import human_click
+
 # 인접 키맵 (한글 키보드 기준)
 ADJACENT_KEYS = {
     'ㅂ': 'ㅈ', 'ㅈ': 'ㅂㄷ', 'ㄷ': 'ㅈㄱ', 'ㄱ': 'ㄷㅅ',
@@ -21,7 +23,7 @@ def should_make_typo(probability: float = 0.12) -> bool:
 async def type_with_occasional_typo(page, selector: str, text: str):
     """가끔 오타를 내고 수정하며 타이핑."""
     element = page.locator(selector).first
-    await element.click()
+    await human_click(element)
     await asyncio.sleep(random.uniform(0.3, 0.8))
 
     chars = list(text)

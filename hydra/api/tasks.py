@@ -200,10 +200,22 @@ def complete_task(body: TaskCompleteRequest, x_worker_token: str = Header(...), 
             result_obj = json.loads(task.result) if task.result else {}
             handle_create_profile_result(db, task, result_obj, worker_id=task.worker_id)
         elif task.task_type == "onboard":
+            # ⚠ 'completed' 상태여도 내부 ok=false 로 실패했을 수 있음. 결과 JSON 확인.
+            try:
+                onboard_result = json.loads(task.result) if task.result else {}
+            except Exception:
+                onboard_result = {}
             account = db.get(Account, task.account_id) if task.account_id else None
-            if account and not account.onboard_completed_at:
-                account.onboard_completed_at = datetime.now(UTC)
-                db.commit()
+            if account and onboard_result.get("ok") is True:
+                if not account.onboard_completed_at:
+                    account.onboard_completed_at = datetime.now(UTC)
+                # 온보딩 성공 → 워밍업 단계로 자동 진입. 스케줄러가 이후 warmup 태스크 큐잉.
+                if account.status in ("registered", "profile_set"):
+                    from hydra.accounts.manager import transition
+                    from hydra.core.enums import AccountStatus
+                    transition(db, account, AccountStatus.WARMUP, "onboarding completed")
+                else:
+                    db.commit()
         elif task.task_type == "warmup":
             account = db.get(Account, task.account_id) if task.account_id else None
             if account and account.status == "warmup":
