@@ -197,12 +197,19 @@ def list_accounts(
                 "gmail": a.gmail,
                 "status": a.status,
                 "warmup_group": a.warmup_group,
+                "warmup_day": a.warmup_day or 0,
+                "warmup_start_date": str(a.warmup_start_date) if a.warmup_start_date else None,
                 "warmup_end_date": str(a.warmup_end_date) if a.warmup_end_date else None,
+                "onboard_completed_at": str(a.onboard_completed_at) if a.onboard_completed_at else None,
                 "ghost_count": a.ghost_count or 0,
                 "success_rate": step_stats.get(a.id, 0.0),
                 "adspower_profile_id": a.adspower_profile_id,
+                "youtube_channel_id": a.youtube_channel_id,
                 "has_persona": a.persona is not None,
                 "has_cookies": a.cookies is not None,
+                "has_totp": bool(a.totp_secret),
+                "identity_challenge_until": str(a.identity_challenge_until) if a.identity_challenge_until else None,
+                "identity_challenge_count": a.identity_challenge_count or 0,
                 "last_active_at": str(a.last_active_at) if a.last_active_at else None,
                 "created_at": str(a.created_at),
             }
@@ -313,11 +320,18 @@ def get_account(account_id: int, db: Session = Depends(get_db)):
         "gmail": account.gmail,
         "status": account.status,
         "warmup_group": account.warmup_group,
+        "warmup_day": account.warmup_day or 0,
+        "warmup_start_date": str(account.warmup_start_date) if account.warmup_start_date else None,
         "warmup_end_date": str(account.warmup_end_date) if account.warmup_end_date else None,
+        "onboard_completed_at": str(account.onboard_completed_at) if account.onboard_completed_at else None,
         "ghost_count": account.ghost_count,
         "persona": account.persona,
         "adspower_profile_id": account.adspower_profile_id,
+        "youtube_channel_id": account.youtube_channel_id,
         "has_cookies": account.cookies is not None,
+        "has_totp": bool(account.totp_secret),
+        "identity_challenge_until": str(account.identity_challenge_until) if account.identity_challenge_until else None,
+        "identity_challenge_count": account.identity_challenge_count or 0,
         "notes": account.notes,
         "created_at": str(account.created_at),
         "last_active_at": str(account.last_active_at) if account.last_active_at else None,
@@ -742,3 +756,201 @@ def batch_setup(data: BatchSetupInput, db: Session = Depends(get_db)):
         results["actions"][action] = {"success": success, "failed": failed}
 
     return results
+
+
+# ─── 본인 인증(identity challenge) 관리 ─────────────────────────────
+
+@router.post("/api/{account_id}/identity-challenge/unlock")
+def identity_challenge_unlock(account_id: int, db: Session = Depends(get_db)):
+    """쿨다운 강제 해제. 이전 준비 상태(warmup/registered)로 복원."""
+    acct = db.get(Account, account_id)
+    if not acct:
+        return {"error": "not found"}
+    acct.identity_challenge_until = None
+    if acct.status == "identity_challenge":
+        acct.status = "warmup" if acct.onboard_completed_at else "registered"
+    db.commit()
+    return {"ok": True, "status": acct.status, "count": acct.identity_challenge_count or 0}
+
+
+@router.post("/api/{account_id}/identity-challenge/ban")
+def identity_challenge_ban(account_id: int, db: Session = Depends(get_db)):
+    """본인 인증 반복 실패 계정을 영구 suspended 처리."""
+    acct = db.get(Account, account_id)
+    if not acct:
+        return {"error": "not found"}
+    acct.status = "suspended"
+    acct.retired_at = datetime.now(timezone.utc)
+    acct.retired_reason = f"identity_challenge repeated (count={acct.identity_challenge_count or 0})"
+    db.commit()
+    return {"ok": True, "status": acct.status}
+
+
+@router.get("/api/identity-challenge/stats")
+def identity_challenge_stats(db: Session = Depends(get_db)):
+    """본인 인증 쿨다운 현황 + 해제 예정."""
+    now = datetime.now(timezone.utc)
+    rows = db.query(Account).filter(Account.identity_challenge_count > 0).all()
+    items = []
+    for a in rows:
+        until = a.identity_challenge_until
+        items.append({
+            "id": a.id,
+            "gmail": a.gmail,
+            "status": a.status,
+            "count": a.identity_challenge_count or 0,
+            "until": str(until) if until else None,
+            "remaining_seconds": max(0, int((until - now).total_seconds())) if until else 0,
+            "active_cooldown": bool(until and until > now),
+        })
+    items.sort(key=lambda x: (-x["active_cooldown"], -x["count"]))
+    return {
+        "total": len(items),
+        "active_cooldown": sum(1 for i in items if i["active_cooldown"]),
+        "items": items,
+    }
+
+
+# ─── 온보딩 / 상태 / 채널 ────────────────────────────────────────
+
+@router.post("/api/{account_id}/onboard/retry")
+def onboard_retry(account_id: int, db: Session = Depends(get_db)):
+    """실패/부분 완료 계정 온보딩 재시도 태스크 enqueue."""
+    from hydra.db.models import Task
+    import json as _json
+    acct = db.get(Account, account_id)
+    if not acct:
+        return {"error": "not found"}
+    from hydra.core import crypto
+    payload = {
+        "email": acct.gmail,
+        "password": crypto.decrypt(acct.password) if acct.password else None,
+        "recovery_email": acct.recovery_email,
+        "persona": _json.loads(acct.persona) if acct.persona else None,
+    }
+    task = Task(
+        task_type="onboard",
+        account_id=acct.id,
+        status="pending",
+        priority="high",
+        payload=_json.dumps(payload, ensure_ascii=False),
+        created_at=datetime.now(timezone.utc),
+    )
+    db.add(task)
+    db.commit()
+    return {"ok": True, "task_id": task.id}
+
+
+@router.get("/api/{account_id}/onboard/actions")
+def onboard_actions(account_id: int, db: Session = Depends(get_db)):
+    """계정의 최근 onboard Task 실행 결과(result JSON의 actions 필드) 반환."""
+    from hydra.db.models import Task
+    import json as _json
+    tasks = (
+        db.query(Task)
+        .filter(Task.account_id == account_id, Task.task_type == "onboard")
+        .order_by(Task.created_at.desc())
+        .limit(5)
+        .all()
+    )
+    rows = []
+    for t in tasks:
+        result = None
+        if t.result:
+            try:
+                result = _json.loads(t.result)
+            except Exception:
+                result = {"raw": t.result}
+        rows.append({
+            "task_id": t.id,
+            "status": t.status,
+            "created_at": str(t.created_at),
+            "completed_at": str(t.completed_at) if t.completed_at else None,
+            "error": t.error_message,
+            "actions": (result or {}).get("actions", []) if isinstance(result, dict) else [],
+            "critical_failures": (result or {}).get("critical_failures", []) if isinstance(result, dict) else [],
+            "ok": (result or {}).get("ok") if isinstance(result, dict) else None,
+        })
+    return {"items": rows}
+
+
+@router.get("/api/{account_id}/channel/verify")
+async def channel_verify(account_id: int, db: Session = Depends(get_db)):
+    """YT 공개 페이지에서 채널명 읽어 DB 값과 비교 — 라이브 검증. 쿠키/로그인 불요."""
+    import httpx
+    import re
+    acct = db.get(Account, account_id)
+    if not acct:
+        return {"error": "not found"}
+    if not acct.youtube_channel_id:
+        return {"error": "channel_id missing"}
+    url = f"https://www.youtube.com/channel/{acct.youtube_channel_id}"
+    try:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as c:
+            r = await c.get(url, headers={"Accept-Language": "ko"})
+            html = r.text
+    except Exception as e:
+        return {"error": f"fetch failed: {e}"}
+    # og:title 에 채널명 있음
+    m = re.search(r'<meta property="og:title" content="([^"]+)"', html)
+    live_name = m.group(1) if m else None
+    persona = json.loads(acct.persona) if acct.persona else {}
+    expected = (persona.get("channel_plan") or {}).get("title")
+    return {
+        "channel_id": acct.youtube_channel_id,
+        "live_name": live_name,
+        "expected_name": expected,
+        "match": bool(live_name and expected and live_name.strip() == expected.strip()),
+    }
+
+
+# ─── 모니터링: 아바타 인벤토리 / IP 로그 ────────────────────────
+
+@router.get("/api/avatars/inventory")
+def avatars_inventory():
+    """페르소나 아바타 파일 풀 현황 — 토픽별 개수, 빈 폴더 경고."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent.parent.parent / "data" / "avatars"
+    topics = {}
+    warnings = []
+    if not root.exists():
+        return {"root": str(root), "topics": {}, "warnings": ["avatars root missing"]}
+    for kind_dir in root.iterdir():
+        if not kind_dir.is_dir():
+            continue
+        for sub in kind_dir.iterdir():
+            if not sub.is_dir():
+                continue
+            files = [p for p in sub.iterdir() if p.is_file() and p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}]
+            key = f"{kind_dir.name}/{sub.name}"
+            topics[key] = len(files)
+            if len(files) == 0:
+                warnings.append(f"{key}: empty")
+            elif len(files) < 10:
+                warnings.append(f"{key}: low ({len(files)})")
+    return {"root": str(root), "topics": topics, "warnings": warnings}
+
+
+@router.get("/api/{account_id}/ip-log")
+def account_ip_log(account_id: int, limit: int = 30, db: Session = Depends(get_db)):
+    """계정의 최근 IP 사용 기록. ip_logs 테이블 기반."""
+    from hydra.db.models import IpLog
+    rows = (
+        db.query(IpLog)
+        .filter(IpLog.account_id == account_id)
+        .order_by(IpLog.started_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return {
+        "items": [
+            {
+                "id": r.id,
+                "ip": r.ip_address,
+                "device_id": r.device_id,
+                "started_at": str(r.started_at),
+                "ended_at": str(r.ended_at) if r.ended_at else None,
+            }
+            for r in rows
+        ]
+    }

@@ -149,32 +149,27 @@ async def rename_channel(page, channel_name: str, channel_id: str | None = None)
             log.info(f"channel name already '{channel_name}' — skip")
             return True
 
-        # ⚠ YT Studio 의 channel-name input 은 web component 래퍼가 자체 state 를
-        # 관리. keyboard.type 으로만 바꾸면 DOM 의 input.value 는 새 값이 되지만
-        # 컴포넌트 내부 state 는 구 값이 남아 publish 시 잘못 저장됨.
+        # ⚠ YT Studio 의 channel-name input 은 Polymer 웹 컴포넌트. JS 네이티브
+        # setter + input 이벤트 dispatch 로는 내부 dirty 플래그가 세팅되지 않아
+        # publish 버튼이 disabled 로 남음 (값만 보이고 저장은 안 됨).
         #
-        # 해결: JS 네이티브 setter 로 value 를 덮어쓰고 'input' 이벤트를 dispatch
-        # → 컴포넌트가 변경을 감지해 state 동기화.
-        await human_click(name_input)
-        await random_delay(0.2, 0.5)
-        await name_input.evaluate(
-            """(el, v) => {
-                const setter = Object.getOwnPropertyDescriptor(
-                    Object.getPrototypeOf(el), 'value'
-                ).set;
-                setter.call(el, v);
-                el.dispatchEvent(new Event('input', {bubbles: true}));
-                el.dispatchEvent(new Event('change', {bubbles: true}));
-            }""",
-            channel_name,
-        )
+        # 해결: 실제 키보드 이벤트 시퀀스 — triple-click 으로 전체 선택 → Delete
+        # → keyboard.type 로 한 글자씩 입력. 각 키스트로크가 trusted 이벤트로
+        # 컴포넌트 내부 state 를 업데이트 → dirty flag → publish 활성화.
+        await name_input.click(click_count=3)
+        await random_delay(0.2, 0.4)
+        await page.keyboard.press("Delete")
+        await random_delay(0.3, 0.6)
+        # persona 타이핑 속도 반영. type_human 은 selector 기반이라 여기선
+        # keyboard.type 으로 직접. delay 는 80~140ms (보통 사람 속도).
+        await page.keyboard.type(channel_name, delay=random.randint(60, 140))
         await random_delay(0.6, 1.2)
 
         # 검증
         actual = (await name_input.input_value()) or ""
         if actual.strip() != channel_name.strip():
             log.warning(
-                f"rename_channel: value mismatch after set — "
+                f"rename_channel: value mismatch after type — "
                 f"wanted='{channel_name}' actual='{actual}'"
             )
             return False
@@ -182,16 +177,23 @@ async def rename_channel(page, channel_name: str, channel_id: str | None = None)
         log.warning(f"rename_channel failed at input step: {e}")
         return False
 
-    # 게시
+    # 게시 — publish 버튼 disabled 면 실패로 판정 (내부 state 미반영 의심).
     try:
-        publish = page.locator(
-            "ytcp-button#publish-button button, "
-            "button:has-text('게시'), button:has-text('Publish')"
-        ).first
+        publish = page.locator("ytcp-button#publish-button button").first
+        await publish.wait_for(timeout=5_000)
+        disabled = await publish.get_attribute("disabled")
+        aria_dis = await publish.get_attribute("aria-disabled")
+        if disabled is not None or aria_dis == "true":
+            log.warning(
+                "rename_channel: publish button remains disabled after type — "
+                "web component did not register change"
+            )
+            return False
         await human_click(publish, timeout=5_000)
-        await random_delay(2.0, 4.0)
-    except Exception:
-        pass
+        await random_delay(2.5, 4.5)
+    except Exception as e:
+        log.warning(f"rename_channel publish failed: {e}")
+        return False
 
     log.info(f"channel renamed to '{channel_name}'")
     return True
