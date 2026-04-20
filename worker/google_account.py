@@ -23,10 +23,121 @@ import re
 
 import pyotp
 
-from hydra.browser.actions import human_click, random_delay
+from hydra.browser.actions import human_click, random_delay, type_human
 from hydra.core.logger import get_logger
 
 log = get_logger("google_account")
+
+
+# 본인 인증 실패 화면에 뜨는 문구들. Google 이 문구 미세 변경 가능해서 부분 매칭.
+IDENTITY_LOCK_PHRASES = (
+    "본인 인증을 할 수 없습니다",
+    "본인 확인을 할 수 없습니다",
+    "다시 시도할 수 없",
+    "7일",
+    "We can't verify",
+    "can't verify it's you",
+)
+
+
+async def handle_identity_challenge(page, password: str, *, timeout_sec: int = 30) -> str:
+    """YT Studio / 기타 동작 도중 뜰 수 있는 본인 인증 모달 공통 처리.
+
+    흐름:
+    1. 현재 페이지에 "본인 인증" 다이얼로그 존재 여부 감지
+    2. 있으면 "다음" 클릭 → Google 이 새 탭/같은 탭으로 비밀번호 챌린지 오픈
+    3. 비밀번호 입력 + "다음"
+    4. 결과 판정:
+       - 원본 페이지로 리다이렉트/새 탭 닫힘 → "passed"
+       - "본인 인증을 할 수 없습니다" 등 록아웃 문구 → "locked" (7일 쿨다운)
+
+    반환:
+    - "not_shown": 모달 없음 → 정상 플로우 계속
+    - "passed": 통과, 정상 플로우 계속
+    - "locked": 잠금 → 호출부가 계정 상태를 identity_challenge 로 전환해야 함
+    """
+    try:
+        has_modal = await page.evaluate("""() => {
+          const dlgs = Array.from(document.querySelectorAll('tp-yt-paper-dialog, ytcp-dialog, [role="dialog"]'))
+            .filter(d => d.offsetParent !== null);
+          return dlgs.some(d => (d.innerText||'').includes('본인 인증'));
+        }""")
+    except Exception as e:
+        log.debug(f"identity challenge detect failed: {e}")
+        return "not_shown"
+
+    if not has_modal:
+        return "not_shown"
+
+    log.warning("identity challenge modal detected")
+    context = page.context
+
+    # 다이얼로그 내부 '다음' 클릭 → 새 탭 또는 리다이렉트 대기
+    async def _click_next_in_modal():
+        await page.evaluate("""() => {
+          const dlgs = Array.from(document.querySelectorAll('tp-yt-paper-dialog, ytcp-dialog, [role="dialog"]'))
+            .filter(d => d.offsetParent !== null && (d.innerText||'').includes('본인 인증'));
+          if (!dlgs.length) return false;
+          const btn = Array.from(dlgs[0].querySelectorAll('button'))
+            .find(b => b.offsetParent !== null && (b.innerText||'').trim() === '다음');
+          if (btn) { btn.click(); return true; }
+          return false;
+        }""")
+
+    pwd_page = None
+    try:
+        async with context.expect_page(timeout=timeout_sec * 1000) as new_page_info:
+            await _click_next_in_modal()
+        pwd_page = await new_page_info.value
+    except Exception:
+        # 새 탭 안 뜸 — 같은 페이지에서 리다이렉트로 처리되는 케이스
+        pwd_page = page
+
+    # 비밀번호 입력 화면 확인
+    try:
+        await pwd_page.wait_for_selector("input[type='password']", timeout=15_000)
+    except Exception:
+        # 비밀번호 입력 안 나타나면 챌린지 우회됐을 수도 있음
+        body = await pwd_page.evaluate("document.body.innerText") if pwd_page else ""
+        if any(p in body for p in IDENTITY_LOCK_PHRASES):
+            log.error("identity challenge locked (no password prompt)")
+            return "locked"
+        log.info("identity challenge: password prompt not shown — assume passed")
+        return "passed"
+
+    # 비밀번호 입력 + '다음' 클릭 (새 탭에서는 page.context 가 다를 수 있으니 주의)
+    try:
+        # fill 대신 type_human — persona 기반 타이핑 스타일
+        sel = "input[type='password']"
+        pwd_input = pwd_page.locator(sel)
+        await pwd_input.fill("")
+        await type_human(pwd_page, sel, password)
+        await random_delay(0.5, 1.2)
+        await pwd_page.evaluate("""() => {
+          const btns = Array.from(document.querySelectorAll('button')).filter(b => b.offsetParent !== null);
+          const next = btns.find(b => (b.innerText||'').trim() === '다음' || (b.innerText||'').trim() === 'Next');
+          if (next) next.click();
+        }""")
+    except Exception as e:
+        log.warning(f"identity challenge password fill failed: {e}")
+        return "locked"
+
+    # 결과 대기 — 새 탭이었으면 close 이벤트, 같은 탭이면 URL 변경
+    await random_delay(3.0, 5.0)
+
+    try:
+        body = await pwd_page.evaluate("document.body.innerText")
+    except Exception:
+        # pwd_page 가 닫혔으면 통과로 판정
+        log.info("identity challenge: password tab closed — passed")
+        return "passed"
+
+    if any(p in body for p in IDENTITY_LOCK_PHRASES):
+        log.error("identity challenge locked after password submit")
+        return "locked"
+
+    log.info("identity challenge: passed")
+    return "passed"
 
 
 def split_korean_name(full_name: str) -> tuple[str, str]:

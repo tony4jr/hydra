@@ -56,6 +56,20 @@ def fetch_tasks(db: Session, worker: Worker, limit: int = 5) -> list[Task]:
             ).first()
             if existing_lock and existing_lock.worker_id != worker.id:
                 continue
+            # 본인 인증 쿨다운 계정은 배정 금지. 쿨다운 만료된 계정은 status 복구
+            # 후 정상 배정 (만료 여부만 여기서 체크).
+            acct = db.get(Account, task.account_id)
+            if acct:
+                if acct.identity_challenge_until and acct.identity_challenge_until > now:
+                    continue  # 아직 쿨다운 중
+                if acct.status == "identity_challenge" and (
+                    not acct.identity_challenge_until or acct.identity_challenge_until <= now
+                ):
+                    # 쿨다운 만료 — 이전 준비 상태로 복원. onboard 가 끝났으면 warmup,
+                    # 아니면 registered 단계부터 재시도.
+                    acct.status = "warmup" if acct.onboard_completed_at else "registered"
+                    acct.identity_challenge_until = None
+                    db.commit()
         # Account limit check
         if task.account_id:
             allowed, reason = can_execute_task(db, task.account_id, task.task_type)

@@ -16,6 +16,7 @@ class AccountStatus(StrEnum):
     CHECKPOINT = "checkpoint"
     IP_BLOCKED = "ip_blocked"
     SUSPENDED = "suspended"
+    IDENTITY_CHALLENGE = "identity_challenge"  # 본인 인증 실패로 쿨다운 (보통 7일)
     RETIRED = "retired"
 
 

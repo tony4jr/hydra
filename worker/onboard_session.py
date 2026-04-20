@@ -33,7 +33,7 @@ from worker.channel_actions import (
 )
 from worker.data_saver import set_primary_video_language
 from worker.google_account import (
-    register_otp_authenticator, update_account_name,
+    handle_identity_challenge, register_otp_authenticator, update_account_name,
 )
 from worker.language_setup import ensure_korean_language
 from worker.login import auto_login, check_logged_in
@@ -240,6 +240,26 @@ async def run_onboard_session(
     plan = (persona or {}).get("channel_plan") or {}
     if plan:
         await random_delay(3.0, 6.0)
+
+        # Studio 진입 — 본인 인증 모달 선처리. 신규 계정 + 지리/IP 이상 때 YT 가
+        # 돌발적으로 띄우는 보안 챌린지. 실패 시 7일 쿨다운이라 여기서 막는 게 중요.
+        if password:
+            try:
+                await page.goto("https://studio.youtube.com/", wait_until="domcontentloaded")
+                await random_delay(3.0, 5.0)
+                challenge = await handle_identity_challenge(page, password)
+                if challenge == "locked":
+                    result.critical_failures.append("identity_challenge:locked")
+                    result.error = "identity challenge locked (7-day cooldown)"
+                    return result
+                if challenge == "passed":
+                    result.actions.append("identity_challenge:passed")
+            except Exception as e:
+                log.warning(f"identity challenge pre-check error: {e}")
+                if _is_connection_error(e):
+                    result.critical_failures.append("identity_challenge:disconnected")
+                    result.error = f"browser disconnected during identity challenge: {e}"
+                    return result
 
         # 이름 변경 (title 이 있으면 무조건 실행 — 100% 계정)
         title = plan.get("title") or ""

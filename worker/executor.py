@@ -524,6 +524,29 @@ class TaskExecutor:
             finally:
                 _db.close()
 
+        # 본인 인증 잠금(7일 쿨다운) — 재시도해도 복구 불가. 계정 상태를 전환하고
+        # 태스크는 failed (max_retries 무시). 7일 뒤 수동/스케줄러가 status 복구.
+        if any("identity_challenge:locked" in f for f in result.critical_failures):
+            if session.account_id:
+                from datetime import datetime, timedelta, UTC
+                from hydra.db.session import SessionLocal
+                from hydra.db.models import Account
+                _db = SessionLocal()
+                try:
+                    acct = _db.get(Account, session.account_id)
+                    if acct:
+                        acct.status = "identity_challenge"
+                        acct.identity_challenge_until = datetime.now(UTC) + timedelta(days=7)
+                        acct.identity_challenge_count = (acct.identity_challenge_count or 0) + 1
+                        _db.commit()
+                finally:
+                    _db.close()
+            # retry 무시하고 즉시 최종 failed — worker.fail_task 가 retry_count 올리지만
+            # max_retries 넘는 error 메시지로 뺄 방법이 현재 없어 일반 RuntimeError 로 raise
+            raise RuntimeError(
+                "onboard blocked by identity challenge — account marked for 7-day cooldown"
+            )
+
         # critical_failures 있으면 예외 raise → worker 가 fail_task 로 처리 → retry_count
         # 증가 후 재스케줄. max_retries 초과 시 최종 failed. 이미 성공한 단계(google_name,
         # otp 등)는 DB 에 반영됐으니 재시도 시 idempotent 하게 skip 됨.

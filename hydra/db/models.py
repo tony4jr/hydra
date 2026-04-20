@@ -36,6 +36,10 @@ class Account(Base):
 
     ghost_count = Column(Integer, default=0)
 
+    # 본인 인증 챌린지 — 실패 시 7일 쿨다운. 반복되면 밴 후보.
+    identity_challenge_until = Column(DateTime)  # 이 시각 이전엔 태스크 배정 금지
+    identity_challenge_count = Column(Integer, default=0)
+
     persona = Column(Text)  # JSON
     role_preference = Column(String)  # seed|witness|agree|any
 
