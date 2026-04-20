@@ -76,12 +76,57 @@ async def update_account_name(page, korean_full_name: str, password: str | None 
         log.warning(f"update_account_name: goto failed: {e}")
         return False
 
+    # Google 이름 편집 폼 input 찾기. get_by_label("이름", exact=True) 은 Google 의
+    # aria-labelledby 가 "이름\n이름\n이름" (라벨 텍스트 여러 번 join) 으로 resolve
+    # 되어 실패함. 대신 aria-labelledby → 실제 label 요소의 첫 줄이 "이름"/"성" 인
+    # input 을 직접 찾는 견고한 방식.
+    async def _find_inputs():
+        return await page.evaluate("""() => {
+            const inputs = Array.from(document.querySelectorAll('input[type="text"]'));
+            const result = {given: null, family: null};
+            for (const i of inputs) {
+                const aria = i.getAttribute('aria-label') || '';
+                if (aria.includes('검색') || aria.includes('Search')) continue;
+                const labelId = i.getAttribute('aria-labelledby');
+                if (!labelId) continue;
+                const lbl = document.getElementById(labelId);
+                if (!lbl) continue;
+                const first = (lbl.innerText||'').split('\\n')[0].trim();
+                if (first === '이름' && !result.given) result.given = i.id || '';
+                if (first === '성' && !result.family) result.family = i.id || '';
+            }
+            return result;
+        }""")
+
     try:
-        # label 텍스트로 매칭 (Google 이 input id 를 빌드마다 바꾸는 걸 회피)
-        given_input = page.get_by_label("이름", exact=True).first
-        family_input = page.get_by_label("성", exact=True).first
-        await given_input.wait_for(timeout=8_000)
-        await family_input.wait_for(timeout=8_000)
+        # 최대 20초까지 대기하며 input id 획득
+        import time
+        deadline = time.time() + 20
+        input_ids = {"given": None, "family": None}
+        while time.time() < deadline:
+            input_ids = await _find_inputs()
+            if input_ids.get("given") and input_ids.get("family"):
+                break
+            await random_delay(0.5, 1.2)
+
+        if not (input_ids.get("given") and input_ids.get("family")):
+            # 페이지 리로드 후 재시도 (1회)
+            log.info("update_account_name: inputs not found, reloading page")
+            await page.reload(wait_until="domcontentloaded")
+            await random_delay(3.0, 5.0)
+            deadline = time.time() + 15
+            while time.time() < deadline:
+                input_ids = await _find_inputs()
+                if input_ids.get("given") and input_ids.get("family"):
+                    break
+                await random_delay(0.5, 1.2)
+
+        if not (input_ids.get("given") and input_ids.get("family")):
+            log.warning(f"update_account_name: name inputs not found: {input_ids}")
+            return False
+
+        given_input = page.locator(f"#{input_ids['given']}")
+        family_input = page.locator(f"#{input_ids['family']}")
 
         current_given = (await given_input.input_value()) or ""
         current_family = (await family_input.input_value()) or ""
