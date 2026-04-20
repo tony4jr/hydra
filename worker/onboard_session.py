@@ -33,7 +33,7 @@ from worker.channel_actions import (
 )
 from worker.data_saver import enable_data_saver, set_primary_video_language
 from worker.google_account import (
-    register_otp_authenticator, update_account_name, update_legal_name,
+    register_otp_authenticator, update_account_name,
 )
 from worker.language_setup import ensure_korean_language
 from worker.login import auto_login, check_logged_in
@@ -131,9 +131,9 @@ async def run_onboard_session(
         log.warning(f"language setup error: {e}")
         result.actions.append(f"language_error:{e}")
 
-    # ── 1.5) Google 계정 이름(display + legal)을 한국어 풀네임으로 교체 ───
-    # persona.name 은 실제 한국 이름(예: "박민재"). display name 과 legal name
-    # 두 곳 다 바꿔 채널↔계정 언어 불일치 리스크 제거.
+    # ── 1.5) Google 계정 display name 을 한국어 풀네임으로 교체 ───
+    # persona.name 은 실제 한국 이름(예: "박민재"). YouTube/Gmail 등에서 표시됨.
+    # Legal name 은 대부분 계정에 없어 건드리지 않음 (에러 페이지 뜨는 계정 많음).
     persona_name = (persona or {}).get("name") or ""
     if persona_name:
         try:
@@ -144,15 +144,6 @@ async def run_onboard_session(
             if _is_connection_error(e):
                 result.critical_failures.append("update_account_name:disconnected")
                 result.error = f"browser disconnected during account name update: {e}"
-                return result
-        try:
-            if await update_legal_name(page, persona_name, password=password):
-                result.actions.append("google_legal_name")
-        except Exception as e:
-            log.warning(f"update_legal_name error: {e}")
-            if _is_connection_error(e):
-                result.critical_failures.append("update_legal_name:disconnected")
-                result.error = f"browser disconnected during legal name update: {e}"
                 return result
 
     # ── 1.7) OTP Authenticator 시크릿 등록 (2FA 최종 활성화는 전화번호 필요해서 보통 실패) ──

@@ -1,19 +1,20 @@
-"""Google 계정 프로필 조정 — display name + legal name + OTP 2FA 시크릿 등록.
+"""Google 계정 프로필 조정 — display name + OTP 2FA 시크릿 등록.
 
 **Why:** 채널 이름만 한국어로 바꿔도 Google 계정 프로필은 원본 언어(예: 베트남어)
 로 남음. Google 자체 ML/보안 시스템이 계정↔채널 언어 불일치를 이상 신호로 활용
-할 가능성 있어 양쪽 다 일치시키는 편이 안전. 추가 인증 없이 바로 변경 가능.
+할 가능성 있어 일치시키는 편이 안전. 추가 인증 없이 바로 변경 가능.
 
-**세 가지 작업**:
+**두 가지 작업**:
 1. Display name (`/profile/name/edit`): YouTube/Gmail 등에서 공개 표시되는 이름
-   - 성(i7)/이름(i6) 두 필드로 분리
-2. Legal name (`/legalnameedit`): 광고 구매 등 제한 상황에서만 표시
-   - 단일 필드 (`aria-label="legalName"`), 공백 포함 풀네임
-   - 일부 계정은 `/legalnamedetail` 에서 "문제가 발생했습니다" → graceful skip
-3. OTP Authenticator 시크릿 등록 (`/two-step-verification/authenticator`):
+   - aria-labelledby 가 가리키는 라벨의 첫 줄이 "이름"/"성" 인 input 두 개 채우기
+2. OTP Authenticator 시크릿 등록 (`/two-step-verification/authenticator`):
    - Google OTP 앱 연동으로 base32 시크릿 획득 → `pyotp` 로 코드 생성 가능
    - 2FA 활성화(최상단 배너 제거)에는 전화번호/패스키가 필요 — OTP 만으로 불가능
    - 시크릿은 등록되므로 Google 이 미래에 TOTP 챌린지 요구 시 대응 가능
+
+**Legal name 은 다루지 않음** — 대부분의 계정은 Google Payments Center 에
+등록된 legal name 이 애초에 없어 편집 페이지가 "문제가 발생했습니다" 에러로 뜸.
+(일부만 있고 관리 비용이 커서 전부 skip 하기로 결정.)
 
 **한국어 이름 분할**: 단순히 첫 글자 = 성, 나머지 = 이름. 2~3 char 한국 이름
 대부분 커버. 드문 복성(남궁/사공 등)은 별도 처리하지 않음.
@@ -182,109 +183,6 @@ async def update_account_name(page, korean_full_name: str, password: str | None 
         log.warning("update_account_name: save confirmation URL not matched — assuming OK")
 
     log.info(f"account name updated to '{family} {given}'")
-    return True
-
-
-async def update_legal_name(page, korean_full_name: str, password: str | None = None) -> bool:
-    """Google 계정 Legal name 도 한국어로 교체.
-
-    Flow: /legalnamedetail → '법적 이름 변경' 버튼 → 단일 input → 저장.
-    성공 여부는 URL 이 /legalnamedetail 로 복귀하는지로 판정.
-    """
-    if not korean_full_name:
-        return False
-
-    family, given = split_korean_name(korean_full_name)
-    if not family or not given:
-        return False
-    target = f"{family} {given}"
-
-    try:
-        await page.goto(
-            "https://myaccount.google.com/legalnamedetail",
-            wait_until="domcontentloaded",
-        )
-        await random_delay(2.5, 4.0)
-        if password:
-            await _maybe_fill_password_challenge(page, password)
-    except Exception as e:
-        log.warning(f"update_legal_name: goto failed: {e}")
-        return False
-
-    # 법적 이름이 애초에 설정 안 된 계정은 '문제가 발생했습니다' 에러 페이지가 뜨거나
-    # '법적 이름 변경' 버튼이 없음. 이 경우 노출 리스크도 없으므로 조용히 skip.
-    try:
-        body_text = await page.locator("body").inner_text(timeout=3_000)
-    except Exception:
-        body_text = ""
-    if "문제가 발생했습니다" in body_text or "Something went wrong" in body_text:
-        log.info("update_legal_name: legal name not set on this account — skip")
-        return True
-
-    # '법적 이름 변경' 버튼 클릭 → 편집 폼 진입
-    try:
-        edit_btn = page.locator("button:has-text('법적 이름 변경')").first
-        if not await edit_btn.is_visible(timeout=4_000):
-            log.info("update_legal_name: no edit button — legal name not editable, skip")
-            return True
-        await human_click(edit_btn, timeout=6_000)
-        await random_delay(2.0, 3.5)
-    except Exception as e:
-        log.warning(f"update_legal_name: edit button click failed: {e}")
-        return False
-
-    try:
-        legal_input = page.locator("input[aria-label='legalName']").first
-        await legal_input.wait_for(timeout=8_000)
-        current = (await legal_input.input_value()) or ""
-        if current.strip() == target.strip():
-            log.info(f"legal name already '{target}' — skip")
-            # 취소해서 다이얼로그 닫기
-            try:
-                await human_click(page.locator("button:has-text('취소')").first, timeout=3_000)
-            except Exception:
-                pass
-            return True
-
-        # JS 네이티브 setter
-        await legal_input.evaluate(
-            """(el, v) => {
-                const s = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value').set;
-                s.call(el, v);
-                el.dispatchEvent(new Event('input', {bubbles: true}));
-                el.dispatchEvent(new Event('change', {bubbles: true}));
-            }""",
-            target,
-        )
-        await random_delay(0.5, 1.0)
-
-        actual = (await legal_input.input_value()) or ""
-        if actual.strip() != target.strip():
-            log.warning(
-                f"update_legal_name: value mismatch — wanted='{target}' actual='{actual}'"
-            )
-            return False
-    except Exception as e:
-        log.warning(f"update_legal_name: fill failed: {e}")
-        return False
-
-    try:
-        save_btn = page.locator("button:has-text('저장'), button:has-text('Save')").first
-        await human_click(save_btn, timeout=5_000)
-        await random_delay(2.0, 4.0)
-    except Exception as e:
-        log.warning(f"update_legal_name: save click failed: {e}")
-        return False
-
-    try:
-        await page.wait_for_url(
-            re.compile(r"myaccount\.google\.com/legalnamedetail"),
-            timeout=8_000,
-        )
-    except Exception:
-        log.warning("update_legal_name: save confirmation URL not matched — assuming OK")
-
-    log.info(f"legal name updated to '{target}'")
     return True
 
 
