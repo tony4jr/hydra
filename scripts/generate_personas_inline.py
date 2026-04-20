@@ -158,6 +158,11 @@ def build_persona(slot: PersonaSlot, rng: random.Random) -> dict:
         "comment_length": rng.choice(["short", "short", "medium"]),  # 짧음 선호
         "typo_rate": rng.choice(["low", "medium", "medium"]),
         "personality_keywords": rng.choice(PERSONALITY_SETS),
+        # 세션 전체 템포 배수. 0.6(급함) ~ 1.8(느긋함) — 계정마다 봇이 아닌
+        # 사람처럼 서로 다른 속도 프로파일을 갖도록.
+        "speed_multiplier": round(rng.uniform(0.6, 1.8), 2),
+        # 타이핑 스타일 — typist: 한 글자씩 타이핑, paster: clipboard 붙여넣기
+        "typing_style": rng.choice(["typist", "typist", "paster"]),
     }
     # channel_plan 추가 (기존 로직 재사용)
     persona["channel_plan"] = generate_channel_plan(slot, persona)

@@ -23,7 +23,10 @@ import time
 from dataclasses import dataclass, field
 from playwright.async_api import Page
 
-from hydra.browser.actions import human_click, random_delay, scroll_page, watch_video, handle_ad, click_like_button
+from hydra.browser.actions import (
+    human_click, random_delay, scroll_page, watch_video, handle_ad, click_like_button,
+    set_speed_multiplier, set_typing_style,
+)
 from hydra.core.logger import get_logger
 from worker.channel_actions import (
     pick_avatar_file, rename_channel, set_description, upload_avatar,
@@ -70,6 +73,13 @@ async def run_onboard_session(
     """
     result = OnboardSessionResult(ok=False)
     started = time.time()
+
+    # 세션 템포 + 타이핑 스타일 설정 — persona 별로 다른 프로파일 (anti-detection)
+    speed = (persona or {}).get("speed_multiplier") or random.uniform(0.6, 1.8)
+    set_speed_multiplier(speed)
+    typing_style = (persona or {}).get("typing_style") or random.choice(["typist", "typist", "paster"])
+    set_typing_style(typing_style)
+    log.info(f"onboard: speed={speed:.2f} typing={typing_style}")
 
     # ── 0) 로그인 확인 / 수행 ────────────────────────────────────────
     try:

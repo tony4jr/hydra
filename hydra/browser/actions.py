@@ -5,6 +5,7 @@ All delays use random ranges to mimic real behavior.
 """
 
 import asyncio
+import contextvars
 import random
 from playwright.async_api import Page
 
@@ -13,6 +14,39 @@ from hydra.core.logger import get_logger
 from worker.mouse import human_click  # re-export for callers using actions module
 
 log = get_logger("actions")
+
+
+# ─── 세션/계정별 속도 조절 (anti-detection) ──────────────────────────────
+# 모든 random_delay 에 곱해지는 배수. persona 별로 0.6~1.8 랜덤 세팅해 세션
+# 특유의 "템포" 를 만듦 — 모든 계정이 동일 분포로 움직이면 정규분포 봇 시그니처.
+_speed_multiplier: contextvars.ContextVar[float] = contextvars.ContextVar(
+    "hydra_speed_multiplier", default=1.0
+)
+_typing_style: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "hydra_typing_style", default="typist"  # typist | paster
+)
+
+
+def set_speed_multiplier(value: float) -> None:
+    """Context-local speed multiplier 설정 (session 시작 시 호출).
+
+    value 0.6 = 40% 빠름. value 1.8 = 80% 느림. 합리적 범위: 0.5~2.0.
+    """
+    _speed_multiplier.set(max(0.3, min(3.0, float(value))))
+
+
+def get_speed_multiplier() -> float:
+    return _speed_multiplier.get()
+
+
+def set_typing_style(style: str) -> None:
+    """Context-local 타이핑 스타일. 'typist' (타이핑) 또는 'paster' (붙여넣기)."""
+    if style in ("typist", "paster"):
+        _typing_style.set(style)
+
+
+def get_typing_style() -> str:
+    return _typing_style.get()
 
 
 def _paste_modifier() -> str:
@@ -26,32 +60,82 @@ def _paste_modifier() -> str:
 
 
 async def random_delay(min_sec: float = 1.0, max_sec: float = 3.0):
-    """Human-like random delay."""
-    await asyncio.sleep(random.uniform(min_sec, max_sec))
+    """Human-like random delay. 세션의 speed_multiplier 가 적용됨."""
+    mult = _speed_multiplier.get()
+    await asyncio.sleep(random.uniform(min_sec * mult, max_sec * mult))
 
 
-async def type_human(page: Page, selector: str, text: str, paste: bool = False):
-    """Type text with human-like delays.
+def _typing_delay() -> float:
+    """한 글자 입력 사이 간격. 로그노말 분포 (사람의 자연 분포와 흡사).
 
-    Spec 7.5:
-    - 80% clipboard paste, 20% char-by-char
-    - Typing: 50~200ms per char
+    평균 약 120ms, 꼬리가 길어 가끔 300~500ms pause 발생 — 봇의 균등 분포 회피.
+    speed_multiplier 도 적용.
     """
-    el = page.locator(selector)
-    await el.click()
-    await random_delay(1.0, 3.0)  # "thinking"
+    mult = _speed_multiplier.get()
+    # lognormal: mu=-2.2, sigma=0.55 → 평균 ~120ms, 95th ~300ms
+    base = random.lognormvariate(-2.2, 0.55)
+    return max(0.03, min(0.8, base)) * mult
 
-    if paste:
-        # Clipboard paste
-        await page.evaluate(f"navigator.clipboard.writeText({repr(text)})")
-        await page.keyboard.press(f"{_paste_modifier()}+v")
+
+async def type_human(
+    page: Page,
+    selector: str,
+    text: str,
+    paste: bool = False,
+    typing_style: str | None = None,
+):
+    """사람처럼 타이핑. persona.typing_style 전달 시 'paster' 는 clipboard 붙여넣기.
+
+    - 'typist': 한 글자씩 로그노말 간격 (가끔 멍하니 pause, 단어 경계에서 긴 pause)
+    - 'paster': 한번에 클립보드 붙여넣기 (마치 옆 창에서 복사한 것처럼)
+    - paste=True 가 명시되면 typing_style 무시하고 paste
+    """
+    from worker.mouse import human_click as _hc
+
+    el = page.locator(selector).first
+    try:
+        await _hc(el)
+    except Exception:
+        await el.click()
+    await random_delay(0.6, 2.5)  # "thinking"
+
+    # typing_style 명시 안 되면 context 에서 가져옴 (세션 persona 기반)
+    effective_style = typing_style or _typing_style.get()
+    use_paste = paste or (effective_style == "paster")
+
+    if use_paste:
+        # Clipboard paste — fill() 은 instant 라 대신 clipboard API 사용하고
+        # 실제 paste 키 이벤트 발생시킴 (keyup 이벤트 트래킹하는 사이트 대응)
+        try:
+            await page.evaluate(
+                f"navigator.clipboard.writeText({repr(text)})"
+            )
+            await random_delay(0.15, 0.5)
+            await page.keyboard.press(f"{_paste_modifier()}+v")
+        except Exception:
+            # clipboard 권한 없으면 fill 로 폴백
+            await el.fill(text)
     else:
-        # Char-by-char
-        for char in text:
-            await page.keyboard.type(char)
-            await asyncio.sleep(random.uniform(0.05, 0.20))
+        # Char-by-char — 로그노말 간격 + 단어 경계에서 긴 pause + 오타 확률
+        from worker.typo import ADJACENT_KEYS
+        i = 0
+        while i < len(text):
+            ch = text[i]
+            # 간헐적 오타 (5%) — 인접 키 치고 백스페이스로 수정
+            if random.random() < 0.05 and ch in ADJACENT_KEYS:
+                wrong = random.choice(ADJACENT_KEYS[ch])
+                await page.keyboard.type(wrong)
+                await asyncio.sleep(_typing_delay())
+                await page.keyboard.press("Backspace")
+                await asyncio.sleep(random.uniform(0.08, 0.2))
+            await page.keyboard.type(ch)
+            await asyncio.sleep(_typing_delay())
+            # 공백 뒤 (단어 경계) 에서 가끔 긴 "생각" pause
+            if ch == " " and random.random() < 0.1:
+                await asyncio.sleep(random.uniform(0.2, 0.6) * _speed_multiplier.get())
+            i += 1
 
-    await random_delay(0.5, 2.0)  # "re-reading"
+    await random_delay(0.4, 2.0)  # "re-reading"
 
 
 async def scroll_page(page: Page, scrolls: int = 3, direction: str = "down"):
