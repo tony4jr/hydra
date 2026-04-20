@@ -321,6 +321,10 @@ def get_account(account_id: int, db: Session = Depends(get_db)):
         "notes": account.notes,
         "created_at": str(account.created_at),
         "last_active_at": str(account.last_active_at) if account.last_active_at else None,
+        "daily_comment_limit": account.daily_comment_limit,
+        "daily_like_limit": account.daily_like_limit,
+        "weekly_comment_limit": account.weekly_comment_limit,
+        "weekly_like_limit": account.weekly_like_limit,
     }
 
 
@@ -564,6 +568,36 @@ class AccountUpdateInput(BaseModel):
     recovery_email: str | None = None
     phone_number: str | None = None
     notes: str | None = None
+    daily_comment_limit: int | None = None
+    daily_like_limit: int | None = None
+    weekly_comment_limit: int | None = None
+    weekly_like_limit: int | None = None
+
+
+def _apply_limit_updates(account: Account, data: AccountUpdateInput) -> list[str]:
+    """Validate and apply 4 limit fields. Returns list of invalid field names."""
+    invalid = []
+    if data.daily_comment_limit is not None:
+        if data.daily_comment_limit < 0:
+            invalid.append("daily_comment_limit")
+        else:
+            account.daily_comment_limit = data.daily_comment_limit
+    if data.daily_like_limit is not None:
+        if data.daily_like_limit < 0:
+            invalid.append("daily_like_limit")
+        else:
+            account.daily_like_limit = data.daily_like_limit
+    if data.weekly_comment_limit is not None:
+        if data.weekly_comment_limit < 0:
+            invalid.append("weekly_comment_limit")
+        else:
+            account.weekly_comment_limit = data.weekly_comment_limit
+    if data.weekly_like_limit is not None:
+        if data.weekly_like_limit < 0:
+            invalid.append("weekly_like_limit")
+        else:
+            account.weekly_like_limit = data.weekly_like_limit
+    return invalid
 
 
 @router.post("/api/{account_id}/update")
@@ -584,8 +618,49 @@ def update_account(account_id: int, data: AccountUpdateInput, db: Session = Depe
     if data.notes is not None:
         account.notes = data.notes
 
+    invalid = _apply_limit_updates(account, data)
+    if invalid:
+        return {"error": "invalid_limits", "fields": invalid}
+
     db.commit()
     return {"ok": True, "id": account.id}
+
+
+class BulkLimitsInput(BaseModel):
+    account_ids: list[int]
+    daily_comment_limit: int | None = None
+    daily_like_limit: int | None = None
+    weekly_comment_limit: int | None = None
+    weekly_like_limit: int | None = None
+
+
+@router.post("/api/bulk-update-limits")
+def bulk_update_limits(data: BulkLimitsInput, db: Session = Depends(get_db)):
+    """일괄 한도 변경. 지정된 필드만 갱신, None 필드는 유지."""
+    if not data.account_ids:
+        return {"error": "no_accounts"}
+
+    # 검증: 음수 금지
+    for field in ("daily_comment_limit", "daily_like_limit",
+                  "weekly_comment_limit", "weekly_like_limit"):
+        v = getattr(data, field)
+        if v is not None and v < 0:
+            return {"error": "invalid_limits", "fields": [field]}
+
+    accounts = db.query(Account).filter(Account.id.in_(data.account_ids)).all()
+    updated = 0
+    for account in accounts:
+        if data.daily_comment_limit is not None:
+            account.daily_comment_limit = data.daily_comment_limit
+        if data.daily_like_limit is not None:
+            account.daily_like_limit = data.daily_like_limit
+        if data.weekly_comment_limit is not None:
+            account.weekly_comment_limit = data.weekly_comment_limit
+        if data.weekly_like_limit is not None:
+            account.weekly_like_limit = data.weekly_like_limit
+        updated += 1
+    db.commit()
+    return {"ok": True, "updated": updated}
 
 
 @router.post("/api/{account_id}/create-channel")

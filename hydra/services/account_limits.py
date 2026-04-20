@@ -114,9 +114,19 @@ STATUS_RATIOS = {
 }
 
 
+_LIMIT_DEFAULTS = {
+    "daily_comment_limit": 15,
+    "daily_like_limit": 50,
+    "weekly_comment_limit": 70,
+    "weekly_like_limit": 300,
+}
+
+
 def get_effective_limit(account: Account, limit_field: str) -> int:
-    """계정 상태에 따른 실제 한도 계산."""
-    base = getattr(account, limit_field, 15)
+    """계정 상태에 따른 실제 한도 계산. NULL 저장된 레거시 행도 기본값으로 안전 처리."""
+    base = getattr(account, limit_field, None)
+    if base is None:
+        base = _LIMIT_DEFAULTS.get(limit_field, 15)
     ratio = STATUS_RATIOS.get(account.status, 1.0)
     return max(1, int(base * ratio))
 

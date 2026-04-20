@@ -50,3 +50,25 @@ def test_can_execute_task_limit_reached(db):
     allowed, reason = can_execute_task(db, 1, "comment")
     assert allowed is False
     assert reason == "daily_comment_limit"
+
+
+def test_get_effective_limit_handles_null_fields(db):
+    """레거시 행이 NULL 을 가져도 기본값으로 안전하게 계산되는지."""
+    from hydra.services.account_limits import get_effective_limit
+    # Simulate a legacy row with NULL fields
+    acct = Account(gmail="legacy@gmail.com", password="p", status="active")
+    db.add(acct)
+    db.commit()
+    # SQLAlchemy may apply model default; force NULL via direct SQL
+    from sqlalchemy import text
+    db.execute(text(
+        "UPDATE accounts SET daily_comment_limit=NULL, daily_like_limit=NULL, "
+        "weekly_comment_limit=NULL, weekly_like_limit=NULL WHERE id=:id"
+    ), {"id": acct.id})
+    db.commit()
+    db.refresh(acct)
+    # Should not raise
+    assert get_effective_limit(acct, "daily_comment_limit") == 15
+    assert get_effective_limit(acct, "daily_like_limit") == 50
+    assert get_effective_limit(acct, "weekly_comment_limit") == 70
+    assert get_effective_limit(acct, "weekly_like_limit") == 300

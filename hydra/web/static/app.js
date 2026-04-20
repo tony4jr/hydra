@@ -178,6 +178,7 @@ async function renderAccounts(el) {
             <button class="btn btn-primary" onclick="showImportModal()">CSV 가져오기</button>
             <button class="btn btn-outline" onclick="batchProfiles()">일괄 프로필 생성</button>
             <button class="btn btn-outline" onclick="batchPersonas()">일괄 페르소나 배정</button>
+            <button class="btn btn-outline" onclick="showBulkLimitsModal()">일괄 한도 변경</button>
             <button class="btn btn-outline" onclick="showBatchSetup()">일괄 설정</button>
             <button class="btn btn-outline" onclick="showDevices()">디바이스</button>
         </div>
@@ -227,6 +228,22 @@ async function viewAccount(id){
                 <div style="margin-top:8px"><label style="font-size:11px;color:var(--text2)">말투</label><div>${p.speech_style}</div></div>
             </div></div>`:`<div style="margin-top:12px"><button class="btn btn-outline" onclick="doAssignPersona(${a.id})">페르소나 생성</button></div>`}
             ${!a.adspower_profile_id?`<div style="margin-top:8px"><button class="btn btn-outline" onclick="doCreateProfile(${a.id})">AdsPower 프로필 생성</button></div>`:''}
+            <div class="card" style="margin-top:12px"><div class="card-header">활동 한도</div><div class="card-body">
+                ${hint('이 계정 하나에만 적용됩니다. 워밍업/쿨다운 상태는 비율이 자동 적용되니 여기선 기본값만 조정.')}
+                <div class="form-row">
+                    <div class="form-group"><label>일일 댓글</label>
+                        <input type="number" min="0" id="lim-daily-comment" value="${a.daily_comment_limit}"></div>
+                    <div class="form-group"><label>일일 좋아요</label>
+                        <input type="number" min="0" id="lim-daily-like" value="${a.daily_like_limit}"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>주간 댓글</label>
+                        <input type="number" min="0" id="lim-weekly-comment" value="${a.weekly_comment_limit}"></div>
+                    <div class="form-group"><label>주간 좋아요</label>
+                        <input type="number" min="0" id="lim-weekly-like" value="${a.weekly_like_limit}"></div>
+                </div>
+                <button class="btn btn-outline btn-sm" onclick="saveAccountLimits(${a.id})">한도만 저장</button>
+            </div></div>
             <div class="form-group" style="margin-top:16px"><label>상태 변경</label>
                 <select id="new-status">${['registered','profile_set','warmup','active','cooldown','retired'].map(s=>
                     `<option value="${s}" ${s===a.status?'selected':''}>${STATUS_KO[s]}</option>`).join('')}</select></div>
@@ -234,8 +251,83 @@ async function viewAccount(id){
                 <button class="btn btn-outline" onclick="showAccountMetrics(${a.id})">지표</button>
                 <button class="btn btn-outline" onclick="showAccountHistory(${a.id})">이력</button>
                 <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">닫기</button>
-                <button class="btn btn-primary" onclick="updateAccStatus(${a.id})">저장</button></div>
+                <button class="btn btn-primary" onclick="updateAccStatus(${a.id})">상태 저장</button></div>
         </div></div>`;
+}
+
+async function saveAccountLimits(id){
+    const body = {
+        daily_comment_limit: parseInt(document.getElementById('lim-daily-comment').value),
+        daily_like_limit: parseInt(document.getElementById('lim-daily-like').value),
+        weekly_comment_limit: parseInt(document.getElementById('lim-weekly-comment').value),
+        weekly_like_limit: parseInt(document.getElementById('lim-weekly-like').value),
+    };
+    for(const k in body){
+        if(isNaN(body[k]) || body[k] < 0){toast('유효한 한도 값을 입력하세요');return;}
+    }
+    const r = await api(`/accounts/api/${id}/update`, {method:'POST', body});
+    if(r.error){toast('저장 실패: '+r.error);return;}
+    toast('한도 저장됨');
+}
+
+// --- 일괄 한도 변경 ---
+async function showBulkLimitsModal(){
+    // 현재 필터된 목록의 account_id 수집
+    const ids = Array.from(document.querySelectorAll('#acc-tbody tr')).map(tr=>{
+        const btn = tr.querySelector('button[onclick*="viewAccount"]');
+        if(!btn)return null;
+        const m = btn.getAttribute('onclick').match(/viewAccount\((\d+)\)/);
+        return m?parseInt(m[1]):null;
+    }).filter(x=>x!==null);
+    if(ids.length===0){toast('대상 계정이 없습니다');return;}
+    document.getElementById('modal-container').innerHTML=`
+        <div class="modal-overlay show" onclick="if(event.target===this)this.remove()"><div class="modal">
+            <h2 class="modal-title">일괄 한도 변경</h2>
+            ${hint(`현재 목록에 보이는 <strong>${ids.length}개</strong> 계정에 적용됩니다. 비워둔 필드는 유지됩니다.`)}
+            <div class="form-row">
+                <div class="form-group"><label>일일 댓글</label>
+                    <input type="number" min="0" id="bl-daily-comment" placeholder="유지"></div>
+                <div class="form-group"><label>일일 좋아요</label>
+                    <input type="number" min="0" id="bl-daily-like" placeholder="유지"></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>주간 댓글</label>
+                    <input type="number" min="0" id="bl-weekly-comment" placeholder="유지"></div>
+                <div class="form-group"><label>주간 좋아요</label>
+                    <input type="number" min="0" id="bl-weekly-like" placeholder="유지"></div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">취소</button>
+                <button class="btn btn-primary" onclick='applyBulkLimits(${JSON.stringify(ids)})'>${ids.length}개 계정에 적용</button></div>
+        </div></div>`;
+}
+
+async function applyBulkLimits(ids){
+    const parse = (id)=>{
+        const v = document.getElementById(id).value;
+        if(v === '') return null;
+        const n = parseInt(v);
+        return (isNaN(n) || n < 0) ? 'INVALID' : n;
+    };
+    const fields = {
+        daily_comment_limit: parse('bl-daily-comment'),
+        daily_like_limit: parse('bl-daily-like'),
+        weekly_comment_limit: parse('bl-weekly-comment'),
+        weekly_like_limit: parse('bl-weekly-like'),
+    };
+    for(const k in fields){
+        if(fields[k] === 'INVALID'){toast('유효한 숫자를 입력하세요');return;}
+    }
+    const body = {account_ids: ids};
+    let hasAny = false;
+    for(const k in fields){
+        if(fields[k] !== null){body[k] = fields[k]; hasAny = true;}
+    }
+    if(!hasAny){toast('변경할 값을 최소 1개 입력하세요');return;}
+    const r = await api('/accounts/api/bulk-update-limits', {method:'POST', body});
+    if(r.error){toast('실패: '+r.error);return;}
+    toast(`${r.updated}개 계정 한도 변경됨`);
+    document.querySelector('.modal-overlay').remove();
 }
 async function updateAccStatus(id){await api(`/accounts/api/${id}/status?status=${document.getElementById('new-status').value}`,{method:'POST'});toast('변경됨');document.querySelector('.modal-overlay').remove();renderAccounts(document.getElementById('content'));}
 async function doCreateProfile(id){const r=await api(`/accounts/api/${id}/create-profile`,{method:'POST'});toast(r.ok?'생성 완료':r.error);document.querySelector('.modal-overlay').remove();renderAccounts(document.getElementById('content'));}
