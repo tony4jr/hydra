@@ -86,55 +86,84 @@ async def set_primary_video_language(page, lang_display: str = "한국어") -> b
         log.debug(f"account_playback navigation failed: {e}")
         return False
 
-    # "언어 추가 또는 수정" 링크 클릭 → 언어 선택 다이얼로그
+    # "언어 추가 또는 수정" — a[role=button] 구조. 텍스트가 여러 줄에 걸쳐있어
+    # locator has_text 로는 잡히지 않음 → JS 기반으로 클릭.
     try:
-        edit_link = page.locator("a", has_text="언어 추가 또는 수정").first
-        await human_click(edit_link, timeout=6_000)
+        opened = await page.evaluate("""() => {
+          const el = Array.from(document.querySelectorAll('a[role="button"], a, button'))
+            .find(n => (n.innerText||'').includes('언어 추가 또는 수정'));
+          if (!el) return false;
+          el.click();
+          return true;
+        }""")
+        if not opened:
+            log.debug("primary language edit link not found")
+            return False
         await random_delay(2.0, 3.5)
     except Exception as e:
-        log.debug(f"primary language edit link not found: {e}")
+        log.debug(f"primary language edit link click failed: {e}")
         return False
 
-    # 이미 선택됐는지 확인 (대상 언어가 이미 check 상태면 skip)
+    # 다이얼로그는 긴 스크롤 리스트 + 확인 버튼. 검색창 없음.
+    # 대상 언어 row 를 scrollIntoView → label 클릭 (체크박스 토글).
+    # 이미 체크돼있으면 '취소' 로 닫고 성공 리턴.
     try:
-        already = await page.evaluate(
+        state = await page.evaluate(
             """(target) => {
-                const rows = Array.from(document.querySelectorAll('yt-list-item-view-model'));
-                for (const r of rows) {
-                    if ((r.innerText||'').trim() === target) {
-                        const cb = r.querySelector('input[type="checkbox"]');
-                        return cb ? cb.checked : false;
-                    }
-                }
-                return false;
+                const row = Array.from(document.querySelectorAll('yt-list-item-view-model'))
+                    .find(r => (r.innerText||'').trim() === target);
+                if (!row) return 'not_found';
+                row.scrollIntoView({block: 'center'});
+                const cb = row.querySelector('input[type="checkbox"]');
+                if (cb && cb.checked) return 'already';
+                const label = row.querySelector('label');
+                if (label) label.click(); else row.click();
+                return 'clicked';
             }""",
             lang_display,
         )
-        if already:
-            # 이미 선택 — 변경 없이 취소
-            try:
-                await human_click(page.locator("button", has_text="취소").last, timeout=3_000)
-            except Exception:
-                pass
-            log.info(f"primary video language already '{lang_display}' — skip")
-            return True
-    except Exception:
-        pass
-
-    try:
-        search = page.locator("input[placeholder='검색']").first
-        await search.fill(lang_display)
-        await random_delay(1.0, 2.0)
-        # 해당 언어 항목 클릭
-        item = page.locator("yt-list-item-view-model", has_text=lang_display).first
-        await human_click(item, timeout=5_000)
-        await random_delay(0.8, 1.5)
-        # 확인
-        confirm = page.locator("button", has_text="확인").last
-        await human_click(confirm, timeout=5_000)
-        await random_delay(2.5, 4.0)
     except Exception as e:
-        log.warning(f"primary language selection failed: {e}")
+        log.warning(f"primary language row select failed: {e}")
+        return False
+
+    if state == "not_found":
+        log.debug(f"primary language row '{lang_display}' not in list")
+        return False
+
+    if state == "already":
+        try:
+            await page.evaluate("""() => {
+              const dlgs = Array.from(document.querySelectorAll('tp-yt-paper-dialog, ytd-popup-container, [role="dialog"]'))
+                .filter(d => d.offsetParent !== null);
+              for (const d of dlgs) {
+                const btn = Array.from(d.querySelectorAll('button'))
+                  .find(b => b.offsetParent !== null && (b.innerText||'').trim() === '취소');
+                if (btn) { btn.click(); return; }
+              }
+            }""")
+        except Exception:
+            pass
+        log.info(f"primary video language already '{lang_display}' — skip")
+        return True
+
+    await random_delay(0.8, 1.5)
+    try:
+        confirmed = await page.evaluate("""() => {
+          const dlgs = Array.from(document.querySelectorAll('tp-yt-paper-dialog, ytd-popup-container, [role="dialog"]'))
+            .filter(d => d.offsetParent !== null);
+          for (const d of dlgs) {
+            const btn = Array.from(d.querySelectorAll('button'))
+              .find(b => b.offsetParent !== null && (b.innerText||'').trim() === '확인');
+            if (btn) { btn.click(); return true; }
+          }
+          return false;
+        }""")
+        if not confirmed:
+            log.warning("primary language confirm button not found in dialog")
+            return False
+        await random_delay(2.0, 3.5)
+    except Exception as e:
+        log.warning(f"primary language confirm failed: {e}")
         return False
 
     log.info(f"primary video language set to '{lang_display}'")

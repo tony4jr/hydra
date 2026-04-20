@@ -31,7 +31,7 @@ from hydra.core.logger import get_logger
 from worker.channel_actions import (
     pick_avatar_file, rename_channel, set_description, upload_avatar,
 )
-from worker.data_saver import enable_data_saver, set_primary_video_language
+from worker.data_saver import set_primary_video_language
 from worker.google_account import (
     register_otp_authenticator, update_account_name,
 )
@@ -157,16 +157,9 @@ async def run_onboard_session(
         except Exception as e:
             log.warning(f"register_otp_authenticator error: {e}")
 
-    # Data Saver 모드 활성화 — 모바일 데이터 소비 감소 (144p 강제는 탐지 리스크라
-    # 대신 실사용자도 많이 쓰는 "데이터 세이버" 옵션으로 480p 이하 캡)
-    try:
-        if await enable_data_saver(page):
-            result.actions.append("data_saver_on")
-    except Exception as e:
-        log.debug(f"data_saver skipped: {e}")
-
-    # YT 기본 시청 언어를 한국어로 설정 — 같은 /account_playback 페이지 내 "언어" 섹션.
+    # YT 기본 시청 언어를 한국어로 설정 — /account_playback 페이지 "언어" 섹션.
     # Google 추천/자동 번역이 참조하는 언어 선호도. UI 언어와는 별개 설정.
+    # (구 Data Saver 라디오는 YT UI 개편으로 제거됨 → 언어 설정만 수행.)
     try:
         if await set_primary_video_language(page, "한국어"):
             result.actions.append("primary_video_language_ko")
@@ -406,13 +399,14 @@ async def _do_search(page: Page, query: str):
     await page.goto(YOUTUBE_HOME, wait_until="domcontentloaded")
     await random_delay(1.5, 3.0)
 
-    # 검색창 클릭 후 입력
+    # 검색창 클릭 후 입력 — YT UI 개편으로 id 제거. name 속성으로 타겟.
     try:
-        search_input = page.locator("input#search")
+        search_sel = "input[name='search_query']"
+        search_input = page.locator(search_sel)
         await search_input.wait_for(timeout=10_000)
         await human_click(search_input)
         await search_input.fill("")
-        await type_human(page, "input#search", query)
+        await type_human(page, search_sel, query)
         await random_delay(0.5, 1.5)
         await page.keyboard.press("Enter")
         await random_delay(2.0, 4.0)
