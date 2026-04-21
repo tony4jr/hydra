@@ -55,8 +55,7 @@ async def _dismiss_studio_modals(page, max_rounds: int = 5) -> None:
     상단 "2단계 인증 사용..." 경고 배너는 여기서 건드리지 않음 (x 버튼으로 따로 처리
     필요하면 호출자가).
     """
-    # 환영/온보딩 모달이 있는지 감지 — 없으면 아무 작업 안 하고 바로 return (idempotent)
-    dismissed = False
+    # 1) "환영" 모달 처리 — 모달 바깥 1회 click 으로 닫힘. 다시 뜨면 또 클릭.
     for _ in range(max_rounds):
         has_welcome = False
         try:
@@ -70,30 +69,49 @@ async def _dismiss_studio_modals(page, max_rounds: int = 5) -> None:
             }""")
         except Exception:
             pass
-
         if not has_welcome:
             break
-
-        # 모달 바깥 한 지점 좌표 (왼쪽 위). slow-click 2Hz 4회.
         try:
-            await page.mouse.move(60, 300)
-            for _ in range(4):
-                await page.mouse.click(60, 300, delay=random.randint(40, 120))
-                await asyncio.sleep(0.5)
+            # 모달 바깥 좌측 상단 (60, 300) — 안전 좌표. 1회 클릭.
+            await page.mouse.click(60, 300, delay=random.randint(40, 100))
+            log.info("studio: welcome dismissed (bg click)")
         except Exception:
             pass
-        dismissed = True
-        await random_delay(0.8, 1.4)
+        await random_delay(1.2, 2.0)
 
-    # 실제 dismiss 한 경우에만 reload (잔여 툴팁 정리). 모달 없던 경우 reload 불필요 —
-    # 반복 호출 시 페이지 상태를 망가뜨리지 않음.
-    if dismissed:
-        try:
-            await page.reload(wait_until="domcontentloaded", timeout=15_000)
-            await random_delay(3.0, 4.5)
-            log.info("studio: welcome dismissed + reloaded")
-        except Exception as e:
-            log.debug(f"studio reload err: {e}")
+    # 2) "팀 성장시키기" 툴팁 X 버튼 닫기 (있으면)
+    try:
+        closed = await page.evaluate("""() => {
+          // 툴팁 텍스트 '팀 성장시키기' 를 포함한 컨테이너 내부의 닫기 버튼 찾기
+          const all = Array.from(document.querySelectorAll('*')).filter(el => {
+            if (el.offsetParent === null) return false;
+            const t = (el.innerText || '').trim();
+            return t.startsWith('팀 성장시키기') && t.length < 200;
+          });
+          for (const host of all) {
+            // 내부 X 닫기 버튼 탐색
+            const btn = host.querySelector(
+              'button[aria-label*="닫기"], button[aria-label*="Close"], ' +
+              'yt-icon-button[aria-label*="닫기"], yt-icon-button[aria-label*="Close"], ' +
+              'button.close, tp-yt-paper-icon-button[icon*="close"]'
+            );
+            if (btn) { btn.click(); return 'closed'; }
+            // aria-label 기반 icon button 시도
+            const iconBtns = host.querySelectorAll('button, yt-icon-button, tp-yt-paper-icon-button');
+            for (const b of iconBtns) {
+              const a = (b.getAttribute('aria-label') || '').toLowerCase();
+              if (a.includes('닫기') || a.includes('close') || a.includes('dismiss')) {
+                b.click(); return 'closed_via_icon';
+              }
+            }
+          }
+          return 'no_tooltip';
+        }""")
+        if closed and closed != "no_tooltip":
+            log.info(f"studio: team tooltip {closed}")
+            await random_delay(0.5, 1.0)
+    except Exception:
+        pass
 
     # 고아 backdrop 강제 제거 — 이후 input 클릭 가로막지 않게.
     try:
@@ -129,7 +147,7 @@ async def _enter_customization(page) -> bool:
         }""")
     except Exception:
         pass
-    await random_delay(3.0, 4.5)
+    await random_delay(3.0, 5.0)
     return "editing" in page.url
 
 
@@ -490,6 +508,186 @@ async def change_handle(page, desired_handle: str, channel_id: str | None = None
         return False
 
 
+async def set_channel_profile(
+    page, channel_name: str, desired_handle: str,
+    channel_id: str | None = None,
+) -> tuple[bool, bool]:
+    """이름 + 핸들 한 번에 수정 후 publish 1회.
+
+    맞춤설정 페이지 진입 → 스크롤로 이름/핸들 input 노출 → 둘 다 변경 → publish.
+
+    반환: (name_ok, handle_ok). publish 한 번으로 둘 다 서버 반영 시도.
+    """
+    if not channel_name or not desired_handle:
+        return False, False
+
+    if not channel_id:
+        channel_id = await _resolve_channel_id(page)
+        if not channel_id:
+            log.warning("set_channel_profile: could not resolve channel_id")
+            return False, False
+
+    # 맞춤설정 진입
+    try:
+        await page.goto("https://studio.youtube.com/", wait_until="domcontentloaded")
+        await random_delay(3.0, 5.0)
+        await _dismiss_studio_modals(page)
+        await _enter_customization(page)
+    except Exception as e:
+        log.warning(f"set_channel_profile: enter settings failed: {e}")
+        return False, False
+
+    name_input = page.locator("ytcp-channel-editing-channel-name input").first
+    handle_input = page.locator("input[placeholder='핸들 설정']").first
+    try:
+        await name_input.wait_for(timeout=10_000)
+        await handle_input.wait_for(timeout=10_000)
+    except Exception as e:
+        log.warning(f"set_channel_profile: inputs not visible: {e}")
+        return False, False
+
+    # 스크롤로 이름/핸들 노출 (해상도 낮을 때)
+    try:
+        await page.mouse.wheel(0, random.randint(300, 500))
+        await random_delay(0.3, 0.7)
+    except Exception:
+        pass
+    try:
+        await handle_input.scroll_into_view_if_needed(timeout=5_000)
+    except Exception:
+        pass
+    await random_delay(0.5, 1.0)
+
+    # --- 이름 변경 ---
+    cur_name = (await name_input.input_value()) or ""
+    need_name = cur_name.strip() != channel_name.strip()
+    if need_name:
+        try:
+            await name_input.scroll_into_view_if_needed(timeout=5_000)
+            await name_input.click(click_count=3)
+            await random_delay(0.2, 0.4)
+            await page.keyboard.press("Delete")
+            await random_delay(0.3, 0.6)
+            await page.keyboard.type(channel_name, delay=random.randint(60, 140))
+            await random_delay(0.6, 1.2)
+            actual = (await name_input.input_value()) or ""
+            if actual.strip() != channel_name.strip():
+                log.warning(
+                    f"set_channel_profile: name typed but value mismatch — "
+                    f"wanted='{channel_name}' actual='{actual[:30]}'"
+                )
+                need_name = False  # 다음 단계 진행은 하되 name 은 실패로 처리
+        except Exception as e:
+            log.warning(f"set_channel_profile: name type err: {e}")
+            need_name = False
+
+    # --- 핸들 변경 ---
+    cur_handle = (await handle_input.input_value()) or ""
+    need_handle = not cur_handle.lower().startswith(desired_handle.lower())
+    handle_success_val = None
+    if need_handle:
+        try:
+            await handle_input.scroll_into_view_if_needed(timeout=5_000)
+            await handle_input.click(click_count=3)
+            await random_delay(0.2, 0.4)
+            await page.keyboard.press("Delete")
+            await random_delay(0.3, 0.6)
+            await page.keyboard.type(desired_handle, delay=random.randint(60, 140))
+            await random_delay(0.4, 0.8)
+            # Enter 로 validation 유발 (추천 anchor 렌더)
+            try:
+                await page.keyboard.press("Enter")
+            except Exception:
+                pass
+            await random_delay(2.0, 3.0)
+
+            pub = page.locator("ytcp-button#publish-button button").first
+            dis = await pub.get_attribute("disabled")
+            aria_dis = await pub.get_attribute("aria-disabled")
+            enabled = (dis is None and aria_dis != "true")
+
+            if enabled:
+                handle_success_val = desired_handle
+            else:
+                # 추천 anchor 대기 + 클릭
+                try:
+                    await page.wait_for_selector(
+                        'ytcp-anchor.YtcpChannelEditingChannelHandleSuggestedHandleAnchor',
+                        timeout=8_000,
+                    )
+                except Exception:
+                    pass
+                suggested = await page.evaluate("""() => {
+                  const a = document.querySelector('ytcp-anchor.YtcpChannelEditingChannelHandleSuggestedHandleAnchor');
+                  if (!a) return null;
+                  const t = (a.innerText||'').trim();
+                  a.click();
+                  return t;
+                }""")
+                if not suggested:
+                    log.warning("set_channel_profile: handle unavailable + no suggestion")
+                else:
+                    await random_delay(1.5, 2.5)
+                    pub_dis = await pub.get_attribute("disabled")
+                    pub_aria = await pub.get_attribute("aria-disabled")
+                    if pub_dis is None and pub_aria != "true":
+                        handle_success_val = (await handle_input.input_value()) or suggested.lstrip("@")
+                    else:
+                        log.warning(
+                            f"set_channel_profile: suggestion {suggested!r} clicked but publish disabled"
+                        )
+        except Exception as e:
+            log.warning(f"set_channel_profile: handle type err: {e}")
+
+    # --- publish (1 번만) ---
+    pub = page.locator("ytcp-button#publish-button button").first
+    pub_dis = await pub.get_attribute("disabled")
+    pub_aria = await pub.get_attribute("aria-disabled")
+    if pub_dis is not None or pub_aria == "true":
+        log.warning("set_channel_profile: publish still disabled — nothing to publish")
+        # 이미 둘 다 타겟이면 publish 불필요. 검증 후 결과 반환.
+    else:
+        try:
+            await human_click(pub, timeout=5_000)
+        except Exception:
+            await pub.click(timeout=5_000)
+        await random_delay(2.5, 4.0)
+        # 확인 모달 처리
+        try:
+            await page.evaluate("""() => {
+              const dlgs = Array.from(document.querySelectorAll('tp-yt-paper-dialog, ytcp-dialog, [role="dialog"]'))
+                .filter(d => d.offsetParent !== null && (d.innerText||'').trim());
+              for (const d of dlgs) {
+                const btn = Array.from(d.querySelectorAll('button'))
+                  .find(b => b.offsetParent !== null && ['확인','게시','OK','저장'].includes((b.innerText||'').trim()));
+                if (btn) btn.click();
+              }
+            }""")
+            await random_delay(2.0, 3.5)
+        except Exception:
+            pass
+
+    # --- reload + 검증 ---
+    name_ok = True
+    handle_ok = True
+    try:
+        await page.reload(wait_until="domcontentloaded")
+        await random_delay(3.0, 5.0)
+        await _enter_customization(page)
+        final_name = (await page.locator("ytcp-channel-editing-channel-name input").first.input_value()) or ""
+        final_handle = (await page.locator("input[placeholder='핸들 설정']").first.input_value()) or ""
+        name_ok = final_name.strip() == channel_name.strip()
+        handle_ok = final_handle.lower().startswith(desired_handle.lower())
+        log.info(
+            f"set_channel_profile verify: name={final_name!r} handle={final_handle!r} "
+            f"name_ok={name_ok} handle_ok={handle_ok}"
+        )
+    except Exception as e:
+        log.warning(f"set_channel_profile verify err: {e}")
+
+    return name_ok, handle_ok
+
+
 async def set_description(page, description: str, channel_id: str | None = None) -> bool:
     """채널 설명 설정 (비어있으면 pass).
 
@@ -604,7 +802,7 @@ async def upload_avatar(page, avatar_path: str, channel_id: str | None = None) -
     for attempt in range(3):
         try:
             await page.goto("https://studio.youtube.com/", wait_until="domcontentloaded")
-            await random_delay(3.0, 4.5)
+            await random_delay(3.0, 5.0)
             real_src = await page.evaluate("""() => {
               const candidates = [
                 document.querySelector('#avatar-btn img'),

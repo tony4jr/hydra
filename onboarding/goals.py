@@ -213,62 +213,47 @@ async def _read_studio_inputs(page) -> dict:
     return {"name": (name or "").strip(), "handle": (handle or "").strip()}
 
 
-class ChannelNameGoal:
-    name = "channel_name"
+class ChannelProfileGoal:
+    """이름 + 핸들 한 번에 수정 후 publish 1회 (맞춤설정 단일 진입).
+
+    required=True — 둘 중 하나라도 실패하면 goal failed.
+    """
+    name = "channel_profile"
     required = True
 
     async def detect(self, page, acct) -> State:
         import json as _json
         persona = _json.loads(acct.persona) if acct.persona else {}
-        target = (persona.get("channel_plan") or {}).get("title", "").strip()
-        if not target:
+        cp = persona.get("channel_plan") or {}
+        title = (cp.get("title") or "").strip()
+        handle = (cp.get("handle") or "").strip()
+        if not title or not handle:
             return "blocked"
         try:
             cur = await _read_studio_inputs(page)
-            return "done" if cur["name"] == target else "not_done"
+            name_ok = cur["name"] == title
+            handle_ok = cur["handle"].lower().startswith(handle.lower())
+            return "done" if (name_ok and handle_ok) else "not_done"
         except Exception:
             return "not_done"
 
     async def apply(self, page, acct) -> ApplyResult:
+        from worker.channel_actions import set_channel_profile
         import json as _json
         persona = _json.loads(acct.persona) if acct.persona else {}
-        target = (persona.get("channel_plan") or {}).get("title", "").strip()
-        if not target:
+        cp = persona.get("channel_plan") or {}
+        title = (cp.get("title") or "").strip()
+        handle = (cp.get("handle") or "").strip()
+        if not title or not handle:
             return "blocked"
         try:
-            return "done" if await rename_channel(page, target) else "failed"
-        except Exception as e:
-            log.warning(f"channel_name apply err: {e}")
+            name_ok, handle_ok = await set_channel_profile(page, title, handle)
+            if name_ok and handle_ok:
+                return "done"
+            log.warning(f"channel_profile partial: name_ok={name_ok} handle_ok={handle_ok}")
             return "failed"
-
-
-class ChannelHandleGoal:
-    """현재 핸들이 target 으로 시작하면 done (예: 'roaster91-x6p' 는 'roaster91' 로 시작)."""
-    name = "channel_handle"
-    required = False
-
-    async def detect(self, page, acct) -> State:
-        import json as _json
-        persona = _json.loads(acct.persona) if acct.persona else {}
-        target = (persona.get("channel_plan") or {}).get("handle", "").strip()
-        if not target:
-            return "blocked"
-        try:
-            cur = await _read_studio_inputs(page)
-            return "done" if cur["handle"].lower().startswith(target.lower()) else "not_done"
-        except Exception:
-            return "not_done"
-
-    async def apply(self, page, acct) -> ApplyResult:
-        import json as _json
-        persona = _json.loads(acct.persona) if acct.persona else {}
-        target = (persona.get("channel_plan") or {}).get("handle", "").strip()
-        if not target:
-            return "blocked"
-        try:
-            return "done" if await change_handle(page, target) else "failed"
         except Exception as e:
-            log.warning(f"channel_handle apply err: {e}")
+            log.warning(f"channel_profile apply err: {e}")
             return "failed"
 
 
@@ -425,8 +410,7 @@ ALL_GOALS: list[Goal] = [
     VideoLangKoGoal(),
     NaturalBrowsingGoal(),   # YT 자연 탐색 — 봇 패턴 회피
     IdentityChallengeGoal(),
-    ChannelNameGoal(),
-    ChannelHandleGoal(),
+    ChannelProfileGoal(),
     AvatarGoal(),
     FinalizeWarmupGoal(),
 ]

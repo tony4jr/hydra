@@ -17,7 +17,7 @@ REQUIRED_GOALS = frozenset([
     "ui_lang_ko",
     "display_name",
     "identity_challenge",
-    "channel_name",
+    "channel_profile",  # name + handle 통합
 ])
 
 

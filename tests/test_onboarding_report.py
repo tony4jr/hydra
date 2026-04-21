@@ -19,7 +19,7 @@ def test_report_add_and_summarize():
 
 def test_report_overall_ok_when_required_all_done():
     r = Report(account_id=1)
-    for g in ("login", "ui_lang_ko", "display_name", "identity_challenge", "channel_name"):
+    for g in ("login", "ui_lang_ko", "display_name", "identity_challenge", "channel_profile"):
         r.add(g, GoalStatus.DONE)
-    r.add("channel_handle", GoalStatus.FAILED, reason="14day limit")
+    r.add("avatar", GoalStatus.FAILED, reason="upload failed")
     assert r.overall_ok() is True
