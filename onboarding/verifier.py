@@ -69,15 +69,20 @@ async def verify_account(account_id: int, *, rotate_ip: bool = True) -> Report:
             # Phase gap — 계정당 goal 간 5~12초 대기 (자연스러움 + YT throttle 회피)
             await asyncio.sleep(random.uniform(PHASE_GAP_MIN, PHASE_GAP_MAX))
 
+            log.info(f"[{goal.name}] detect start — url={page.url[:120]}")
+
             # detect
             try:
                 state = await goal.detect(page, acct)
             except Exception as e:
+                log.warning(f"[{goal.name}] detect EXCEPTION at url={page.url[:120]} — {e}")
                 if _connection_error(e):
                     report.error(goal.name, f"detect disconnected: {e}")
                     break
                 report.error(goal.name, f"detect: {e}")
                 continue
+
+            log.info(f"[{goal.name}] detect={state} — url={page.url[:120]}")
 
             if state == "done":
                 report.skip(goal.name, "already done")
@@ -86,15 +91,20 @@ async def verify_account(account_id: int, *, rotate_ip: bool = True) -> Report:
                 report.skip(goal.name, "precondition")
                 continue
 
+            log.info(f"[{goal.name}] apply start — url={page.url[:120]}")
+
             # apply
             try:
                 result = await goal.apply(page, acct)
             except Exception as e:
+                log.warning(f"[{goal.name}] apply EXCEPTION at url={page.url[:120]} — {e}")
                 if _connection_error(e):
                     report.error(goal.name, f"apply disconnected: {e}")
                     break
                 report.error(goal.name, f"apply: {e}")
                 continue
+
+            log.info(f"[{goal.name}] apply={result} — url={page.url[:120]}")
 
             report.add(goal.name, GoalStatus(result))
 
