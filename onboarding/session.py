@@ -96,17 +96,10 @@ async def open_session(acct, *, rotate: bool = True) -> Session:
         # dialog 자동 accept
         work.on("dialog", lambda d: asyncio.create_task(d.accept()))
 
-        # 이후 자동 열리는 잉여 탭 close (911panel 2FA 탭은 자체 close 됨)
-        def _close_extra(new_pg):
-            async def _do():
-                try:
-                    if new_pg is not work:
-                        await asyncio.sleep(0.5)
-                        await new_pg.close()
-                except Exception:
-                    pass
-            asyncio.create_task(_do())
-        ctx.on("page", _close_extra)
+        # 주의: ctx.on("page") 로 잉여 탭 auto-close 하던 로직 의도적 제거.
+        # 이유: 911panel 2FA 탭을 우리가 의도적으로 열면 auto-close 가 0.5초 후
+        # 닫아서 fetch_2fa_code 의 page.goto 가 ERR_ABORTED. 초기 탭 정리만 하고
+        # 이후 탭은 호출자가 명시적으로 관리.
 
         return Session(
             profile_id=acct.adspower_profile_id,
