@@ -55,14 +55,14 @@ async def _dismiss_studio_modals(page, max_rounds: int = 5) -> None:
     상단 "2단계 인증 사용..." 경고 배너는 여기서 건드리지 않음 (x 버튼으로 따로 처리
     필요하면 호출자가).
     """
-    # 환영/온보딩 모달이 있는지 감지
+    # 환영/온보딩 모달이 있는지 감지 — 없으면 아무 작업 안 하고 바로 return (idempotent)
+    dismissed = False
     for _ in range(max_rounds):
         has_welcome = False
         try:
             has_welcome = await page.evaluate("""() => {
               const dlgs = Array.from(document.querySelectorAll('tp-yt-paper-dialog, ytcp-dialog, [role="dialog"]'))
                 .filter(d => d.offsetParent !== null && (d.innerText||'').trim());
-              // 환영/시작하기/탐색 안내 타입
               return dlgs.some(d => {
                 const t = (d.innerText||'');
                 return t.includes('환영') || t.includes('Welcome') || t.includes('시작하기') || t.includes('Get started');
@@ -74,24 +74,26 @@ async def _dismiss_studio_modals(page, max_rounds: int = 5) -> None:
         if not has_welcome:
             break
 
-        # 모달 바깥 한 지점 좌표 구하기 (모달 박스 오프셋 회피 — 왼쪽 위 가까이)
+        # 모달 바깥 한 지점 좌표 (왼쪽 위). slow-click 2Hz 4회.
         try:
             await page.mouse.move(60, 300)
-            # 초당 2번 천천히 클릭 (딸깍, 딸깍)
             for _ in range(4):
                 await page.mouse.click(60, 300, delay=random.randint(40, 120))
-                await asyncio.sleep(0.5)  # 2 Hz
+                await asyncio.sleep(0.5)
         except Exception:
             pass
+        dismissed = True
         await random_delay(0.8, 1.4)
 
-    # 잔여 툴팁 (사이드바 '팀 성장시키기' 등) 은 reload 로 제거.
-    try:
-        await page.reload(wait_until="domcontentloaded", timeout=15_000)
-        await random_delay(3.0, 4.5)
-        log.info("studio: welcome dismissed + reloaded")
-    except Exception as e:
-        log.debug(f"studio reload err: {e}")
+    # 실제 dismiss 한 경우에만 reload (잔여 툴팁 정리). 모달 없던 경우 reload 불필요 —
+    # 반복 호출 시 페이지 상태를 망가뜨리지 않음.
+    if dismissed:
+        try:
+            await page.reload(wait_until="domcontentloaded", timeout=15_000)
+            await random_delay(3.0, 4.5)
+            log.info("studio: welcome dismissed + reloaded")
+        except Exception as e:
+            log.debug(f"studio reload err: {e}")
 
     # 고아 backdrop 강제 제거 — 이후 input 클릭 가로막지 않게.
     try:
