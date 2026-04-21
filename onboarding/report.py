@@ -26,8 +26,8 @@ class Report:
     account_id: int
     entries: list[dict] = field(default_factory=list)
 
-    def add(self, goal: str, status: GoalStatus, *, reason: str | None = None):
-        self.entries.append({"goal": goal, "status": str(status), "reason": reason})
+    def add(self, goal: str, status: GoalStatus, *, reason: str | None = None) -> None:
+        self.entries.append({"goal": goal, "status": status.value, "reason": reason})
 
     def skip(self, goal: str, reason: str = ""):
         self.add(goal, GoalStatus.SKIPPED, reason=reason or None)
@@ -40,8 +40,6 @@ class Report:
 
     def overall_ok(self) -> bool:
         """필수 goal 이 모두 done/skipped 이면 True."""
-        for e in self.entries:
-            if e["goal"] in REQUIRED_GOALS and e["status"] not in ("done", "skipped"):
-                return False
-        done_or_skipped = {e["goal"] for e in self.entries if e["status"] in ("done", "skipped")}
-        return REQUIRED_GOALS.issubset(done_or_skipped)
+        good = {GoalStatus.DONE.value, GoalStatus.SKIPPED.value}
+        done = {e["goal"] for e in self.entries if e["status"] in good}
+        return REQUIRED_GOALS.issubset(done)
