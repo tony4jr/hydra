@@ -148,16 +148,10 @@ class VideoLangKoGoal:
     required = False
 
     async def detect(self, page, acct) -> State:
-        try:
-            await page.goto("https://www.youtube.com/account_playback",
-                            wait_until="domcontentloaded", timeout=20_000)
-            ok = await page.evaluate("""() => {
-              const t = document.body.innerText || '';
-              return /기본 언어[\\s\\S]{0,120}한국어/.test(t);
-            }""")
-            return "done" if ok else "not_done"
-        except Exception:
-            return "not_done"
+        # /account_playback 본문에는 선택된 언어가 표시되지 않음 (다이얼로그 내부).
+        # apply 의 set_primary_video_language 가 자체 idempotent — 이미 선택됐으면
+        # 내부에서 skip 하고 True 리턴. 따라서 detect 는 항상 not_done.
+        return "not_done"
 
     async def apply(self, page, acct) -> ApplyResult:
         try:
