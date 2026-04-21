@@ -13,8 +13,8 @@ from onboarding.session import open_session
 
 log = get_logger("onboarding.verifier")
 
-PHASE_GAP_MIN = 5.0
-PHASE_GAP_MAX = 12.0
+PHASE_GAP_MIN = 3.0
+PHASE_GAP_MAX = 7.0
 
 
 def _connection_error(e: BaseException) -> bool:
