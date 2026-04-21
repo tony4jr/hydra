@@ -79,36 +79,39 @@ async def _dismiss_studio_modals(page, max_rounds: int = 5) -> None:
             pass
         await random_delay(1.2, 2.0)
 
-    # 2) "팀 성장시키기" 툴팁 X 버튼 닫기 (있으면)
+    # 2) "팀 성장시키기" 등 feature-discovery 툴팁 X 버튼 클릭 (여러 개 있을 수 있음)
+    # 핵심 selector: ytcp-feature-discovery-callout 내부의 close-icon-button
+    # (aria-label="닫기" / "Close"). 해상도 무관. 여러 툴팁 있을 수 있으니 루프.
     try:
-        closed = await page.evaluate("""() => {
-          // 툴팁 텍스트 '팀 성장시키기' 를 포함한 컨테이너 내부의 닫기 버튼 찾기
-          const all = Array.from(document.querySelectorAll('*')).filter(el => {
-            if (el.offsetParent === null) return false;
-            const t = (el.innerText || '').trim();
-            return t.startsWith('팀 성장시키기') && t.length < 200;
-          });
-          for (const host of all) {
-            // 내부 X 닫기 버튼 탐색
-            const btn = host.querySelector(
-              'button[aria-label*="닫기"], button[aria-label*="Close"], ' +
-              'yt-icon-button[aria-label*="닫기"], yt-icon-button[aria-label*="Close"], ' +
-              'button.close, tp-yt-paper-icon-button[icon*="close"]'
-            );
-            if (btn) { btn.click(); return 'closed'; }
-            // aria-label 기반 icon button 시도
-            const iconBtns = host.querySelectorAll('button, yt-icon-button, tp-yt-paper-icon-button');
-            for (const b of iconBtns) {
+        closed_count = await page.evaluate("""() => {
+          let count = 0;
+          // 1) 정확한 close-icon-button 매칭
+          const closes = Array.from(document.querySelectorAll(
+            'ytcp-feature-discovery-callout ytcp-icon-button.close-icon-button, ' +
+            'ytcp-feature-discovery-callout button.close-icon-button'
+          ));
+          for (const c of closes) {
+            const r = c.getBoundingClientRect();
+            if (r.width > 0 && r.height > 0) { c.click(); count++; }
+          }
+          // 2) aria-label 기반 fallback — callout 내 모든 icon button 중 닫기 라벨
+          if (count === 0) {
+            const btns = Array.from(document.querySelectorAll(
+              'ytcp-feature-discovery-callout ytcp-icon-button, ' +
+              'ytcp-feature-discovery-callout button'
+            ));
+            for (const b of btns) {
               const a = (b.getAttribute('aria-label') || '').toLowerCase();
-              if (a.includes('닫기') || a.includes('close') || a.includes('dismiss')) {
-                b.click(); return 'closed_via_icon';
+              if (a === '닫기' || a === 'close' || a === 'dismiss') {
+                const r = b.getBoundingClientRect();
+                if (r.width > 0 && r.height > 0) { b.click(); count++; }
               }
             }
           }
-          return 'no_tooltip';
+          return count;
         }""")
-        if closed and closed != "no_tooltip":
-            log.info(f"studio: team tooltip {closed}")
+        if closed_count:
+            log.info(f"studio: {closed_count} feature-discovery tooltip(s) closed")
             await random_delay(0.5, 1.0)
     except Exception:
         pass
