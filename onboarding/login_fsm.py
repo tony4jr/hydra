@@ -56,16 +56,33 @@ async def _submit_recovery_code(page, acct):
     from worker.mail_911panel import fetch_2fa_code
     if not acct.recovery_email:
         raise RuntimeError("no recovery_email in DB")
-    mail_page = await page.context.new_page()
-    try:
-        code = await fetch_2fa_code(mail_page, acct.recovery_email)
-    finally:
+
+    # 911panel 탭 오픈 + 코드 추출 — 네트워크 블립 (net::ERR_ABORTED) 대응 위해 최대 3회 재시도
+    code = None
+    last_err = None
+    for attempt in range(3):
+        mail_page = None
         try:
-            await mail_page.close()
-        except Exception:
-            pass
+            mail_page = await page.context.new_page()
+            code = await fetch_2fa_code(mail_page, acct.recovery_email)
+            if code:
+                break
+            last_err = "no code received"
+        except Exception as e:
+            last_err = str(e)
+            log.warning(f"fetch_2fa_code attempt {attempt+1} failed: {e}")
+        finally:
+            if mail_page is not None:
+                try:
+                    await mail_page.close()
+                except Exception:
+                    pass
+        if attempt < 2:
+            await asyncio.sleep(3)  # backoff
+
     if not code:
-        raise RuntimeError("911panel: no code")
+        raise RuntimeError(f"911panel: no code after retries ({last_err})")
+
     await page.bring_to_front()
     await page.locator(S.RECOVERY_CODE_INPUT).first.wait_for(timeout=15_000)
     await type_human(page, "input[name='Pin']", code, typing_style="typist")
