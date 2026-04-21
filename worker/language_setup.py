@@ -82,9 +82,22 @@ async def ensure_korean_language(page: Page, timeout_ms: int = 30_000) -> bool:
     await random_delay(1.0, 2.0)
 
     # Step 2: 언어 검색 입력
+    # ID 는 Google 빌드마다 변함 (`#c1`, `#c3` 등). 편집 다이얼로그엔 text input 1개만
+    # 있으므로 visible text input 중 첫 번째를 잡는다.
+    search_sel = "tp-yt-paper-dialog input[type='text']:visible, [role='dialog'] input[type='text']:visible, input[type='text']:visible"
     try:
-        await page.locator("input#c1").wait_for(timeout=timeout_ms)
-        await type_human(page, "input#c1", TARGET_LANG_NAME)
+        # Playwright 의 :visible 은 지원 안 되므로 locator.first 로 조합
+        search_inp = page.locator(
+            "tp-yt-paper-dialog input[type='text'], [role='dialog'] input[type='text']"
+        ).first
+        await search_inp.wait_for(state="visible", timeout=timeout_ms)
+        # type_human 은 selector 문자열을 받으므로 고유한 것을 동적으로 id 로 잡음
+        el_id = await search_inp.evaluate("el => el.id")
+        if el_id:
+            selector = f"input#{el_id}"
+        else:
+            selector = "tp-yt-paper-dialog input[type='text']"
+        await type_human(page, selector, TARGET_LANG_NAME)
     except Exception as e:
         log.error(f"Search input not ready: {e}")
         return False
