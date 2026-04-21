@@ -48,7 +48,8 @@ async def _dismiss_studio_modals(page, max_rounds: int = 5) -> None:
     """YT Studio 첫 진입 시 뜨는 차단형 다이얼로그 닫기.
 
     YT Studio 의 첫 방문자 온보딩 위자드는 여러 단계 모달로 구성 — 한 번 닫아도
-    다음 단계 모달이 뜰 수 있어 최대 max_rounds 회 반복.
+    다음 단계 모달이 뜰 수 있어 최대 max_rounds 회 반복. 마지막엔 고아로 남은
+    iron-overlay-backdrop 도 강제 제거해 후속 input 클릭을 가로막지 않게 함.
     """
     modal_buttons = [
         "계속", "Continue",
@@ -56,6 +57,7 @@ async def _dismiss_studio_modals(page, max_rounds: int = 5) -> None:
         "다음", "Next",
         "확인", "OK",
         "건너뛰기", "Skip",
+        "닫기", "Close",
     ]
     for _ in range(max_rounds):
         clicked_any = False
@@ -64,6 +66,7 @@ async def _dismiss_studio_modals(page, max_rounds: int = 5) -> None:
                 btn = page.locator(
                     f"tp-yt-paper-dialog ytcp-button:has-text('{txt}'), "
                     f"tp-yt-paper-dialog button:has-text('{txt}'), "
+                    f"ytcp-channel-settings-dialog button:has-text('{txt}'), "
                     f"[role='dialog'] button:has-text('{txt}')"
                 ).first
                 if await btn.is_visible(timeout=1200):
@@ -76,6 +79,46 @@ async def _dismiss_studio_modals(page, max_rounds: int = 5) -> None:
                 pass
         if not clicked_any:
             break  # 더 이상 닫을 모달 없음
+
+    # 고아 backdrop 강제 제거 — 모달은 닫혔지만 overlay-backdrop 이 남아 pointer
+    # 이벤트를 intercept 하는 케이스 대응. Playwright.click 이 "backdrop intercepts"
+    # 타임아웃 내는 상황 방지.
+    try:
+        await page.evaluate("""() => {
+          document.querySelectorAll('tp-yt-iron-overlay-backdrop.opened, tp-yt-iron-overlay-backdrop[opened]')
+            .forEach(b => b.remove());
+        }""")
+    except Exception:
+        pass
+
+
+async def _enter_customization(page) -> bool:
+    """Studio 사이드바에서 '맞춤설정' 진입. 낮은 해상도면 항목이 접혀있어 scroll
+    필요. 짧은 텍스트('설정') 오매칭 방지를 위해 exact-match + path 속성 우선.
+
+    반환: /editing/profile 로 착지 확인 시 True.
+    """
+    try:
+        await page.evaluate("""() => {
+          const items = Array.from(document.querySelectorAll(
+            'a, ytcp-navigation-drawer-entry'
+          )).filter(n => n.offsetParent !== null);
+          // 1) path 기반 우선 (YT 가 drawer entry 에 path 속성 부여)
+          let hit = items.find(n => (n.getAttribute('path') || '').includes('editing'));
+          // 2) 정확 텍스트 매칭 — trim 만, substring 말고
+          if (!hit) hit = items.find(n => (n.innerText||'').trim() === '맞춤설정');
+          // 3) aria-label 매칭
+          if (!hit) hit = items.find(n => (n.getAttribute('aria-label') || '') === '맞춤설정');
+          if (hit) {
+            hit.scrollIntoView({block: 'center'});
+            hit.click();
+          }
+        }""")
+    except Exception:
+        pass
+    await random_delay(3.0, 4.5)
+    return "editing" in page.url
+
 
 AVATARS_ROOT = Path(__file__).resolve().parent.parent / "data" / "avatars"
 
@@ -131,13 +174,16 @@ async def rename_channel(page, channel_name: str, channel_id: str | None = None)
             log.warning("rename_channel: could not resolve channel_id")
             return False
 
-    await page.goto(
-        f"https://studio.youtube.com/channel/{channel_id}/editing/profile",
-        wait_until="domcontentloaded",
-    )
-    await random_delay(2.5, 4.5)
-    # 첫 진입 시 차단형 온보딩 모달이 뜰 수 있음 — 먼저 닫고 시작
-    await _dismiss_studio_modals(page)
+    # 맞춤설정 페이지 진입 — `/editing/profile` 직접 goto 는 Studio 가 종종 대시보드로
+    # 리다이렉트 시켜 버튼/input 이 로드되지 않음. 사이드바 '맞춤설정' 클릭이 안정적.
+    try:
+        await page.goto("https://studio.youtube.com/", wait_until="domcontentloaded")
+        await random_delay(3.0, 5.0)
+        await _dismiss_studio_modals(page)
+        await _enter_customization(page)
+    except Exception as e:
+        log.warning(f"rename_channel: enter settings failed: {e}")
+        return False
 
     try:
         # 현재 UI: ytcp-channel-editing-channel-name 커스텀 엘리먼트 내부 input
@@ -190,13 +236,235 @@ async def rename_channel(page, channel_name: str, channel_id: str | None = None)
             )
             return False
         await human_click(publish, timeout=5_000)
-        await random_delay(2.5, 4.5)
+        await random_delay(2.0, 3.5)
     except Exception as e:
         log.warning(f"rename_channel publish failed: {e}")
         return False
 
-    log.info(f"channel renamed to '{channel_name}'")
+    # 게시 확인 모달 — "이름 변경 확인" 등. 존재하면 확인 클릭.
+    try:
+        confirmed = await page.evaluate("""() => {
+          const dlgs = Array.from(document.querySelectorAll('tp-yt-paper-dialog, ytcp-dialog, [role="dialog"]'))
+            .filter(d => d.offsetParent !== null);
+          for (const d of dlgs) {
+            const txt = (d.innerText||'').trim();
+            if (!txt) continue;
+            const btn = Array.from(d.querySelectorAll('button'))
+              .find(b => b.offsetParent !== null && ['확인','OK','계속','게시'].includes((b.innerText||'').trim()));
+            if (btn) { btn.click(); return 'clicked:' + (btn.innerText||'').trim(); }
+          }
+          return 'no_modal';
+        }""")
+        if confirmed.startswith("clicked:"):
+            log.info(f"rename_channel: post-publish confirm {confirmed}")
+            await random_delay(2.0, 3.5)
+    except Exception:
+        pass
+
+    # 저장 검증 — publish 가 실제로 반영됐는지 체크. 최대 10초 폴링.
+    # 성공 지표: 입력값이 새 이름 유지 AND publish 버튼 disabled (변경사항 없음 = 저장됨).
+    saved = False
+    for _ in range(10):
+        try:
+            cur = (await name_input.input_value()) or ""
+            if cur.strip() != channel_name.strip():
+                # 값이 되돌려짐 → 저장 실패
+                break
+            btn_dis = await publish.get_attribute("disabled")
+            btn_aria = await publish.get_attribute("aria-disabled")
+            if btn_dis is not None or btn_aria == "true":
+                saved = True
+                break
+        except Exception:
+            pass
+        await random_delay(0.8, 1.2)
+
+    if not saved:
+        log.warning(
+            f"rename_channel: publish did not persist — "
+            f"final value='{(await name_input.input_value() or '')[:30]}'"
+        )
+        return False
+
+    # 최종 검증 — reload 후 채널명이 기대 값 유지하는지 확인. 로컬 state 와
+    # 서버 저장 간 괴리 방지 (publish 버튼이 disabled 가 되었어도 일부 케이스에서
+    # 서버 커밋 실패 가능).
+    try:
+        await page.reload(wait_until="domcontentloaded")
+        await random_delay(3.0, 5.0)
+        final_input = page.locator("ytcp-channel-editing-channel-name input").first
+        await final_input.wait_for(timeout=10_000)
+        final_val = (await final_input.input_value()) or ""
+        if final_val.strip() != channel_name.strip():
+            log.warning(
+                f"rename_channel: reload verification FAILED — "
+                f"wanted='{channel_name}' actual='{final_val[:40]}'"
+            )
+            return False
+    except Exception as e:
+        log.warning(f"rename_channel: reload verify error: {e}")
+        # 리로드 자체 실패면 이전 saved 플래그로 신뢰 (관대 처리)
+
+    log.info(f"channel renamed to '{channel_name}' (verified)")
     return True
+
+
+async def change_handle(page, desired_handle: str, channel_id: str | None = None) -> bool:
+    """YT 핸들(@handle) 변경.
+
+    전략:
+    1. 원본 핸들 입력
+    2. 사용 가능하면 publish
+    3. 불가하면 YT 가 페이지 내 추천 핸들 (ytcp-anchor.YtcpChannelEditingChannelHandleSuggestedHandleAnchor)
+       을 제공 — 그 추천을 클릭해서 자동 입력 + publish
+
+    (이전에 숫자 덧붙이는 fallback 은 추천 핸들 클릭 방식으로 대체)
+    """
+    if not desired_handle:
+        return False
+
+    if not channel_id:
+        channel_id = await _resolve_channel_id(page)
+        if not channel_id:
+            log.warning("change_handle: could not resolve channel_id")
+            return False
+
+    # 맞춤설정 페이지 진입 — 사이드바 클릭이 가장 안정적
+    try:
+        await page.goto("https://studio.youtube.com/", wait_until="domcontentloaded")
+        await random_delay(3.0, 5.0)
+        await _dismiss_studio_modals(page)
+        await _enter_customization(page)
+    except Exception as e:
+        log.warning(f"change_handle: enter settings failed: {e}")
+        return False
+
+    try:
+        inp = page.locator("input[placeholder='핸들 설정']").first
+        await inp.wait_for(timeout=10_000)
+        # 창이 작으면 핸들 input 이 뷰포트 밖일 수 있음 — 스크롤로 노출 + 사람처럼
+        # 위아래 살짝 휘적거려 '찾는 듯' 자연스럽게.
+        try:
+            await page.mouse.wheel(0, random.randint(300, 600))
+            await random_delay(0.3, 0.7)
+            await page.mouse.wheel(0, random.randint(-150, -50))
+            await random_delay(0.2, 0.5)
+        except Exception:
+            pass
+        try:
+            await inp.scroll_into_view_if_needed(timeout=5_000)
+        except Exception:
+            pass
+        current = (await inp.input_value()) or ""
+        if current.strip() == desired_handle.strip():
+            log.info(f"handle already '{desired_handle}' — skip")
+            return True
+
+        # 1차 시도: 원본 핸들 입력 + Enter (추천 anchor 렌더 트리거)
+        # YT UI 는 입력만으론 validation 피드백이 즉시 안 올 때가 있어 Enter 를
+        # 한 번 쳐야 "사용할 수 없는 핸들" + 추천 anchor 가 확실히 표시됨.
+        await inp.click(click_count=3)
+        await random_delay(0.15, 0.35)
+        await page.keyboard.press("Delete")
+        await random_delay(0.2, 0.4)
+        await page.keyboard.type(desired_handle, delay=random.randint(60, 140))
+        await random_delay(0.4, 0.8)
+        try:
+            await page.keyboard.press("Enter")
+        except Exception:
+            pass
+        await random_delay(2.0, 3.0)
+
+        pub = page.locator("ytcp-button#publish-button button").first
+        pub_dis = await pub.get_attribute("disabled")
+        pub_aria = await pub.get_attribute("aria-disabled")
+        enabled = (pub_dis is None and pub_aria != "true")
+
+        success_handle = None
+        if enabled:
+            success_handle = desired_handle
+            log.info(f"change_handle: '{desired_handle}' available directly")
+        else:
+            # 추천 핸들 클릭 — YT 가 충돌 없는 variant 제시.
+            # "사용할 수 없는 핸들" 판정 후 추천 anchor 가 렌더되는 데 수 초 추가
+            # 소요될 수 있으므로 명시적으로 대기.
+            try:
+                await page.wait_for_selector(
+                    'ytcp-anchor.YtcpChannelEditingChannelHandleSuggestedHandleAnchor',
+                    timeout=8_000,
+                )
+            except Exception:
+                pass
+            suggested = await page.evaluate("""() => {
+              const a = document.querySelector('ytcp-anchor.YtcpChannelEditingChannelHandleSuggestedHandleAnchor');
+              if (!a) return null;
+              const txt = (a.innerText||'').trim();
+              a.click();
+              return txt;
+            }""")
+            if not suggested:
+                log.warning(
+                    f"change_handle: '{desired_handle}' unavailable and no suggestion found"
+                )
+                return False
+            await random_delay(1.2, 2.0)
+            # 추천 핸들 클릭 후 input 값 = 추천값, publish 활성화 기대
+            new_val = (await inp.input_value()) or ""
+            pub_dis = await pub.get_attribute("disabled")
+            pub_aria = await pub.get_attribute("aria-disabled")
+            if (pub_dis is not None) or (pub_aria == "true"):
+                log.warning(
+                    f"change_handle: suggestion {suggested!r} clicked but publish still disabled"
+                )
+                return False
+            success_handle = new_val or suggested.lstrip("@")
+            log.info(f"change_handle: using suggested '{success_handle}'")
+
+        # 게시
+        try:
+            await human_click(pub, timeout=5_000)
+        except Exception:
+            await pub.click(timeout=5_000)
+        await random_delay(2.5, 4.0)
+
+        # 확인 모달 처리
+        try:
+            await page.evaluate("""() => {
+              const dlgs = Array.from(document.querySelectorAll('tp-yt-paper-dialog, ytcp-dialog, [role="dialog"]'))
+                .filter(d => d.offsetParent !== null && (d.innerText||'').trim());
+              for (const d of dlgs) {
+                const btn = Array.from(d.querySelectorAll('button'))
+                  .find(b => b.offsetParent !== null && ['확인','게시','OK','저장'].includes((b.innerText||'').trim()));
+                if (btn) btn.click();
+              }
+            }""")
+            await random_delay(2.0, 3.5)
+        except Exception:
+            pass
+
+        # Reload + 검증
+        try:
+            await page.reload(wait_until="domcontentloaded")
+            await random_delay(3.0, 5.0)
+            await _enter_customization(page)
+            inp2 = page.locator("input[placeholder='핸들 설정']").first
+            await inp2.wait_for(timeout=10_000)
+            final = (await inp2.input_value()) or ""
+            if final.strip() != success_handle.strip():
+                log.warning(
+                    f"change_handle: reload verification FAILED — "
+                    f"wanted='{success_handle}' actual='{final}'"
+                )
+                return False
+        except Exception as e:
+            log.warning(f"change_handle reload verify error: {e}")
+
+        log.info(f"handle changed to '{success_handle}' (verified)")
+        return True
+
+    except Exception as e:
+        log.warning(f"change_handle failed: {e}")
+        return False
 
 
 async def set_description(page, description: str, channel_id: str | None = None) -> bool:
@@ -224,25 +492,36 @@ async def upload_avatar(page, avatar_path: str, channel_id: str | None = None) -
             log.warning("upload_avatar: could not resolve channel_id")
             return False
 
-    await page.goto(
-        f"https://studio.youtube.com/channel/{channel_id}/editing/profile",
-        wait_until="domcontentloaded",
-    )
-    await random_delay(3.0, 5.0)
-    await _dismiss_studio_modals(page)
+    # 맞춤설정 페이지 진입 — 사이드바 클릭 (직접 goto 는 대시보드 리다이렉트 위험)
+    try:
+        await page.goto("https://studio.youtube.com/", wait_until="domcontentloaded")
+        await random_delay(3.0, 5.0)
+        await _dismiss_studio_modals(page)
+        await _enter_customization(page)
+    except Exception as e:
+        log.warning(f"upload_avatar: enter settings failed: {e}")
+        return False
 
     # 프로필 사진 섹션의 업로드 버튼 (배너/워터마크와 구분 — ytcp-profile-image-upload 로 스코프).
     # YT Studio 는 버튼 클릭 시 native file chooser 다이얼로그를 열므로 Playwright
     # expect_file_chooser 로 intercept (DOM input 직접 set_input_files 는 YT 의
     # lit-element 구조상 일관 동작 안 함).
+    # 현재 YT UI: 프로필 이미지 placeholder 가 항상 있어 버튼 라벨이 "변경"(replace-button).
+    # 구 UI 의 upload-button / 업로드 텍스트도 fallback 으로 유지.
     try:
         upload_btn = page.locator(
+            "ytcp-profile-image-upload ytcp-button#replace-button button, "
             "ytcp-profile-image-upload ytcp-button#upload-button button, "
+            "ytcp-profile-image-upload button:has-text('변경'), "
             "ytcp-profile-image-upload button:has-text('업로드'), "
+            "ytcp-profile-image-upload button:has-text('Change'), "
             "ytcp-profile-image-upload button:has-text('Upload')"
         ).first
         async with page.expect_file_chooser(timeout=10_000) as fc_info:
-            await human_click(upload_btn, timeout=10_000)
+            try:
+                await human_click(upload_btn, timeout=8_000)
+            except Exception:
+                await upload_btn.click(timeout=8_000)
         fc = await fc_info.value
         await fc.set_files(avatar_path)
         await random_delay(4.0, 7.0)
@@ -261,16 +540,65 @@ async def upload_avatar(page, avatar_path: str, channel_id: str | None = None) -
     except Exception:
         pass
 
-    # 게시
+    # 게시 — Playwright locator.click 으로 trusted 이벤트 보장 (human_click 도 내부
+    # 동일하지만 detached/bounding_box 실패 fallback 때문에 명시적 locator.click 백업 병행).
     try:
-        publish = page.locator(
-            "ytcp-button#publish-button button, "
-            "button:has-text('게시'), button:has-text('Publish')"
-        ).first
-        await human_click(publish, timeout=5_000)
+        publish = page.locator("ytcp-button#publish-button button").first
+        await publish.wait_for(timeout=8_000)
+        try:
+            await human_click(publish, timeout=5_000)
+        except Exception:
+            await publish.click(timeout=5_000)
         await random_delay(3.0, 5.0)
+    except Exception as e:
+        log.warning(f"avatar publish failed: {e}")
+        return False
+
+    # 게시 확인 모달 — 필요 시 '확인' 클릭
+    try:
+        confirmed = await page.evaluate("""() => {
+          const dlgs = Array.from(document.querySelectorAll('tp-yt-paper-dialog, ytcp-dialog, [role="dialog"]'))
+            .filter(d => d.offsetParent !== null && (d.innerText||'').trim());
+          for (const d of dlgs) {
+            const btn = Array.from(d.querySelectorAll('button'))
+              .find(b => b.offsetParent !== null && ['확인','OK','계속','게시','저장'].includes((b.innerText||'').trim()));
+            if (btn) { btn.click(); return 'clicked'; }
+          }
+          return 'none';
+        }""")
+        if confirmed == "clicked":
+            await random_delay(2.0, 3.0)
     except Exception:
         pass
 
-    log.info(f"avatar uploaded from {avatar_path}")
+    # 저장 검증 — 서버 커밋 여부는 /editing/profile 의 로컬 preview 가 아닌
+    # 채널 헤더의 avatar 이미지 src 로 확인. yt3.ggpht.com 도메인에 해시 변경이
+    # 일어나면 서버 저장 성공. data:image/... base64 는 로컬 preview 만.
+    # Studio 대시보드로 이동해 avatar-btn 을 확인 — /editing/profile 를 그대로 reload
+    # 하면 페이지 컨텍스트가 파괴되어 evaluate 가 던지는 경우가 있음.
+    await random_delay(3.0, 5.0)
+    real_src = None
+    for attempt in range(3):
+        try:
+            await page.goto("https://studio.youtube.com/", wait_until="domcontentloaded")
+            await random_delay(3.0, 4.5)
+            real_src = await page.evaluate("""() => {
+              const candidates = [
+                document.querySelector('#avatar-btn img'),
+                document.querySelector('ytcp-entity-avatar img'),
+                document.querySelector('#account-menu-button img'),
+              ].filter(x => x && x.src && !x.src.startsWith('data:'));
+              return candidates.length ? candidates[0].src : null;
+            }""")
+            if real_src and isinstance(real_src, str) and real_src.startswith("http"):
+                break
+            await random_delay(2.0, 3.0)
+        except Exception as e:
+            log.debug(f"upload_avatar verify attempt {attempt+1} failed: {e}")
+            await random_delay(2.0, 3.0)
+
+    if not real_src or not isinstance(real_src, str) or not real_src.startswith("http"):
+        log.warning(f"upload_avatar: could not verify server-side avatar (src={real_src!r})")
+        return False
+    log.info(f"avatar uploaded from {avatar_path} (verified server src)")
     return True

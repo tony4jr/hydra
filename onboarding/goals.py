@@ -313,6 +313,80 @@ class AvatarGoal:
             return "failed"
 
 
+class NaturalBrowsingGoal:
+    """YT 자연 탐색 — 홈 스크롤 + 검색 1회 + 영상/숏츠 시청 랜덤 (~2~5분).
+
+    Anti-detection 핵심: 채널 설정만 바로 하고 나가는 봇 패턴 회피. onboarding 세션
+    안에서 실사용자 같은 체류 시간 + 행동 다양성 확보.
+
+    detect 는 항상 not_done — idempotent 한 단계 아님 (매번 다른 활동 수행).
+    """
+    name = "natural_browsing"
+    required = False
+
+    async def detect(self, page, acct) -> State:
+        return "not_done"
+
+    async def apply(self, page, acct) -> ApplyResult:
+        import json as _json
+        import random as _rand
+        import time as _time
+        from worker.onboard_session import (
+            _do_search, _watch_home_video, _browse_shorts, _scroll_home,
+        )
+        from worker.search_pool import pick as _pick_query
+        from hydra.browser.actions import scroll_page, rep_count, random_delay
+
+        persona = _json.loads(acct.persona) if acct.persona else {}
+        duration_min, duration_max = 90, 180  # 1.5~3 분
+        target = _rand.uniform(duration_min, duration_max)
+        started = _time.time()
+
+        try:
+            await page.goto("https://www.youtube.com", wait_until="domcontentloaded", timeout=30_000)
+        except Exception as e:
+            log.warning(f"natural_browsing goto err: {e}")
+            return "failed"
+        await random_delay(3.0, 6.0)
+
+        try:
+            await scroll_page(page, scrolls=rep_count(2, 5))
+        except Exception:
+            pass
+        await random_delay(3.0, 7.0)
+
+        searched = False
+        while (_time.time() - started) < target:
+            remaining = target - (_time.time() - started)
+            if remaining < 20:
+                break
+            if not searched and _rand.random() < 0.6:
+                q = _pick_query(int(persona.get("age", 25)))
+                try:
+                    await _do_search(page, q)
+                    searched = True
+                except Exception as e:
+                    log.warning(f"search err: {e}")
+                await random_delay(3.0, 8.0)
+                continue
+            action = _rand.choices(
+                ["watch_home_video", "browse_shorts", "scroll_home"],
+                weights=[45, 30, 25],
+            )[0]
+            try:
+                if action == "watch_home_video":
+                    await _watch_home_video(page)
+                elif action == "browse_shorts":
+                    await _browse_shorts(page)
+                else:
+                    await _scroll_home(page)
+            except Exception as e:
+                log.warning(f"{action} err: {e}")
+            await random_delay(4.0, 10.0)
+
+        return "done"
+
+
 class FinalizeWarmupGoal:
     """필수 goals 모두 통과한 계정만 warmup 상태로 전이. DB 전용."""
     name = "finalize_warmup"
@@ -349,6 +423,7 @@ ALL_GOALS: list[Goal] = [
     DisplayNameGoal(),
     TotpSecretGoal(),
     VideoLangKoGoal(),
+    NaturalBrowsingGoal(),   # YT 자연 탐색 — 봇 패턴 회피
     IdentityChallengeGoal(),
     ChannelNameGoal(),
     ChannelHandleGoal(),
