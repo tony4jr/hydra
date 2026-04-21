@@ -153,7 +153,8 @@ async def run_login_fsm(page, acct) -> tuple[str, str]:
 
         if url == prev_url:
             same_count += 1
-            if same_count >= 2:
+            # 같은 URL 이 2회 연속 (첫 방문 후 전이 안 됨 + 재방문) → 막힘
+            if same_count >= 1:
                 return "failed_stuck", url
         else:
             same_count = 0
@@ -171,7 +172,7 @@ async def run_login_fsm(page, acct) -> tuple[str, str]:
             async with asyncio.timeout(URL_CHANGE_TIMEOUT_MS / 1000):
                 while page.url == url:
                     await asyncio.sleep(0.5)
-        except Exception:
-            pass
+        except TimeoutError:
+            pass  # URL 전이 안 일어남 — 다음 루프에서 재평가
 
     return "failed_max_iter", page.url
