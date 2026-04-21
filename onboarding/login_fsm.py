@@ -174,12 +174,16 @@ async def run_login_fsm(page, acct) -> tuple[str, str]:
         if hname is None:
             return "failed_unknown", url
         if hname == "DONE":
-            # URL 만으론 부족 — 실제 로그인 여부 재확인 (fresh 계정 youtube.com 홈은
-            # URL 은 일치해도 실제 로그인 안 된 상태가 있음)
+            # myaccount.google.com 에 도달 = Google 로그인 완료 확실. (이 URL 접근
+            # 자체가 로그인 요구 — 미로그인이면 signin 으로 리다이렉트됨)
+            if url.startswith(S.URL_MYACCOUNT):
+                return "done", url
+            # youtube.com 홈 은 비로그인 상태로도 URL 이 일치함 → YT avatar-btn 으로
+            # 실제 로그인 여부 재확인.
             if await check_logged_in(page):
                 return "done", url
-            # 로그인 안 된 youtube/myaccount — signin 으로 강제 이동 후 loop 재개
-            log.info(f"[fsm iter={i}] DONE URL but not logged in — navigate to signin")
+            # YT 홈이지만 미로그인 — signin 으로 강제 이동 후 loop 재개
+            log.info(f"[fsm iter={i}] YT DONE URL but not logged in — navigate to signin")
             try:
                 await page.goto("https://accounts.google.com/signin",
                                 wait_until="domcontentloaded", timeout=20_000)
