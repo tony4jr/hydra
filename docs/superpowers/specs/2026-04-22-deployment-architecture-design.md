@@ -80,6 +80,27 @@ HYDRA 프로젝트 C 단계 (내부 상용 시스템) 진입을 위한 인프라
 - 한국 리전 선택 이유: 한국 워커와 지연 5~15ms (ISP 수준), 타 리전 대비 저지연
 
 **워커 PC (Windows 10/11)**
+
+**설치 방식:** 하이브리드 — **초기 1회만 PowerShell 설치 스크립트 (`.exe` wrap)**, **이후 업데이트는 git pull**.
+
+- 초기 배포: `hydra-worker-setup.exe` (Inno Setup 으로 wrap 된 PowerShell 스크립트, ~50MB)
+  - Python 3.11 / Git / ADB / Tailscale 자동 설치 (Chocolatey 경유)
+  - `C:\hydra\` 에 repo clone + venv + pip install
+  - Playwright 브라우저 다운로드
+  - NTP 시계 동기화 설정 (w32tm)
+  - 어드민 UI 에서 발급한 **1회용 enrollment token** 입력 → VPS 에서 per-worker 환경변수 수신
+  - Task Scheduler 등록 (부팅 시 자동 실행 + 크래시 재시작)
+  - 첫 heartbeat 테스트로 연결 검증
+- 이후 모든 업데이트: git pull + pip install + restart (섹션 4 참조)
+
+**PyInstaller 단일 exe 방식을 택하지 않는 이유:**
+- 매 배포마다 Windows 에서 재빌드 필요 (Mac 에선 직접 불가 → CI 필요)
+- bytecode 화되어 에러 스택 trace 읽기 어려움
+- 파일 크기 3배 증가 (100MB → 300MB)
+- 긴급 시 Tailscale 로 직접 접속해서 코드 수정/테스트 불가
+
+**워커 상주 컴포넌트:**
+
 - hydra-worker: Python 워커 프로세스 — heartbeat + fetch + execute loop
 - AdsPower 앱: 브라우저 프로필 클라우드 싱크 (프로필 데이터는 AdsPower 클라우드 저장 → 어느 워커든 어느 계정이든 접근 가능, 단 동시 실행은 AdsPower 자체 락으로 1대만 허용)
 - Playwright: 브라우저 자동화
@@ -171,6 +192,137 @@ ssh deployer@vps.hydra.com "chown -R www-data:www-data /var/hydra/avatars/"
 #### 미래 확장 (필요 시 B2 이관)
 현재는 VPS 로컬 저장, 10~50GB 넘어가면 B2 object storage 로 이관 고려.
 API 레이어만 유지하면 저장 위치 변경이 투명함 (`/api/avatars/{path}` 엔드포인트 구현만 교체).
+
+---
+
+### 3.0.5 시크릿 관리 (민감 정보 배포)
+
+**문제:** DB 암호화 키, worker token, 외부 API 키 등 민감 정보를 워커 PC 에 어떻게 안전하게 배포할까.
+
+**원칙:**
+- git 저장소에 **평문 .env 절대 금지**
+- 워커 PC 의 .env 파일은 **VPS 에서 pull 받아 생성** (수작업 복붙 금지)
+- 어드민 UI 에서 **per-worker 토큰 발급** (각 워커 고유)
+
+**흐름:**
+```
+[어드민 UI] "새 워커 추가" 버튼
+  → 서버가 워커 레코드 생성 + 1회용 enrollment_token 발급 (24시간 유효)
+  → 화면에 PowerShell 명령 1줄 표시:
+    iwr -Uri https://api.hydra.com/api/workers/setup.ps1 `
+        -OutFile setup.ps1 && .\setup.ps1 -Token ABC123...
+
+[워커 PC] 관리자가 그 명령 실행
+  → setup.ps1 이 VPS 에 enrollment_token 제출
+  → 서버가 토큰 검증 + worker_token (영구) 발급
+  → 필요한 환경변수 묶음 반환 (DB_CRYPTO_KEY, SERVER_URL 등)
+  → 워커 PC 로컬에 암호화된 secrets.enc 파일로 저장
+    (Windows DPAPI 로 해당 PC 에서만 복호화 가능)
+  → enrollment_token 서버에서 삭제 (1회용)
+```
+
+**장점:**
+- 개발자가 직접 .env 전달 불필요
+- 1회용 토큰이라 탈취 리스크 제한적
+- Windows DPAPI = PC 하드웨어 / 사용자 계정 바인딩 → 파일만 훔쳐도 복호화 불가
+
+### 3.0.6 DB 마이그레이션 도구 (Alembic)
+
+**현재:** SQLite + 수동 ALTER TABLE (예: `ipp_flagged` 컬럼 추가를 직접 sqlite3 로).
+**Phase 1 에서 전환:** SQLAlchemy + **Alembic** 마이그레이션 프레임워크.
+
+**구조:**
+```
+alembic/
+  versions/
+    001_initial_schema.py
+    002_add_ipp_flagged.py
+    003_add_customer_id.py
+    004_add_server_config.py
+    005_add_execution_logs.py
+    ...
+  env.py
+  alembic.ini
+```
+
+**배포 시 자동 마이그레이션:**
+```bash
+# deploy.sh 에 포함
+alembic upgrade head   # 최신 버전으로 업그레이드
+```
+
+**롤백 가능:**
+```bash
+alembic downgrade -1   # 이전 버전으로
+```
+
+모든 스키마 변경이 **git 커밋 히스토리에 기록** + **순서대로 실행** + **실패 시 롤백 가능**.
+
+### 3.0.7 감사 로그 (Audit Log)
+
+**테이블:**
+```sql
+CREATE TABLE audit_logs (
+  id BIGSERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id),
+  action VARCHAR(64) NOT NULL,        -- deploy / pause / unpause / create_campaign / upload_avatar 등
+  target_type VARCHAR(32),            -- campaign / worker / account
+  target_id INTEGER,
+  metadata TEXT,                       -- JSON (before/after 상태, 입력 데이터)
+  ip_address VARCHAR(45),
+  user_agent TEXT,
+  timestamp TIMESTAMP NOT NULL DEFAULT NOW(),
+  INDEX idx_user_time (user_id, timestamp DESC),
+  INDEX idx_action (action, timestamp DESC)
+);
+```
+
+**자동 기록 대상 (미들웨어):**
+- 배포 버튼 클릭 (`action='deploy'`, metadata=version)
+- 긴급정지/재개
+- 캠페인 생성/수정/삭제
+- 계정 수동 변경 (status, ipp_flagged 등)
+- 아바타 업로드/삭제
+- 워커 등록/제거
+- 로그인/로그아웃
+- 권한 변경
+
+**UI:** 어드민 UI 에 "활동 로그" 탭 — 필터 (사용자/액션/기간) + CSV 내보내기.
+
+### 3.0.8 워커 시간 동기화 (NTP)
+
+**문제:** Windows 시계 드리프트 → TOTP 6자리 코드 생성 시 30초 윈도우 벗어나면 실패. 태스크 스케줄도 어긋남.
+
+**해결:** 설치 스크립트에서 `w32tm` 설정.
+```powershell
+# setup.ps1 에 포함
+w32tm /config /manualpeerlist:"time.windows.com,time.google.com" /syncfromflags:manual /reliable:yes /update
+Restart-Service w32time
+w32tm /resync
+```
+
+주 1회 자동 동기화. 워커 heartbeat 에 `time_offset_ms` 포함 → VPS 가 허용 범위(5초) 초과 시 알림.
+
+### 3.0.9 재해 복구 절차 (Runbook)
+
+**별도 문서:** `docs/runbook.md` (Phase 4 에서 작성, 구현과 병행).
+
+**포함 내용:**
+- VPS 완전 삭제 시 30분 내 복구 절차
+  1. Vultr 스냅샷 복원 or 새 서버 프로비저닝
+  2. DB 덤프 로드 (Backblaze B2 에서 다운로드)
+  3. 아바타 파일 rsync 복원
+  4. `.env` 복구 (1Password 저장 백업에서)
+  5. 도메인 DNS 재연결 (Cloudflare API)
+  6. TLS 재발급 (certbot)
+  7. 서비스 기동 + 헬스체크
+  8. 워커 재연결 확인 (heartbeat 정상)
+- 워커 PC 전면 리셋
+- DB 손상 시 복원
+- Git 레포 소실 시 (GitHub 가 있으니 희귀)
+- 장애 대응 연락망 / 권한자 매트릭스
+
+**월 1회 복구 연습 (drill)** 정기화.
 
 ---
 

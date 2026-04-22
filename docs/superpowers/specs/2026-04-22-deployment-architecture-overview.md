@@ -84,6 +84,10 @@
 **도메인 예시:** `admin.hydra.com` (어드민 UI), `api.hydra.com` (API)
 
 ### 🔴 워커 PC (Windows 10/11, 10~20대)
+
+**설치 방식: 하이브리드 (초기 1회 exe → 이후 git pull)**
+- `hydra-worker-setup.exe` 실행 1회 → Python/Git/ADB/Tailscale 자동 설치 + 코드 clone + Task Scheduler 등록 + NTP 설정 + enrollment token 으로 환경변수 수신
+- 업데이트는 배포 버튼 → heartbeat 감지 → git pull (PyInstaller 불필요)
 | 컴포넌트 | 역할 | 언어/기술 |
 |---|---|---|
 | **hydra-worker.exe** | 메인 워커 프로세스 (HTTP poll + 태스크 실행) | Python 3.11 (PyInstaller 로 exe 패키징) |
@@ -239,6 +243,18 @@ VPS ─Discord Webhook──► Discord
         ↓
 개발자가 Discord 보고 → 어드민 UI 클릭 → 상세 페이지
 ```
+
+---
+
+## 🔑 시크릿/보안 관리 추가 사항
+
+| 항목 | 방식 |
+|---|---|
+| 워커 .env 배포 | 어드민 UI 발급 1회용 enrollment token → VPS 에서 pull → Windows DPAPI 암호화 저장 |
+| DB 스키마 변경 | Alembic 마이그레이션 (git 히스토리 + 롤백 가능) |
+| 관리자 액션 추적 | audit_logs 테이블 (누가 언제 뭘) |
+| 워커 시계 | NTP 자동 동기화 (w32tm) — TOTP/스케줄 안정성 |
+| VPS 완전 삭제 대비 | `docs/runbook.md` 재해 복구 절차 + 월 1회 drill |
 
 ---
 
