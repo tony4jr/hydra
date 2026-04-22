@@ -44,6 +44,9 @@ class Account(Base):
     # 워밍업/댓글은 YT 도메인 내에서만 진행하도록 워커가 체크.
     ipp_flagged = Column(Boolean, default=False, nullable=False)
 
+    # D 단계(외부 고객 포털) 대비 — 현재 NULL (내부 소유). Phase 1~C 사용 안 함.
+    customer_id = Column(Integer, nullable=True)
+
     persona = Column(Text)  # JSON
     role_preference = Column(String)  # seed|witness|agree|any
 
@@ -188,6 +191,9 @@ class Campaign(Base):
     comment_mode = Column(String, default="ai_auto")
     preset_id = Column(Integer, ForeignKey("presets.id"))
     user_id = Column(Integer)
+
+    # D 단계(외부 고객 포털) 대비
+    customer_id = Column(Integer, nullable=True)
 
     # UI/UX 재설계 — 캠페인이 작업의 모든 것을 관리
     name = Column(String)                         # 캠페인 이름 (예: "트리코라 — 탈모 캠페인")
@@ -541,6 +547,9 @@ class Task(Base):
     started_at = Column(DateTime)
     completed_at = Column(DateTime)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+    # D 단계(외부 고객 포털) 대비
+    customer_id = Column(Integer, nullable=True)
 
     worker = relationship("Worker", back_populates="tasks")
     campaign = relationship("Campaign")
