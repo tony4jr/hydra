@@ -618,3 +618,18 @@ class AccountProfileHistory(Base):
         Index("idx_profhist_account", "account_id"),
         Index("idx_profhist_active", "account_id", "retired_at"),
     )
+
+
+class User(Base):
+    """어드민 로그인 — bcrypt 해시된 비밀번호 + 역할 기반 권한.
+
+    Phase 1 에선 admin / operator 만 사용. customer 는 D 단계 대비.
+    """
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(String(255), nullable=False, unique=True)
+    password_hash = Column(String(255), nullable=False)
+    role = Column(String(32), nullable=False, default="operator")
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+    last_login_at = Column(DateTime, nullable=True)
