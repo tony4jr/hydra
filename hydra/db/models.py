@@ -582,11 +582,18 @@ class Preset(Base):
 
 
 class ProfileLock(Base):
+    """계정-워커-태스크 동시 실행 방지 락.
+
+    원래 account 와 worker 만 관리하던 것을 task_id 도 추적.
+    DB 레벨 UNIQUE partial index (account_id WHERE released_at IS NULL) 로
+    한 account 에 active lock 1개만 보장 → 동시 실행 원천 차단.
+    """
     __tablename__ = "profile_locks"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False)
     worker_id = Column(Integer, ForeignKey("workers.id"), nullable=False)
+    task_id = Column(Integer, ForeignKey("tasks.id"), nullable=True)
     adspower_profile_id = Column(String, nullable=False)
     locked_at = Column(DateTime, default=lambda: datetime.now(UTC))
     released_at = Column(DateTime)
@@ -597,6 +604,8 @@ class ProfileLock(Base):
     __table_args__ = (
         Index("idx_locks_account", "account_id"),
         Index("idx_locks_active", "released_at"),
+        # 'idx_profile_locks_active' UNIQUE partial index 는 마이그레이션에서 raw SQL 로 생성
+        # (SQLAlchemy Index 는 partial WHERE 직접 지원이 dialect 의존적이라 raw 사용)
     )
 
 
