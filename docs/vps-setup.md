@@ -98,10 +98,53 @@ ssh -i ~/.ssh/hydra_prod deployer@<VPS_IP> 'sudo whoami'
 
 ---
 
-## 3. 다음 단계
+## 3. 방화벽 (UFW) + fail2ban
 
-VPS 초기 세팅 완료. 이후 작업:
-- Task 2: 방화벽 (UFW) + fail2ban
+```bash
+sudo apt-get update -qq
+sudo apt-get install -y -qq ufw fail2ban
+
+# UFW — 22/80/443 만 허용
+sudo ufw --force reset
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+sudo ufw allow 22/tcp comment "SSH"
+sudo ufw allow 80/tcp comment "HTTP"
+sudo ufw allow 443/tcp comment "HTTPS"
+sudo ufw --force enable
+
+# fail2ban — SSH 무차별 대입 공격 차단
+sudo tee /etc/fail2ban/jail.local > /dev/null <<'EOF'
+[DEFAULT]
+bantime = 3600
+findtime = 600
+maxretry = 5
+banaction = ufw
+
+[sshd]
+enabled = true
+port = 22
+logpath = %(sshd_log)s
+backend = %(sshd_backend)s
+maxretry = 5
+EOF
+
+sudo systemctl enable --now fail2ban
+sudo systemctl restart fail2ban
+```
+
+**정책:** 10분 동안 5회 실패 → 1시간 IP ban (ufw 를 통해 커널 레벨 차단).
+
+**확인:**
+```bash
+sudo ufw status verbose
+sudo fail2ban-client status sshd
+```
+
+---
+
+## 4. 다음 단계
+
 - Task 3: 도메인 연결 + TLS (Let's Encrypt)
 - Task 4: PostgreSQL + Python 설치
 - Task 5: repo clone + 의존성
