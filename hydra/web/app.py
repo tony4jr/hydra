@@ -7,7 +7,7 @@ import asyncio
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -28,6 +28,10 @@ from hydra.api.websocket import router as ws_router
 from hydra.api.profile_locks import router as profile_locks_router
 from hydra.api.version import router as version_router
 from hydra.api.ai import router as ai_router
+
+# Task 25.5 — 모든 어드민 성격 라우터에 세션 JWT 강제
+from hydra.web.routes.admin_auth import admin_session
+_ADMIN_DEPS = [Depends(admin_session)]
 
 @asynccontextmanager
 async def lifespan(app):
@@ -64,35 +68,43 @@ TEMPLATE_DIR = Path(__file__).parent / "templates"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 
-# API routes
+# API routes — 어드민 성격 전부 admin_session 강제 (Task 25.5)
+# 예외: dashboard (HTML 템플릿 루트) 는 Phase 1c 재설계 전까지 공개 유지
+# 예외: workers_router/tasks_router (legacy 워커 API, X-Worker-Token 자체 인증)
 app.include_router(dashboard.router, prefix="", tags=["dashboard"])
-app.include_router(accounts.router, prefix="/accounts", tags=["accounts"])
-app.include_router(brands.router, prefix="/brands", tags=["brands"])
-app.include_router(campaigns.router, prefix="/campaigns", tags=["campaigns"])
-app.include_router(keywords.router, prefix="/keywords", tags=["keywords"])
-app.include_router(videos.router, prefix="/videos", tags=["videos"])
-app.include_router(settings.router, prefix="/settings", tags=["settings"])
-app.include_router(pools.router, prefix="/pools", tags=["pools"])
-app.include_router(logs.router, prefix="/logs", tags=["logs"])
-app.include_router(system.router, prefix="/system", tags=["system"])
-app.include_router(export.router, prefix="/export", tags=["export"])
-app.include_router(creator.router, prefix="/creator", tags=["creator"])
-app.include_router(recovery.router, prefix="/recovery", tags=["recovery"])
+app.include_router(accounts.router, prefix="/accounts", tags=["accounts"], dependencies=_ADMIN_DEPS)
+app.include_router(brands.router, prefix="/brands", tags=["brands"], dependencies=_ADMIN_DEPS)
+app.include_router(campaigns.router, prefix="/campaigns", tags=["campaigns"], dependencies=_ADMIN_DEPS)
+app.include_router(keywords.router, prefix="/keywords", tags=["keywords"], dependencies=_ADMIN_DEPS)
+app.include_router(videos.router, prefix="/videos", tags=["videos"], dependencies=_ADMIN_DEPS)
+app.include_router(settings.router, prefix="/settings", tags=["settings"], dependencies=_ADMIN_DEPS)
+app.include_router(pools.router, prefix="/pools", tags=["pools"], dependencies=_ADMIN_DEPS)
+app.include_router(logs.router, prefix="/logs", tags=["logs"], dependencies=_ADMIN_DEPS)
+app.include_router(system.router, prefix="/system", tags=["system"], dependencies=_ADMIN_DEPS)
+app.include_router(export.router, prefix="/export", tags=["export"], dependencies=_ADMIN_DEPS)
+app.include_router(creator.router, prefix="/creator", tags=["creator"], dependencies=_ADMIN_DEPS)
+app.include_router(recovery.router, prefix="/recovery", tags=["recovery"], dependencies=_ADMIN_DEPS)
+# Legacy workers/tasks — 워커 X-Worker-Token 인증 유지 (admin 아님)
 app.include_router(workers_router)
 app.include_router(tasks_router)
-app.include_router(presets_router)
+# Admin 성격 — 세션 필수
+app.include_router(presets_router, dependencies=_ADMIN_DEPS)
+app.include_router(profile_locks_router, dependencies=_ADMIN_DEPS)
+app.include_router(version_router, dependencies=_ADMIN_DEPS)
+app.include_router(ai_router, dependencies=_ADMIN_DEPS)
+# WebSocket — Starlette dependencies 미지원, 별도 인증 핸들러 추후
 app.include_router(ws_router)
-app.include_router(profile_locks_router)
-app.include_router(version_router)
-app.include_router(ai_router)
 
 # --- 신규 /api/admin/* + /api/workers, /api/tasks 네임스페이스 (Task 17 stub) ---
 # 실제 엔드포인트는 후속 task 에서 채워짐. 기존 flat routes 는 유지 (Task 17.6 에서 통합).
+# admin_auth 는 login/logout 공개 (로그인 자체는 토큰 없이)
 app.include_router(admin_auth.router,    prefix="/api/admin/auth",    tags=["admin-auth"])
-app.include_router(admin_workers.router, prefix="/api/admin/workers", tags=["admin-workers"])
-app.include_router(admin_avatars.router, prefix="/api/admin/avatars", tags=["admin-avatars"])
-app.include_router(admin_deploy.router,  prefix="/api/admin",         tags=["admin-deploy"])
-app.include_router(admin_audit.router,   prefix="/api/admin/audit",   tags=["admin-audit"])
+# 나머지 /api/admin/* 는 router-level dependencies 로 세션 강제 (defense in depth —
+# 라우트 내부 Depends 와 이중 검증이지만 비용 미미)
+app.include_router(admin_workers.router, prefix="/api/admin/workers", tags=["admin-workers"], dependencies=_ADMIN_DEPS)
+app.include_router(admin_avatars.router, prefix="/api/admin/avatars", tags=["admin-avatars"], dependencies=_ADMIN_DEPS)
+app.include_router(admin_deploy.router,  prefix="/api/admin",         tags=["admin-deploy"],  dependencies=_ADMIN_DEPS)
+app.include_router(admin_audit.router,   prefix="/api/admin/audit",   tags=["admin-audit"],   dependencies=_ADMIN_DEPS)
 app.include_router(avatar_serving.router, prefix="/api/avatars",      tags=["avatar-static"])
 # Task 20: 신규 워커 프로토콜 (/enroll, /heartbeat/v2). legacy /api/workers/register,
 # /heartbeat 는 hydra.api.workers 에 공존 유지 (Phase 1d 전환 완료 후 제거 예정).

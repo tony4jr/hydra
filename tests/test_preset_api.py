@@ -26,6 +26,10 @@ def client():
 
     app.dependency_overrides[get_db] = override_db
 
+    # Task 25.5: admin_session bypass for pre-existing API tests
+    from hydra.web.routes.admin_auth import admin_session
+    app.dependency_overrides[admin_session] = lambda: {"user_id": 1, "role": "admin"}
+
     # Seed a system preset for tests
     db = TestSession()
     preset = Preset(name="Test System", code="TEST_SYS", is_system=True, steps='[{"step_number": 1}]')

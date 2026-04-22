@@ -27,6 +27,9 @@ def client():
 
     app.dependency_overrides[get_db] = override_db
 
+    from hydra.web.routes.admin_auth import admin_session
+    app.dependency_overrides[admin_session] = lambda: {"user_id": 1, "role": "admin"}
+
     db = TestSession()
     db.add_all([
         Account(gmail="a1@gmail.com", password="p", daily_comment_limit=15,
