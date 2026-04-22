@@ -19,7 +19,7 @@ from hydra.db.session import init_db
 from hydra.web.routes import accounts, brands, campaigns, dashboard, keywords, videos, settings, pools, logs, system, export, creator, recovery
 from hydra.web.routes import (
     admin_auth, admin_workers, admin_avatars, admin_deploy, admin_audit,
-    worker_api, tasks_api, avatar_serving,
+    avatar_serving,
 )
 from hydra.api.workers import router as workers_router
 from hydra.api.tasks import router as tasks_router
@@ -93,9 +93,9 @@ app.include_router(admin_workers.router, prefix="/api/admin/workers", tags=["adm
 app.include_router(admin_avatars.router, prefix="/api/admin/avatars", tags=["admin-avatars"])
 app.include_router(admin_deploy.router,  prefix="/api/admin",         tags=["admin-deploy"])
 app.include_router(admin_audit.router,   prefix="/api/admin/audit",   tags=["admin-audit"])
-app.include_router(worker_api.router,    prefix="/api/workers",       tags=["worker"])
-app.include_router(tasks_api.router,     prefix="/api/tasks",         tags=["tasks"])
 app.include_router(avatar_serving.router, prefix="/api/avatars",      tags=["avatar-static"])
+# 주: /api/workers, /api/tasks 는 legacy hydra.api.workers/tasks 로 이미 마운트됨 (위).
+# Task 19/20/21 에서 legacy 파일을 직접 확장 (enrollment, 시크릿 fetch, SKIP LOCKED 등).
 
 
 @app.get("/", response_class=HTMLResponse)
