@@ -14,6 +14,8 @@ import secrets as _secrets
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi.responses import PlainTextResponse
+from pathlib import Path as _Path
 from pydantic import BaseModel, Field
 
 from hydra.core import server_config as scfg
@@ -23,6 +25,20 @@ from hydra.db import session as _db_session
 from hydra.db.models import Worker
 
 router = APIRouter()
+
+
+_SETUP_PS1 = _Path(__file__).resolve().parents[3] / "setup" / "hydra-worker-setup.ps1"
+
+
+@router.get("/setup.ps1", response_class=PlainTextResponse)
+def serve_setup_ps1() -> PlainTextResponse:
+    """Windows 워커 설치 스크립트 (공개 — 토큰은 유저가 param 으로 전달)."""
+    if not _SETUP_PS1.is_file():
+        raise HTTPException(500, "setup script missing")
+    return PlainTextResponse(
+        _SETUP_PS1.read_text(encoding="utf-8"),
+        media_type="text/plain; charset=utf-8",
+    )
 
 
 # ───────────── enroll ─────────────
