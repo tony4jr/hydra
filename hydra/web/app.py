@@ -19,7 +19,7 @@ from hydra.db.session import init_db
 from hydra.web.routes import accounts, brands, campaigns, dashboard, keywords, videos, settings, pools, logs, system, export, creator, recovery
 from hydra.web.routes import (
     admin_auth, admin_workers, admin_avatars, admin_deploy, admin_audit,
-    avatar_serving,
+    avatar_serving, worker_api,
 )
 from hydra.api.workers import router as workers_router
 from hydra.api.tasks import router as tasks_router
@@ -94,8 +94,9 @@ app.include_router(admin_avatars.router, prefix="/api/admin/avatars", tags=["adm
 app.include_router(admin_deploy.router,  prefix="/api/admin",         tags=["admin-deploy"])
 app.include_router(admin_audit.router,   prefix="/api/admin/audit",   tags=["admin-audit"])
 app.include_router(avatar_serving.router, prefix="/api/avatars",      tags=["avatar-static"])
-# 주: /api/workers, /api/tasks 는 legacy hydra.api.workers/tasks 로 이미 마운트됨 (위).
-# Task 19/20/21 에서 legacy 파일을 직접 확장 (enrollment, 시크릿 fetch, SKIP LOCKED 등).
+# Task 20: 신규 워커 프로토콜 (/enroll, /heartbeat/v2). legacy /api/workers/register,
+# /heartbeat 는 hydra.api.workers 에 공존 유지 (Phase 1d 전환 완료 후 제거 예정).
+app.include_router(worker_api.router,    prefix="/api/workers",       tags=["worker-v2"])
 
 
 @app.get("/", response_class=HTMLResponse)

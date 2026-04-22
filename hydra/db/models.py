@@ -507,7 +507,7 @@ class Worker(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=False)
-    token_hash = Column(String, nullable=False)
+    token_hash = Column(String, nullable=True)  # enrollment 전엔 null (Task 20)
     status = Column(String, default="offline")
     allow_preparation = Column(Boolean, default=False)
     allow_campaign = Column(Boolean, default=True)
@@ -516,6 +516,9 @@ class Worker(Base):
     last_heartbeat = Column(DateTime)
     current_version = Column(String)
     os_type = Column(String)
+    enrolled_at = Column(DateTime)
+    health_snapshot = Column(Text)  # JSON 문자열
+    tailscale_ip = Column(String(45))
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     notes = Column(Text)
 
