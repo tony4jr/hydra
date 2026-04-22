@@ -308,3 +308,4 @@ accounts, workers, tasks, users, execution_logs, audit_logs, profile_locks 등 2
 - Task 17~17.6: stub routes + CORS + flat 통합
 - Phase 1b: core backend APIs
 - ...
+# deploy.sh 검증용
