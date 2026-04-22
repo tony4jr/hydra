@@ -200,8 +200,71 @@ DuckDNS 는 서브도메인 1개만 제공 → `admin.hydra-prod.*` 와 `api.hyd
 
 ---
 
-## 5. 다음 단계
+## 5. PostgreSQL + Python + 기본 디렉토리
 
-- Task 4: PostgreSQL + Python 설치
-- Task 5: repo clone + 의존성
+```bash
+# PostgreSQL 14
+sudo apt-get install -y postgresql postgresql-contrib libpq-dev
+sudo systemctl enable --now postgresql
+
+# hydra DB + 사용자 (비번은 자동 생성)
+DB_PASS=$(openssl rand -base64 32 | tr -d "/+=" | head -c 24)
+sudo -u postgres psql <<EOF
+CREATE USER hydra WITH ENCRYPTED PASSWORD '$DB_PASS';
+CREATE DATABASE hydra_prod OWNER hydra;
+GRANT ALL PRIVILEGES ON DATABASE hydra_prod TO hydra;
+EOF
+
+# Python 3.11 (Ubuntu 22.04 기본은 3.10, deadsnakes PPA 필요)
+sudo add-apt-repository -y ppa:deadsnakes/ppa
+sudo apt-get update -qq
+sudo apt-get install -y python3.11 python3.11-venv python3.11-dev \
+    python3-pip build-essential git curl
+
+# 디렉토리 + 권한
+sudo mkdir -p /opt/hydra /var/hydra/avatars /var/log/hydra
+sudo chown -R deployer:deployer /opt/hydra /var/hydra /var/log/hydra
+```
+
+### .env 파일 생성 (민감 정보 — 백업 필수!)
+
+```bash
+# 강력한 시크릿 자동 생성
+JWT_SECRET=$(openssl rand -base64 64 | tr -d "\n")
+ENROLLMENT_SECRET=$(openssl rand -base64 32 | tr -d "\n")
+DB_CRYPTO_KEY=$(openssl rand -base64 32 | tr -d "\n")
+
+sudo tee /opt/hydra/.env > /dev/null <<ENVFILE
+DATABASE_URL=postgresql+psycopg2://hydra:$DB_PASS@localhost:5432/hydra_prod
+DB_CRYPTO_KEY=$DB_CRYPTO_KEY
+JWT_SECRET=$JWT_SECRET
+ENROLLMENT_SECRET=$ENROLLMENT_SECRET
+SERVER_URL=https://hydra-prod.duckdns.org
+CORS_ALLOWED_ORIGINS=https://hydra-prod.duckdns.org,http://localhost:5173
+AVATAR_STORAGE_DIR=/var/hydra/avatars
+ENVFILE
+
+sudo chown deployer:deployer /opt/hydra/.env
+sudo chmod 600 /opt/hydra/.env
+```
+
+### ⚠️ `.env` 백업 필수
+
+`DB_CRYPTO_KEY` 가 소실되면 DB 에 저장된 암호화 데이터 (계정 비번 / TOTP) **영구 복구 불가**.
+
+**권장 백업:**
+```bash
+# VPS 에서 로컬 Mac 으로 복사 (초기 세팅 직후 1회 + 변경 시마다)
+scp -i ~/.ssh/hydra_prod deployer@<VPS_IP>:/opt/hydra/.env ~/secure/hydra-prod.env.backup
+```
+
+복사 후 1Password / iCloud Keychain / 암호화된 USB 등 **로컬 안전 저장소** 에 보관.
+
+---
+
+## 6. 다음 단계
+
+- Task 5: repo clone + 의존성 (pip install)
+- Task 6~14: Alembic 마이그레이션
+- Task 15: auth 모듈
 - ...
