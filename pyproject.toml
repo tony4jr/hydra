@@ -1,3 +1,12 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["hydra*", "worker*", "onboarding*"]
+exclude = ["tests*", "docs*", "frontend*", "scripts*", "data*", "alembic*"]
+
 [project]
 name = "hydra"
 version = "0.1.0"
