@@ -20,6 +20,10 @@ def match_handler_name(url: str) -> str | None:
     """URL → 핸들러 이름. None 이면 unknown 상태."""
     if url.startswith(S.URL_MYACCOUNT) or url.startswith(S.URL_YOUTUBE):
         return "DONE"
+    if url.startswith(S.URL_CHALLENGE_DP):
+        return "DEAD"
+    if url.startswith(S.URL_CHALLENGE_IPP):
+        return "bypass_ipp"
     if url.startswith(S.URL_SIGNIN_IDENTIFIER):
         return "type_email"
     if url.startswith(S.URL_CHALLENGE_PWD):
@@ -28,6 +32,8 @@ def match_handler_name(url: str) -> str | None:
         return "submit_recovery_code"
     if url.startswith(S.URL_CHALLENGE_SELECTION):
         return "pick_recovery_option"
+    if url.startswith(S.URL_CHALLENGE_TOTP):
+        return "submit_totp_code"
     if url.startswith(S.URL_GDS_PREFIX):
         return "click_skip"
     return None
@@ -90,6 +96,25 @@ async def _submit_recovery_code(page, acct):
     await page.keyboard.press("Enter")
 
 
+async def _submit_totp_code(page, acct):
+    """/challenge/totp — pyotp 로 현재 6자리 생성해 입력."""
+    import pyotp
+    from hydra.core import crypto
+    if not acct.totp_secret:
+        raise RuntimeError("no totp_secret in DB for this account")
+    secret = crypto.decrypt(acct.totp_secret)
+    code = pyotp.TOTP(secret).now()
+    inp = page.locator(
+        "input[type='tel'], input[type='text'][name*='totpPin'], input[name='Pin'], input[type='text']"
+    ).first
+    await inp.wait_for(timeout=10_000)
+    await inp.click()
+    await random_delay(0.3, 0.6)
+    await page.keyboard.type(code, delay=random.randint(70, 140))
+    await random_delay(0.4, 0.8)
+    await page.keyboard.press("Enter")
+
+
 async def _pick_recovery_option(page, acct):
     """Challenge selection 페이지에서 복구 이메일 옵션 클릭."""
     if not acct.recovery_email:
@@ -113,6 +138,98 @@ async def _pick_recovery_option(page, acct):
     )
     if not clicked:
         raise RuntimeError("recovery option not found")
+
+
+async def _click_bbox_random(page, box: dict, *, x_frac=(0.25, 0.75), y_frac=(0.3, 0.7)):
+    """요소 bounding box 내부 랜덤 좌표에 마우스로 이동 + 클릭 (해상도 무관).
+
+    중앙 고정 방지 + 짧은 approach + 클릭 hold 지연으로 봇 패턴 회피.
+    """
+    cx = box["x"] + box["w"] * random.uniform(*x_frac)
+    cy = box["y"] + box["h"] * random.uniform(*y_frac)
+    await page.mouse.move(cx - 12, cy - 6, steps=6)
+    await asyncio.sleep(random.uniform(0.15, 0.35))
+    await page.mouse.move(cx, cy, steps=4)
+    await page.mouse.click(cx, cy, delay=random.randint(40, 90))
+
+
+async def _bypass_ipp(page, acct):
+    """/challenge/ipp/* (전화번호 인증) 우회.
+
+    경로: 이메일 chip 클릭 → /accountchooser → 본인 계정 row 클릭 → /challenge/pwd
+    이후 FSM 의 _type_password 핸들러가 이어받음.
+
+    성공 시 acct._ipp_flagged=True 세팅 — LoginGoal/verifier 가 감지해서 Google
+    계정 전용 goal (ui_lang_ko, display_name, totp_secret) 을 skip.
+
+    참고: ipp 뜬 계정은 Google 계정 정보 수정 불가. YouTube 설정만 가능.
+    """
+    email = (acct.gmail or "").lower()
+
+    # 1) 이메일 chip bounding box 찾기 — role=link/combobox 중 @gmail.com 포함 최소 너비
+    chip = await page.evaluate(
+        """(email) => {
+          const cands = Array.from(document.querySelectorAll(
+            '[role="link"], [role="combobox"], [role="button"]'
+          )).filter(e => e.offsetParent !== null);
+          let best = null, bestW = 9999;
+          for (const e of cands) {
+            const t = (e.innerText||'').toLowerCase();
+            const a = (e.getAttribute('aria-label')||'').toLowerCase();
+            if (!t.includes(email) && !a.includes(email)) continue;
+            const r = e.getBoundingClientRect();
+            if (r.width < 10 || r.height < 10) continue;
+            if (r.width < bestW) { best = e; bestW = r.width; }
+          }
+          if (!best) return null;
+          const r = best.getBoundingClientRect();
+          return {x: r.x, y: r.y, w: r.width, h: r.height};
+        }""",
+        email,
+    )
+    if not chip:
+        raise RuntimeError("ipp bypass: email chip not found")
+    await _click_bbox_random(page, chip)
+
+    # 2) accountchooser 대기
+    async with asyncio.timeout(10):
+        while "accountchooser" not in page.url:
+            await asyncio.sleep(0.3)
+    await asyncio.sleep(random.uniform(0.8, 1.5))
+
+    # 3) accountchooser 에서 본인 계정 row — 이메일 포함하면서 면적 가장 작은 클릭 가능 요소
+    row = await page.evaluate(
+        """(email) => {
+          const cands = Array.from(document.querySelectorAll(
+            '[role="link"], [role="button"], li, div'
+          )).filter(e => e.offsetParent !== null);
+          let best = null, bestArea = 1e12;
+          for (const e of cands) {
+            const t = (e.innerText||'').toLowerCase();
+            if (!t.includes(email)) continue;
+            const r = e.getBoundingClientRect();
+            if (r.width < 50 || r.height < 30) continue;
+            const area = r.width * r.height;
+            if (area < bestArea) { best = e; bestArea = area; }
+          }
+          if (!best) return null;
+          const r = best.getBoundingClientRect();
+          return {x: r.x, y: r.y, w: r.width, h: r.height};
+        }""",
+        email,
+    )
+    if not row:
+        raise RuntimeError("ipp bypass: account row not found on accountchooser")
+    await _click_bbox_random(page, row)
+
+    # 4) pwd 페이지로 이동 대기 (FSM loop 이 _type_password 로 받음)
+    async with asyncio.timeout(10):
+        while "/signin/challenge/pwd" not in page.url:
+            await asyncio.sleep(0.3)
+
+    # 플래그 세팅 — LoginGoal → verifier 에서 Google 계정 전용 goal skip
+    acct._ipp_flagged = True
+    log.info(f"ipp bypass succeeded for {email} — _ipp_flagged=True")
 
 
 async def _click_skip(page, acct):
@@ -140,7 +257,9 @@ HANDLERS = {
     "type_email": _type_email,
     "type_password": _type_password,
     "submit_recovery_code": _submit_recovery_code,
+    "submit_totp_code": _submit_totp_code,
     "pick_recovery_option": _pick_recovery_option,
+    "bypass_ipp": _bypass_ipp,
     "click_skip": _click_skip,
 }
 
@@ -173,6 +292,9 @@ async def run_login_fsm(page, acct) -> tuple[str, str]:
 
         if hname is None:
             return "failed_unknown", url
+        if hname == "DEAD":
+            # /challenge/dp — Google 이 사실상 계정 차단. 프로필과 함께 폐기.
+            return "dead", url
         if hname == "DONE":
             # myaccount.google.com 에 도달 = Google 로그인 완료 확실. (이 URL 접근
             # 자체가 로그인 요구 — 미로그인이면 signin 으로 리다이렉트됨)

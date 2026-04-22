@@ -29,7 +29,7 @@ from hydra.browser.actions import (
 )
 from hydra.core.logger import get_logger
 from worker.channel_actions import (
-    pick_avatar_file, rename_channel, set_description, upload_avatar,
+    change_handle, pick_avatar_file, rename_channel, set_description, upload_avatar,
 )
 from worker.data_saver import set_primary_video_language
 from worker.google_account import (
@@ -280,6 +280,22 @@ async def run_onboard_session(
                 if _is_connection_error(e):
                     result.critical_failures.append("rename_channel:disconnected")
                     result.error = f"browser disconnected during channel rename: {e}"
+                    return result
+
+        # 핸들 변경 — 중복이면 랜덤 3자리 덧붙여 최대 4회 시도
+        handle = plan.get("handle") or ""
+        if handle:
+            try:
+                if await change_handle(page, handle):
+                    result.actions.append(f"handle:{handle}")
+                else:
+                    result.actions.append("handle_failed")
+            except Exception as e:
+                log.warning(f"change_handle error: {e}")
+                result.actions.append(f"handle_error:{e}")
+                if _is_connection_error(e):
+                    result.critical_failures.append("change_handle:disconnected")
+                    result.error = f"browser disconnected during handle change: {e}"
                     return result
 
         # 아바타 업로드 — avatar_policy == "set_during_warmup" 인 50% 계정

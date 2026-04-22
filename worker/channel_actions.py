@@ -24,6 +24,13 @@ import re
 import random
 from pathlib import Path
 
+
+class StudioIdentityChallengeRequired(Exception):
+    """YT Studio 진입 시 ytcp-auth-confirmation-dialog (본인 인증) 가 뜬 상태.
+
+    채널 설정 input 들을 backdrop 이 가려 클릭 불가. 7일 쿨다운 대상.
+    """
+
 from hydra.browser.actions import human_click, random_delay, type_human
 from hydra.core.logger import get_logger
 
@@ -509,6 +516,259 @@ async def change_handle(page, desired_handle: str, channel_id: str | None = None
     except Exception as e:
         log.warning(f"change_handle failed: {e}")
         return False
+
+
+async def set_full_channel_profile(
+    page,
+    channel_name: str,
+    desired_handle: str,
+    avatar_path: str | None = None,
+    channel_id: str | None = None,
+) -> dict:
+    """이름 + 핸들 + 아바타 한 번에 — 단일 맞춤설정 진입, 단일 publish.
+
+    흐름:
+    1. Studio 진입 + 모달/툴팁 dismiss
+    2. 사이드바 '맞춤설정' 클릭 → /editing/profile 도달
+    3. 아바타 업로드 (avatar_path 있으면): 변경 버튼 → file chooser → 크롭 완료
+    4. 이름 input 스크롤 → triple-click + Delete + type
+    5. 핸들 input 스크롤 → 동일 방식 + 추천 anchor fallback
+    6. 게시 버튼 1회 클릭 + 확인 모달 처리
+    7. publish 재-disabled 대기 (서버 커밋 확인)
+    8. reload 없이 input DOM + avatar-btn src 직접 확인
+
+    반환: {"name_ok": bool, "handle_ok": bool, "avatar_ok": bool}
+    """
+    result = {"name_ok": False, "handle_ok": False, "avatar_ok": False}
+
+    if not channel_name or not desired_handle:
+        return result
+    if not channel_id:
+        channel_id = await _resolve_channel_id(page)
+        if not channel_id:
+            log.warning("set_full_channel_profile: no channel_id")
+            return result
+
+    # 1~2) Studio 진입 + 맞춤설정 도달
+    try:
+        await page.goto("https://studio.youtube.com/", wait_until="domcontentloaded")
+        await random_delay(3.0, 5.0)
+        await _dismiss_studio_modals(page)
+        await _enter_customization(page)
+    except Exception as e:
+        log.warning(f"set_full_channel_profile: enter settings failed: {e}")
+        return result
+
+    # Studio 본인 인증 다이얼로그 감지 — backdrop 이 input 가려서 작업 불가능.
+    # 7일 쿨다운 대상으로 즉시 raise.
+    auth_blocked = await page.evaluate("""() => {
+      const d = document.querySelector('ytcp-auth-confirmation-dialog');
+      return !!(d && d.offsetParent !== null);
+    }""")
+    if auth_blocked:
+        log.warning("set_full_channel_profile: ytcp-auth-confirmation-dialog present — 7d cooldown")
+        raise StudioIdentityChallengeRequired("ytcp-auth-confirmation-dialog blocking channel inputs")
+
+    name_input = page.locator("ytcp-channel-editing-channel-name input").first
+    handle_input = page.locator("input[placeholder='핸들 설정']").first
+    try:
+        await name_input.wait_for(timeout=15_000)
+        await handle_input.wait_for(timeout=15_000)
+    except Exception as e:
+        log.warning(f"set_full_channel_profile: inputs not ready: {e}")
+        return result
+
+    # 3) Avatar 업로드 (옵션)
+    avatar_applied = False
+    if avatar_path:
+        try:
+            upload_btn = page.locator(
+                "ytcp-profile-image-upload ytcp-button#replace-button button, "
+                "ytcp-profile-image-upload ytcp-button#upload-button button, "
+                "ytcp-profile-image-upload button:has-text('변경'), "
+                "ytcp-profile-image-upload button:has-text('업로드'), "
+                "ytcp-profile-image-upload button:has-text('Change'), "
+                "ytcp-profile-image-upload button:has-text('Upload')"
+            ).first
+            await upload_btn.wait_for(timeout=8_000)
+            try:
+                await upload_btn.scroll_into_view_if_needed(timeout=4_000)
+            except Exception:
+                pass
+            async with page.expect_file_chooser(timeout=10_000) as fc_info:
+                try:
+                    await human_click(upload_btn, timeout=5_000)
+                except Exception:
+                    await upload_btn.click(timeout=5_000)
+            fc = await fc_info.value
+            await fc.set_files(avatar_path)
+            await random_delay(4.0, 7.0)
+            # 크롭 완료
+            done_clicked = await page.evaluate("""() => {
+              const dlgs = Array.from(document.querySelectorAll('tp-yt-paper-dialog, ytcp-dialog'))
+                .filter(d => d.offsetParent !== null);
+              for (const d of dlgs) {
+                const btn = Array.from(d.querySelectorAll('button'))
+                  .find(b => b.offsetParent !== null && ['완료','Done','저장','Save'].includes((b.innerText||'').trim()));
+                if (btn) { btn.click(); return true; }
+              }
+              return false;
+            }""")
+            if done_clicked:
+                log.info("avatar: crop done clicked")
+                await random_delay(2.0, 3.5)
+                avatar_applied = True
+        except Exception as e:
+            log.warning(f"avatar upload step failed: {e}")
+
+    # 4) Handle 먼저 (validity 판정 받아 publish 활성화)
+    handle_success_val = None
+    cur_handle = (await handle_input.input_value()) or ""
+    need_handle = not cur_handle.lower().startswith(desired_handle.lower())
+    if need_handle:
+        try:
+            try:
+                await handle_input.scroll_into_view_if_needed(timeout=4_000)
+            except Exception:
+                pass
+            await handle_input.click(click_count=3)
+            await random_delay(0.2, 0.4)
+            await page.keyboard.press("Delete")
+            await random_delay(0.3, 0.6)
+            await page.keyboard.type(desired_handle, delay=random.randint(60, 140))
+            await random_delay(0.4, 0.8)
+            try:
+                await page.keyboard.press("Enter")
+            except Exception:
+                pass
+            # Google 검증 대기 — suggestion anchor 또는 사용 가능 피드백까지 ~4s
+            await random_delay(3.5, 5.0)
+
+            # 중복 판정 기준: publish 버튼 상태가 아니라 suggestion anchor 직접 확인
+            # (publish 는 다른 dirty field 때문에 enabled 되므로 신뢰 불가)
+            sugg_box = await page.evaluate("""() => {
+              const a = document.querySelector(
+                'ytcp-anchor.YtcpChannelEditingChannelHandleSuggestedHandleAnchor'
+              );
+              if (!a || a.offsetParent === null) return null;
+              const r = a.getBoundingClientRect();
+              if (r.width < 5 || r.height < 5) return null;
+              return {x: r.x, y: r.y, w: r.width, h: r.height,
+                      text: (a.innerText||'').trim()};
+            }""")
+
+            if sugg_box is None:
+                # suggestion 없음 → 입력값 그대로 사용 가능
+                handle_success_val = desired_handle
+                log.info(f"handle '{desired_handle}' available (no suggestion shown)")
+            else:
+                # 중복 → suggestion 을 실제 마우스로 랜덤 오프셋 클릭 (해상도 무관)
+                suggested_text = sugg_box.get("text") or ""
+                cx = sugg_box["x"] + sugg_box["w"] * random.uniform(0.25, 0.75)
+                cy = sugg_box["y"] + sugg_box["h"] * random.uniform(0.3, 0.7)
+                try:
+                    await page.mouse.move(cx - 12, cy - 6, steps=6)
+                    await asyncio.sleep(random.uniform(0.15, 0.35))
+                    await page.mouse.move(cx, cy, steps=4)
+                    await page.mouse.click(cx, cy, delay=random.randint(40, 90))
+                    await random_delay(1.8, 2.8)
+                    # 클릭 후 input 값 갱신 대기
+                    async with asyncio.timeout(8):
+                        while True:
+                            new_val = (await handle_input.input_value()) or ""
+                            if new_val and not new_val.lower().startswith(desired_handle.lower()):
+                                handle_success_val = new_val
+                                log.info(f"handle: suggestion '{suggested_text}' → input='{new_val}'")
+                                break
+                            await asyncio.sleep(0.3)
+                except Exception as e:
+                    log.warning(f"handle: suggestion click/verify err: {e}")
+        except Exception as e:
+            log.warning(f"handle type err: {e}")
+
+    # 5) Name
+    cur_name = (await name_input.input_value()) or ""
+    need_name = cur_name.strip() != channel_name.strip()
+    if need_name:
+        try:
+            try:
+                await name_input.scroll_into_view_if_needed(timeout=4_000)
+            except Exception:
+                pass
+            await name_input.click(click_count=3)
+            await random_delay(0.2, 0.4)
+            await page.keyboard.press("Delete")
+            await random_delay(0.3, 0.6)
+            await page.keyboard.type(channel_name, delay=random.randint(60, 140))
+            await random_delay(0.6, 1.2)
+        except Exception as e:
+            log.warning(f"name type err: {e}")
+
+    # 6) Publish (1 회)
+    pub = page.locator("ytcp-button#publish-button button").first
+    dis = await pub.get_attribute("disabled")
+    aria_dis = await pub.get_attribute("aria-disabled")
+    nothing_to_publish = (dis is not None or aria_dis == "true")
+    if not nothing_to_publish:
+        try:
+            try:
+                await human_click(pub, timeout=5_000)
+            except Exception:
+                await pub.click(timeout=5_000)
+            log.info("publish clicked (combined save)")
+            await random_delay(2.5, 4.0)
+            # 확인 모달 처리
+            try:
+                await page.evaluate("""() => {
+                  const dlgs = Array.from(document.querySelectorAll('tp-yt-paper-dialog, ytcp-dialog, [role="dialog"]'))
+                    .filter(d => d.offsetParent !== null && (d.innerText||'').trim());
+                  for (const d of dlgs) {
+                    const btn = Array.from(d.querySelectorAll('button'))
+                      .find(b => b.offsetParent !== null && ['확인','게시','OK','저장'].includes((b.innerText||'').trim()));
+                    if (btn) btn.click();
+                  }
+                }""")
+                await random_delay(2.0, 3.5)
+            except Exception:
+                pass
+        except Exception as e:
+            log.warning(f"publish click err: {e}")
+
+    # 7) publish 버튼 다시 disabled 대기 (서버 커밋 확인)
+    try:
+        await page.wait_for_function("""() => {
+          const b = document.querySelector("ytcp-button#publish-button button");
+          if (!b) return false;
+          return b.disabled || b.getAttribute('aria-disabled') === 'true';
+        }""", timeout=10_000)
+    except Exception:
+        pass
+
+    # 8) 인플레이스 검증
+    final_name = (await name_input.input_value()) or ""
+    final_handle = (await handle_input.input_value()) or ""
+    result["name_ok"] = final_name.strip() == channel_name.strip()
+    # 중복이어서 suggestion 으로 치환됐으면 그 값 기준, 아니면 desired 기준
+    expected_handle = (handle_success_val or desired_handle).lstrip("@").lower()
+    result["handle_ok"] = bool(final_handle) and final_handle.lstrip("@").lower().startswith(expected_handle)
+
+    # Avatar 검증 — preview img src 가 placeholder(AIdro_) 가 아니면 OK (data:/http: 둘 다 통과)
+    if avatar_path:
+        try:
+            preview_src = await page.evaluate(
+                "() => document.querySelector('ytcp-profile-image-upload img')?.src || ''"
+            )
+        except Exception:
+            preview_src = ""
+        result["avatar_ok"] = bool(preview_src) and "AIdro_" not in preview_src
+    else:
+        result["avatar_ok"] = True  # 업로드 요청 없음 → vacuously true
+
+    log.info(
+        f"set_full_channel_profile: name={final_name!r} handle={final_handle!r} "
+        f"avatar_applied={avatar_applied} result={result}"
+    )
+    return result
 
 
 async def set_channel_profile(

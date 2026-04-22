@@ -2,6 +2,7 @@
 import asyncio
 import random
 import json
+from datetime import datetime, UTC
 
 from hydra.db.models import Account
 from hydra.db.session import SessionLocal
@@ -13,8 +14,45 @@ from onboarding.session import open_session
 
 log = get_logger("onboarding.verifier")
 
+
+async def _bypass_ipp_if_present(page, acct) -> bool:
+    """현재 URL 이 /challenge/ipp/ 면 bypass 실행 + acct.ipp_flagged 세팅.
+
+    Returns True 면 bypass 수행됨.
+    """
+    if "/signin/challenge/ipp/" not in page.url:
+        return False
+    if getattr(acct, "ipp_flagged", False):
+        return False  # 이미 우회했는데도 또 뜸 — 재우회 안 함 (loop 방지)
+    from onboarding.login_fsm import _bypass_ipp, _type_password
+    try:
+        await _bypass_ipp(page, acct)     # chip → accountchooser → my account → /pwd
+        await _type_password(page, acct)  # pwd 재입력
+        async with asyncio.timeout(15):
+            while "/signin/challenge/" in page.url and "/pwd" in page.url:
+                await asyncio.sleep(0.5)
+        acct.ipp_flagged = True
+        db = SessionLocal()
+        try:
+            row = db.get(Account, acct.id)
+            row.ipp_flagged = True
+            tag = f"login_ipp_bypassed @ {datetime.now(UTC).isoformat(timespec='seconds')}"
+            row.notes = (row.notes + "\n" + tag) if row.notes else tag
+            db.commit()
+        finally:
+            db.close()
+        log.info(f"post-goal ipp bypass OK for #{acct.id} — ipp_flagged=True")
+        return True
+    except Exception as e:
+        log.warning(f"post-goal ipp bypass err for #{acct.id}: {e}")
+        return False
+
 PHASE_GAP_MIN = 3.0
 PHASE_GAP_MAX = 7.0
+
+# ipp (복구 전화 요구) 우회한 계정에서는 Google 계정 정보 수정 경로가 막힘.
+# YouTube 쪽 (video_lang_ko, natural_browsing, channel_profile, avatar) 은 정상.
+IPP_BLOCKED_GOALS = {"ui_lang_ko", "display_name", "totp_secret"}
 
 
 def _connection_error(e: BaseException) -> bool:
@@ -66,6 +104,15 @@ async def verify_account(account_id: int, *, rotate_ip: bool = True) -> Report:
                 report.skip(goal.name, "login prerequisite failed")
                 continue
 
+            # 이전 goal 실행 중 ipp interstitial 에 걸렸으면 우회하고 flag 세팅
+            await _bypass_ipp_if_present(page, acct)
+
+            # ipp 우회 계정 — Google 계정 설정 수정 경로 차단됨 (워밍업/댓글은 가능)
+            if getattr(acct, "ipp_flagged", False) and goal.name in IPP_BLOCKED_GOALS:
+                report.skip(goal.name, "ipp_blocked (google account locked)")
+                log.info(f"[{goal.name}] skipped — ipp_flagged")
+                continue
+
             # Phase gap — 계정당 goal 간 5~12초 대기 (자연스러움 + YT throttle 회피)
             await asyncio.sleep(random.uniform(PHASE_GAP_MIN, PHASE_GAP_MAX))
 
@@ -105,6 +152,9 @@ async def verify_account(account_id: int, *, rotate_ip: bool = True) -> Report:
                 continue
 
             log.info(f"[{goal.name}] apply={result} — url={page.url[:120]}")
+
+            # apply 가 끝난 직후 ipp interstitial 걸렸을 수 있음 → 우회 + flag
+            await _bypass_ipp_if_present(page, acct)
 
             report.add(goal.name, GoalStatus(result))
 

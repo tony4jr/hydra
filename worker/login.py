@@ -18,6 +18,8 @@ SKIP_ARIA_PATTERNS = [
     "skip", "not now", "나중에", "건너뛰기", "취소",
     "bỏ qua", "bo qua", "không phải", "không, cảm ơn",
     "skip for now",
+    # 복구 옵션/집 주소 등 GDS(accounts 2차 안내) 페이지 — "Huỷ/Hủy" 취소
+    "huỷ", "hủy", "cancel", "nhắc lại sau", "maybe later",
 ]
 
 
@@ -54,10 +56,30 @@ async def auto_login(
         await page.goto("https://accounts.google.com/signin")
         await random_delay(2.0, 4.0)
 
+        # Step 0: 이미 Google 쪽 로그인된 경우 이 단계를 스킵하고 post-login 프롬프트
+        # 만 처리. Google 은 signin URL 접속 시 로그인 쿠키가 있으면 myaccount 로
+        # 리다이렉트 시키거나 AccountChooser 화면 (email input 없음) 을 보여줌.
+        # 그대로 wait_for(email input) 을 돌리면 10초 타임아웃 → False 반환되는 버그.
+        cur_url = page.url
+        if "myaccount.google.com" in cur_url or "youtube.com" in cur_url:
+            log.info("auto_login: already logged in (redirected to myaccount/youtube)")
+            await _skip_post_login_prompts(page, max_attempts=6)
+            return True
+        # signin 에 머물러 있으면 email input 짧게 선확인. 없으면 이미 로그인된 것.
+        try:
+            await page.wait_for_selector("input[type='email']", timeout=3_000)
+        except Exception:
+            log.info("auto_login: no email input on signin, treating as logged-in")
+            await _skip_post_login_prompts(page, max_attempts=6)
+            return True
+
         # Step 1: email
+        # ⚠ typing_style="typist" 강제 — paster (clipboard paste) 는 일부 브라우저
+        # 환경에서 clipboard 권한 거부로 silent 실패 → input 이 빈 채로 Enter 되어
+        # "이메일을 입력하세요" 에러 → 이후 password 화면 안 뜸.
         email_input = page.locator("input[type='email']")
         await email_input.wait_for(timeout=10_000)
-        await type_human(page, "input[type='email']", email)
+        await type_human(page, "input[type='email']", email, typing_style="typist")
         await random_delay(0.5, 1.5)
         await page.keyboard.press("Enter")
         await random_delay(2.0, 4.0)
@@ -65,7 +87,10 @@ async def auto_login(
         # Step 2: password (Google 의 "실패한 시도 횟수가 너무 많음" 경고에도 입력 필드 존재)
         password_input = page.locator("input[type='password'][name='Passwd']")
         await password_input.wait_for(timeout=10_000)
-        await type_human(page, "input[type='password'][name='Passwd']", password)
+        await type_human(
+            page, "input[type='password'][name='Passwd']", password,
+            typing_style="typist",
+        )
         await random_delay(0.5, 1.5)
         await page.keyboard.press("Enter")
         await random_delay(3.0, 6.0)
@@ -90,7 +115,9 @@ async def auto_login(
             pass
 
         # Step 5: 포스트로그인 프롬프트 (전화/사진) 스킵
-        await _skip_post_login_prompts(page, max_attempts=3)
+        # GDS 안내 페이지가 연속으로 여러 개 뜰 수 있음 (복구전화번호, 복구이메일,
+        # 집 주소, 프로필 사진 등) — 충분히 많이 시도.
+        await _skip_post_login_prompts(page, max_attempts=6)
         return True
     except Exception as e:
         log.error(f"Login failed: {e}")
@@ -106,7 +133,7 @@ async def _handle_totp(page, totp_secret: str):
         totp_input = page.locator("input[name='totpPin'], input#totpPin")
         await totp_input.wait_for(timeout=10_000)
         code = pyotp.TOTP(totp_secret).now()
-        await type_human(page, "input[name='totpPin'], input#totpPin", code)
+        await type_human(page, "input[name='totpPin'], input#totpPin", code, typing_style="typist")
         await random_delay(0.5, 1.0)
         await page.keyboard.press("Enter")
         await random_delay(3.0, 5.0)
@@ -144,7 +171,7 @@ async def _handle_email_2fa(page, recovery_email: str) -> bool:
     except Exception:
         log.error("Pin input not found on Google challenge page")
         return False
-    await type_human(page, "input[name='Pin']", code)
+    await type_human(page, "input[name='Pin']", code, typing_style="typist")
     await random_delay(0.5, 1.0)
     await page.keyboard.press("Enter")
     await random_delay(3.0, 6.0)
@@ -160,24 +187,31 @@ async def _select_recovery_email_challenge(page, recovery_email: str) -> bool:
     무관하게 올바른 옵션을 잡을 수 있다.
     """
     try:
-        user = recovery_email.split("@")[0][:3].lower()
+        # Google 이 옵션 텍스트에서 이메일을 마스킹함 (예: `d••••••••@911•••••.us`).
+        # 로컬파트 앞 3글자는 거의 보이지 않으므로 user 의 첫 글자 + 도메인 앞 3글자
+        # (`@911` 등) 로 매칭. TLD 는 도메인에 포함된 걸 그대로 사용.
+        user0 = recovery_email.split("@")[0][:1].lower()
         domain = recovery_email.split("@")[1][:3].lower()
         clicked = await page.evaluate(f"""
-            ({{ user, domain }}) => {{
+            ({{ user0, domain }}) => {{
               const items = Array.from(document.querySelectorAll('[role="link"], [role="button"]'))
                 .filter(el => el.offsetParent !== null);
               const hit = items.find(el => {{
                 const t = (el.textContent || '').toLowerCase();
-                return t.includes(user) && t.includes('@' + domain);
+                // 이메일 형태(@domain 부분 존재) + 로컬파트 첫 글자와 일치
+                if (!t.includes('@' + domain)) return false;
+                // 첫 글자 검증: 텍스트에서 @ 앞 부분의 첫 영숫자가 user0 인지
+                const before = t.split('@')[0].replace(/[^a-z0-9]/g, '');
+                return before.startsWith(user0);
               }});
               if (hit) {{ hit.click(); return true; }}
               return false;
             }}
-        """, {"user": user, "domain": domain})
+        """, {"user0": user0, "domain": domain})
         if clicked:
             await random_delay(2.0, 4.0)
             return True
-        log.error(f"challenge selection: no option matched user={user}/@{domain}")
+        log.error(f"challenge selection: no option matched user0={user0}/@{domain}")
     except Exception as e:
         log.error(f"challenge selection error: {e}")
     return False

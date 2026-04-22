@@ -40,6 +40,10 @@ class Account(Base):
     identity_challenge_until = Column(DateTime)  # 이 시각 이전엔 태스크 배정 금지
     identity_challenge_count = Column(Integer, default=0)
 
+    # ipp (복구 전화 변경 확인) 우회한 계정 — Google 계정 설정 수정 불가.
+    # 워밍업/댓글은 YT 도메인 내에서만 진행하도록 워커가 체크.
+    ipp_flagged = Column(Boolean, default=False, nullable=False)
+
     persona = Column(Text)  # JSON
     role_preference = Column(String)  # seed|witness|agree|any
 

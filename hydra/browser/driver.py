@@ -54,9 +54,20 @@ class BrowserSession:
         self._browser = await self._playwright.chromium.connect_over_cdp(ws_endpoint)
         self._context = self._browser.contexts[0]
 
-        # Use existing page or create new
-        pages = self._context.pages
-        self._page = pages[0] if pages else await self._context.new_page()
+        # AdsPower 프로필이 여러 복원 탭(start.adspower.net + 과거 myaccount 탭 등)을
+        # 띄울 수 있음. 여분 탭 전부 닫고 하나만 유지.
+        pages = list(self._context.pages)
+        if pages:
+            self._page = pages[0]
+            for extra in pages[1:]:
+                try:
+                    await extra.close()
+                except Exception as e:
+                    log.warning(f"failed to close extra tab: {e}")
+            if len(pages) > 1:
+                log.info(f"closed {len(pages)-1} extra startup tab(s)")
+        else:
+            self._page = await self._context.new_page()
 
         log.info(f"Connected to profile {self.profile_id}")
         return self

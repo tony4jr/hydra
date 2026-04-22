@@ -156,24 +156,34 @@ export default function AccountsPage() {
   const [stats, setStats] = useState<AccountStats>({ total: 0, active: 0, warmup: 0, cooldown: 0, retired: 0, ghost: 0, identity_challenge: 0 })
 
   useEffect(() => {
-    setLoading(true)
-    Promise.all([
-      fetchApi<Record<string, number>>('/accounts/api/stats').catch(() => ({} as Record<string, number>)),
-      fetchApi<{ items: Account[] }>('/accounts/api/list').catch(() => ({ items: [] })),
-    ]).then(([rawStats, a]) => {
-      // API는 {registered: 20, active: 5, ...} 형태 — total은 합산
-      const total = Object.values(rawStats).reduce((sum, n) => sum + (n || 0), 0)
-      setStats({
-        total,
-        active: rawStats['active'] || 0,
-        warmup: rawStats['warmup'] || 0,
-        cooldown: rawStats['cooldown'] || 0,
-        retired: rawStats['retired'] || 0,
-        ghost: (rawStats['ghost'] || 0) + (rawStats['suspended'] || 0),
-        identity_challenge: rawStats['identity_challenge'] || 0,
-      })
-      setAccounts(a.items || [])
-    }).finally(() => setLoading(false))
+    let mounted = true
+    const load = async (initial: boolean) => {
+      if (initial) setLoading(true)
+      try {
+        const [rawStats, a] = await Promise.all([
+          fetchApi<Record<string, number>>('/accounts/api/stats').catch(() => ({} as Record<string, number>)),
+          fetchApi<{ items: Account[] }>('/accounts/api/list').catch(() => ({ items: [] })),
+        ])
+        if (!mounted) return
+        const total = Object.values(rawStats).reduce((sum, n) => sum + (n || 0), 0)
+        setStats({
+          total,
+          active: rawStats['active'] || 0,
+          warmup: rawStats['warmup'] || 0,
+          cooldown: rawStats['cooldown'] || 0,
+          retired: rawStats['retired'] || 0,
+          ghost: (rawStats['ghost'] || 0) + (rawStats['suspended'] || 0),
+          identity_challenge: rawStats['identity_challenge'] || 0,
+        })
+        setAccounts(a.items || [])
+      } finally {
+        if (mounted && initial) setLoading(false)
+      }
+    }
+    load(true)
+    // 10초 폴링 — 실시간감 + 부하 낮음 (skeleton 은 최초만 표시)
+    const id = setInterval(() => load(false), 10_000)
+    return () => { mounted = false; clearInterval(id) }
   }, [])
 
   const warmupDayDescs: Record<string, string> = {

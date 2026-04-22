@@ -27,6 +27,7 @@ from worker.google_account import register_otp_authenticator, handle_identity_ch
 from worker.data_saver import set_primary_video_language
 from worker.channel_actions import (
     rename_channel, change_handle, pick_avatar_file, upload_avatar, _enter_customization,
+    set_full_channel_profile, StudioIdentityChallengeRequired,
 )
 from hydra.core import crypto
 from hydra.core.enums import WARMUP_DAYS
@@ -53,7 +54,37 @@ class LoginGoal:
     async def apply(self, page, acct) -> ApplyResult:
         status, final_url = await run_login_fsm(page, acct)
         log.info(f"login_fsm → {status} @ {final_url[:80]}")
-        return "done" if status == "done" else "failed"
+
+        # ipp 우회 성공 시 DB 컬럼 + notes 태그 + acct.ipp_flagged 전파.
+        if getattr(acct, "_ipp_flagged", False):
+            db = SessionLocal()
+            try:
+                row = db.get(Account, acct.id)
+                row.ipp_flagged = True
+                tag = f"login_ipp_bypassed @ {datetime.now(UTC).isoformat(timespec='seconds')}"
+                row.notes = (row.notes + "\n" + tag) if row.notes else tag
+                db.commit()
+            finally:
+                db.close()
+            acct.ipp_flagged = True
+            log.info(f"account #{acct.id} ipp_flagged=True (google-account goals will skip)")
+
+        if status == "done":
+            return "done"
+        if status == "dead":
+            # /challenge/dp — 계정 사망. retired 처리 (1:1 프로필이라 같이 폐기).
+            db = SessionLocal()
+            try:
+                row = db.get(Account, acct.id)
+                row.status = "retired"
+                row.retired_at = datetime.now(UTC)
+                row.retired_reason = f"login /challenge/dp (dead) @ {final_url[:200]}"
+                db.commit()
+            finally:
+                db.close()
+            log.warning(f"account #{acct.id} retired — /challenge/dp")
+            return "blocked"
+        return "failed"
 
 
 class UiLangKoGoal:
@@ -214,88 +245,76 @@ async def _read_studio_inputs(page) -> dict:
 
 
 class ChannelProfileGoal:
-    """이름 + 핸들 한 번에 수정 후 publish 1회 (맞춤설정 단일 진입).
+    """이름 + 핸들 + 아바타 단일 진입 · 단일 publish (set_full_channel_profile).
 
-    required=True — 둘 중 하나라도 실패하면 goal failed.
+    avatar 는 channel_plan.avatar_policy == 'set_during_warmup' 일 때만 업로드.
+    name/handle 은 required — 하나라도 실패하면 goal failed. avatar 부분 실패는
+    반환 dict 에 avatar_ok=False 로 남지만 goal 은 name+handle 기준으로만 판정.
     """
     name = "channel_profile"
     required = True
 
-    async def detect(self, page, acct) -> State:
+    def _targets(self, acct) -> tuple[str, str, str | None]:
         import json as _json
         persona = _json.loads(acct.persona) if acct.persona else {}
         cp = persona.get("channel_plan") or {}
         title = (cp.get("title") or "").strip()
         handle = (cp.get("handle") or "").strip()
+        avatar_path = None
+        if cp.get("avatar_policy") == "set_during_warmup":
+            avatar_path = pick_avatar_file(persona, cp)
+        return title, handle, avatar_path
+
+    async def detect(self, page, acct) -> State:
+        title, handle, avatar_path = self._targets(acct)
         if not title or not handle:
             return "blocked"
         try:
             cur = await _read_studio_inputs(page)
             name_ok = cur["name"] == title
             handle_ok = cur["handle"].lower().startswith(handle.lower())
-            return "done" if (name_ok and handle_ok) else "not_done"
+            avatar_ok = True
+            if avatar_path:
+                src = await page.evaluate(
+                    "() => document.querySelector('#avatar-btn img')?.src || ''"
+                )
+                avatar_ok = bool(src) and "AIdro_" not in src
+            return "done" if (name_ok and handle_ok and avatar_ok) else "not_done"
         except Exception:
             return "not_done"
 
     async def apply(self, page, acct) -> ApplyResult:
-        from worker.channel_actions import set_channel_profile
-        import json as _json
-        persona = _json.loads(acct.persona) if acct.persona else {}
-        cp = persona.get("channel_plan") or {}
-        title = (cp.get("title") or "").strip()
-        handle = (cp.get("handle") or "").strip()
+        title, handle, avatar_path = self._targets(acct)
         if not title or not handle:
             return "blocked"
         try:
-            name_ok, handle_ok = await set_channel_profile(page, title, handle)
-            if name_ok and handle_ok:
-                return "done"
-            log.warning(f"channel_profile partial: name_ok={name_ok} handle_ok={handle_ok}")
-            return "failed"
+            res = await set_full_channel_profile(
+                page, title, handle, avatar_path=avatar_path
+            )
+        except StudioIdentityChallengeRequired:
+            # Studio 본인 인증 팝업 — 7일 쿨다운 + status 전이.
+            db = SessionLocal()
+            try:
+                row = db.get(Account, acct.id)
+                row.status = "identity_challenge"
+                row.identity_challenge_until = datetime.now(UTC) + timedelta(days=7)
+                row.identity_challenge_count = (row.identity_challenge_count or 0) + 1
+                tag = f"studio_auth_challenge @ {datetime.now(UTC).isoformat(timespec='seconds')}"
+                row.notes = (row.notes + "\n" + tag) if row.notes else tag
+                db.commit()
+            finally:
+                db.close()
+            log.warning(f"account #{acct.id} 7d cooldown — studio auth dialog")
+            return "blocked"
         except Exception as e:
             log.warning(f"channel_profile apply err: {e}")
             return "failed"
-
-
-class AvatarGoal:
-    """avatar_policy == 'set_during_warmup' 일 때만 실행. 서버 avatar-btn src 로 판정."""
-    name = "avatar"
-    required = False
-
-    def _policy_enabled(self, acct) -> bool:
-        import json as _json
-        persona = _json.loads(acct.persona) if acct.persona else {}
-        cp = persona.get("channel_plan") or {}
-        return cp.get("avatar_policy") == "set_during_warmup"
-
-    async def detect(self, page, acct) -> State:
-        if not self._policy_enabled(acct):
-            return "blocked"
-        try:
-            await page.goto("https://studio.youtube.com/", wait_until="domcontentloaded", timeout=20_000)
-            import asyncio as _a
-            await _a.sleep(3)
-            src = await page.evaluate("() => document.querySelector('#avatar-btn img')?.src || ''")
-            if not src:
-                return "not_done"
-            return "not_done" if "AIdro_" in src else "done"
-        except Exception:
-            return "not_done"
-
-    async def apply(self, page, acct) -> ApplyResult:
-        import json as _json
-        if not self._policy_enabled(acct):
-            return "blocked"
-        persona = _json.loads(acct.persona) if acct.persona else {}
-        cp = persona.get("channel_plan") or {}
-        path = pick_avatar_file(persona, cp)
-        if not path:
-            return "failed"
-        try:
-            return "done" if await upload_avatar(page, path) else "failed"
-        except Exception as e:
-            log.warning(f"avatar apply err: {e}")
-            return "failed"
+        if res.get("name_ok") and res.get("handle_ok"):
+            if avatar_path and not res.get("avatar_ok"):
+                log.warning(f"channel_profile: avatar upload failed (name/handle ok) — continuing")
+            return "done"
+        log.warning(f"channel_profile partial: {res}")
+        return "failed"
 
 
 class NaturalBrowsingGoal:
@@ -411,6 +430,5 @@ ALL_GOALS: list[Goal] = [
     NaturalBrowsingGoal(),   # YT 자연 탐색 — 봇 패턴 회피
     IdentityChallengeGoal(),
     ChannelProfileGoal(),
-    AvatarGoal(),
     FinalizeWarmupGoal(),
 ]
