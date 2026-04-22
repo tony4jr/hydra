@@ -143,9 +143,65 @@ sudo fail2ban-client status sshd
 
 ---
 
-## 4. 다음 단계
+## 4. 도메인 + TLS (Let's Encrypt)
 
-- Task 3: 도메인 연결 + TLS (Let's Encrypt)
+### 도메인 세팅
+**DuckDNS** (무료) 선택: https://www.duckdns.org
+- 서브도메인: `hydra-prod` → `hydra-prod.duckdns.org`
+- Current IP: 158.247.232.101 설정 후 "update ip"
+
+### nginx 임시 설정 + TLS 발급
+
+```bash
+sudo apt-get install -y nginx certbot python3-certbot-nginx
+
+# HTTP 80 임시 설정 (certbot 검증용)
+sudo tee /etc/nginx/sites-available/hydra > /dev/null <<'NGINX'
+server {
+    listen 80;
+    server_name hydra-prod.duckdns.org;
+    location / {
+        return 200 "hydra-prod ok\n";
+        add_header Content-Type text/plain;
+    }
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+}
+NGINX
+
+sudo ln -sf /etc/nginx/sites-available/hydra /etc/nginx/sites-enabled/hydra
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t
+sudo systemctl reload nginx
+
+# Let's Encrypt 인증서 발급 + 자동 HTTPS 리다이렉트
+sudo certbot --nginx -d hydra-prod.duckdns.org \
+    --non-interactive --agree-tos -m <ADMIN_EMAIL> --redirect
+```
+
+### 확인
+```bash
+curl https://hydra-prod.duckdns.org/     # HTTPS 정상 응답
+sudo certbot certificates                # 만료일 확인 (90일)
+sudo certbot renew --dry-run             # 자동 갱신 점검
+```
+
+certbot.timer 가 매일 점검 → 만료 30일 전부터 자동 갱신.
+
+### 아키텍처 특성: 단일 도메인 / 경로 라우팅
+
+DuckDNS 는 서브도메인 1개만 제공 → `admin.hydra-prod.*` 와 `api.hydra-prod.*` 분리 불가.
+**단일 도메인 내 경로로 분리:**
+- `https://hydra-prod.duckdns.org/api/...` → FastAPI
+- `https://hydra-prod.duckdns.org/` (그 외) → React 정적 파일
+
+유료 도메인 구매 후에는 `admin.hydra.com` / `api.hydra.com` 서브도메인 분리 가능.
+
+---
+
+## 5. 다음 단계
+
 - Task 4: PostgreSQL + Python 설치
 - Task 5: repo clone + 의존성
 - ...
