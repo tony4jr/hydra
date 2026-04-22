@@ -37,15 +37,12 @@ set -a
 set +a
 .venv/bin/alembic upgrade head
 
-# 5. 프론트엔드 빌드 — frontend/package.json 있을 때만
-if [[ -f frontend/package.json ]]; then
+# 5. 프론트엔드 빌드 — frontend/package.json + npm 둘 다 있을 때만
+if [[ -f frontend/package.json ]] && command -v npm >/dev/null 2>&1; then
     echo "[deploy] frontend build..."
-    cd frontend
-    npm ci --silent
-    npm run build
-    cd /opt/hydra
+    (cd frontend && npm ci --silent && npm run build)
 else
-    echo "[deploy] frontend skipped (no package.json)"
+    echo "[deploy] frontend skipped (no package.json or npm)"
 fi
 
 # 6. 서버 재시작 (deployer 무비번 sudo 설정돼있어야 — Validation B Step 3)
