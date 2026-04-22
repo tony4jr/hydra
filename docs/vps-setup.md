@@ -262,9 +262,49 @@ scp -i ~/.ssh/hydra_prod deployer@<VPS_IP>:/opt/hydra/.env ~/secure/hydra-prod.e
 
 ---
 
-## 6. 다음 단계
+## 6. DB 스키마 초기화 (중요 — `alembic upgrade head` 단독으로 불가)
 
-- Task 5: repo clone + 의존성 (pip install)
-- Task 6~14: Alembic 마이그레이션
-- Task 15: auth 모듈
+기존 `56b9dedf1f5b_initial_schema` 마이그레이션이 `pass` 만 있어서 (히스토리 결함) 빈 DB 에 `alembic upgrade head` 돌리면 accounts 테이블이 생성되지 않고 이후 마이그레이션 실패함.
+
+**반드시 아래 순서로 초기화:**
+
+```bash
+cd /opt/hydra
+source .venv/bin/activate
+set -a; source .env; set +a
+
+# 1. SQLAlchemy 모델 기반으로 스키마 일괄 생성
+python <<'PY'
+from sqlalchemy import create_engine
+from hydra.db.models import Base
+import os
+e = create_engine(os.environ["DB_URL"])
+Base.metadata.create_all(e)
+PY
+
+# 2. Alembic 을 최신 head 로 stamp (마이그레이션 이미 반영됐다고 표시)
+alembic stamp head
+
+# 3. 이후 새 마이그레이션은 정상 증분 적용 가능
+#    예: 나중에 개발자가 alembic revision 으로 만든 파일 →
+#        git pull + alembic upgrade head
+```
+
+### 검증
+
+```bash
+alembic current                            # head revision 표시
+python -c "from sqlalchemy import create_engine, inspect; import os; print(sorted(inspect(create_engine(os.environ['DB_URL'])).get_table_names()))"
+```
+
+accounts, workers, tasks, users, execution_logs, audit_logs, profile_locks 등 20+ 테이블 목록 출력되어야.
+
+---
+
+## 7. 다음 단계
+
+- Task 15: auth 모듈 (bcrypt + JWT)
+- Task 16: 감사 로그 미들웨어
+- Task 17~17.6: stub routes + CORS + flat 통합
+- Phase 1b: core backend APIs
 - ...
