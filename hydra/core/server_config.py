@@ -23,8 +23,12 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from hydra.db import session as _db_session
 from hydra.db.models import SystemConfig
-from hydra.db.session import SessionLocal
+
+
+def SessionLocal():  # noqa: N802 — call-time resolve (테스트 monkeypatch 용)
+    return _db_session.SessionLocal()
 
 
 # Namespace prefix — SystemConfig 의 일반 설정과 충돌 방지
