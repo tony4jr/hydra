@@ -96,6 +96,84 @@ HYDRA 프로젝트 C 단계 (내부 상용 시스템) 진입을 위한 인프라
 
 ## 3. 통신 프로토콜
 
+### 3.0 아바타 파일 저장소 (중앙 집중)
+
+**2.1GB / 953 파일 규모의 프로필 이미지를 VPS 에 중앙 저장하고, 워커는 태스크별로 필요한 파일만 다운로드.**
+
+#### 저장 위치
+```
+VPS: /var/hydra/avatars/
+  ├── female/20s/f20_001.png
+  ├── female/30s/f30_012.png
+  ├── male/20s/m20_005.png
+  └── object/flower/flower_003.png
+```
+
+#### 접근 제어 (nginx + 인증)
+```nginx
+location /avatars/ {
+    # 워커 토큰 또는 관리자 세션 검증
+    auth_request /internal/auth-check;
+    alias /var/hydra/avatars/;
+    add_header Cache-Control "public, max-age=86400";  # 워커 24h 캐시 허용
+}
+```
+
+#### 워커 측 다운로드 로직
+```python
+async def fetch_avatar(relative_path: str) -> Path:
+    """VPS 에서 아바타 다운로드 → 로컬 temp 파일 반환."""
+    cache_key = hashlib.md5(relative_path.encode()).hexdigest()
+    cached = CACHE_DIR / f"{cache_key}.png"
+    if cached.exists() and cached.stat().st_mtime > time.time() - 86400:
+        return cached   # 24h 캐시 hit
+    url = f"{SERVER_URL}/api/avatars/{relative_path}"
+    async with httpx.AsyncClient() as c:
+        resp = await c.get(url, headers={"X-Worker-Token": TOKEN})
+        resp.raise_for_status()
+        cached.write_bytes(resp.content)
+    return cached
+```
+
+#### 초기 Mac → VPS 마이그레이션
+```bash
+# 개발자 Mac 에서 1회 실행 (VPS 세팅 직후)
+rsync -avz --progress data/avatars/ \
+    deployer@vps.hydra.com:/var/hydra/avatars/
+
+# 권한 조정
+ssh deployer@vps.hydra.com "chown -R www-data:www-data /var/hydra/avatars/"
+```
+
+#### 어드민 UI 업로드 기능 (Phase 1 필수)
+- **다중 파일 드래그 앤 드롭** 업로드
+- **ZIP 업로드** 시 서버에서 자동 해제 (폴더 구조 보존)
+- **카테고리 선택 UI** — female/male/object + 세부 (20s/30s/flower/cat 등 동적)
+- **미리보기 + 개별 삭제**
+- **모바일 대응** — 카메라 앨범 직접 선택, 터치 업로드
+- **용량 제한** — 파일당 5MB, 전체 업로드 200MB
+- **저장 전 자동 리사이즈** — 800×800px 초과 시 축소 (원본도 별도 백업)
+
+#### API 엔드포인트
+| 메서드 | 경로 | 용도 | 인증 |
+|---|---|---|---|
+| GET | `/api/avatars/{path}` | 워커가 파일 다운로드 | 워커 토큰 |
+| GET | `/api/admin/avatars/list` | 어드민 UI 가 목록 조회 (트리 구조) | 관리자 세션 |
+| POST | `/api/admin/avatars/upload` | 파일 업로드 (multipart) | 관리자 세션 |
+| POST | `/api/admin/avatars/upload-zip` | ZIP 업로드 후 서버에서 해제 | 관리자 세션 |
+| DELETE | `/api/admin/avatars/{path}` | 개별 삭제 | 관리자 세션 |
+
+#### 백업
+- `/var/hydra/avatars/` 를 일 1회 Backblaze B2 로 rsync 백업
+- DB 백업과 별도 (바이너리 대용량)
+- 30일 주기로 삭제 파일 정리
+
+#### 미래 확장 (필요 시 B2 이관)
+현재는 VPS 로컬 저장, 10~50GB 넘어가면 B2 object storage 로 이관 고려.
+API 레이어만 유지하면 저장 위치 변경이 투명함 (`/api/avatars/{path}` 엔드포인트 구현만 교체).
+
+---
+
 ### 3.1 서버 ↔ 워커 (Poll 기반 HTTP)
 
 워커가 아웃바운드 HTTPS 로만 서버와 통신. 인바운드 포트 열 필요 없음 → NAT/방화벽 무관.
