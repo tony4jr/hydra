@@ -4,6 +4,7 @@ Spec Part 12.2: dashboard pages.
 """
 
 import asyncio
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -40,10 +41,17 @@ async def lifespan(app):
 
 app = FastAPI(title="HYDRA Dashboard", version="1.0", lifespan=lifespan)
 
-# CORS middleware for frontend dev server
+# CORS — 운영 도메인 + 로컬 dev. env 로 override 가능.
+# allow_credentials=True 이므로 "*" 금지 — 명시적 origin 리스트만.
+_cors_env = os.getenv(
+    "CORS_ALLOWED_ORIGINS",
+    "http://localhost:5173,http://localhost:80,http://localhost",
+)
+_cors_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:80", "http://localhost"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
