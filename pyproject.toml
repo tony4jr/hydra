@@ -67,6 +67,9 @@ dependencies = [
     "alembic>=1.13",
     "bcrypt>=4.0",
     "pyjwt>=2.8",
+
+    # Windows 워커 전용 — DPAPI 암호화 (Task 32)
+    "pywin32>=306; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]
