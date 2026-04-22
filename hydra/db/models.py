@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 
 from sqlalchemy import (
-    Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text,
+    BigInteger, Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
@@ -633,3 +633,29 @@ class User(Base):
     role = Column(String(32), nullable=False, default="operator")
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
     last_login_at = Column(DateTime, nullable=True)
+
+
+class ExecutionLog(Base):
+    """워커가 태스크 실행 중 중앙 VPS 로 업로드하는 실행 로그.
+
+    - 하루 수천~수만 row 예상 → 30일 주기 auto-delete (Phase 4)
+    - task_id ON DELETE CASCADE: task 삭제 시 관련 로그 자동 정리
+    - context 는 JSON (url, selector, step 등 구조화 메타데이터)
+    """
+    __tablename__ = "execution_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    task_id = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=True)
+    worker_id = Column(Integer, ForeignKey("workers.id"), nullable=True)
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True)
+    timestamp = Column(DateTime, nullable=False)
+    level = Column(String(16), nullable=False)        # DEBUG / INFO / WARN / ERROR
+    message = Column(Text, nullable=False)
+    context = Column(Text, nullable=True)             # JSON
+    screenshot_url = Column(String(512), nullable=True)
+
+    __table_args__ = (
+        Index("idx_exec_task", "task_id"),
+        Index("idx_exec_worker_time", "worker_id", "timestamp"),
+        Index("idx_exec_account_time", "account_id", "timestamp"),
+    )
