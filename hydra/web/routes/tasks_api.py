@@ -176,6 +176,80 @@ def complete(
         db.close()
 
 
+class AccountCreationResult(BaseModel):
+    gmail: str
+    encrypted_password: str
+    adspower_profile_id: str
+    persona: dict = {}
+    recovery_email: str | None = None
+    encrypted_totp_secret: str | None = None
+    youtube_channel_id: str | None = None
+    phone_number: str | None = None
+    fingerprint_snapshot: str | None = None
+
+
+@router.post("/{task_id}/result/account-created")
+def account_created(
+    task_id: int,
+    req: AccountCreationResult,
+    worker: Worker = Depends(worker_auth),
+) -> dict:
+    """create_account 태스크의 결과 업로드 — 새 Account row 생성 + task 완료.
+
+    요구사항:
+    - 소유 워커만 (task.worker_id == worker.id)
+    - task_type == "create_account"
+    - gmail / adspower_profile_id 중복 시 409
+    원자적 커밋: Account INSERT + Task UPDATE + Lock release 한 트랜잭션.
+    """
+    import json as _json
+
+    db = _db_session.SessionLocal()
+    try:
+        task = db.get(Task, task_id)
+        if task is None:
+            raise HTTPException(404, "task not found")
+        if task.worker_id != worker.id:
+            raise HTTPException(403, "task not owned by this worker")
+        if task.task_type != "create_account":
+            raise HTTPException(400, "not a create_account task")
+
+        if db.query(Account).filter_by(gmail=req.gmail).first() is not None:
+            raise HTTPException(409, f"gmail already exists: {req.gmail}")
+        if db.query(Account).filter_by(
+            adspower_profile_id=req.adspower_profile_id
+        ).first() is not None:
+            raise HTTPException(
+                409,
+                f"adspower_profile_id already exists: {req.adspower_profile_id}",
+            )
+
+        account = Account(
+            gmail=req.gmail,
+            password=req.encrypted_password,  # 이미 Fernet 암호화된 상태로 저장
+            recovery_email=req.recovery_email,
+            adspower_profile_id=req.adspower_profile_id,
+            youtube_channel_id=req.youtube_channel_id,
+            phone_number=req.phone_number,
+            totp_secret=req.encrypted_totp_secret,
+            persona=_json.dumps(req.persona, ensure_ascii=False) if req.persona else None,
+            status="registered",
+        )
+        db.add(account)
+        db.flush()  # id 필요
+
+        task.account_id = account.id
+        task.status = "done"
+        task.completed_at = datetime.now(UTC)
+        task.result = _json.dumps({"created_account_id": account.id})
+        _release_lock(db, task.id)
+        db.commit()
+
+        return {"ok": True, "account_id": account.id}
+    finally:
+        db.close()
+
+
 class TaskFailRequest(BaseModel):
     task_id: int
     error: str
