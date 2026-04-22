@@ -519,6 +519,7 @@ class Worker(Base):
     enrolled_at = Column(DateTime)
     health_snapshot = Column(Text)  # JSON 문자열
     tailscale_ip = Column(String(45))
+    allowed_task_types = Column(Text, nullable=False, default='["*"]', server_default='["*"]')
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     notes = Column(Text)
 

@@ -9,6 +9,7 @@ Legacy `/api/tasks/fetch`, `/complete`, `/fail` (hydra.api.tasks) 는 공존 유
 """
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -18,6 +19,25 @@ from sqlalchemy import text
 from hydra.db import session as _db_session
 from hydra.db.models import Account, ProfileLock, Task, Worker
 from hydra.web.routes.worker_api import worker_auth
+
+
+def _parse_allowed(allowed_json: str | None) -> list[str]:
+    """Worker.allowed_task_types (JSON 문자열) → list[str].
+    파싱 실패 시 안전 기본값 ['*'] (wildcard).
+    """
+    if not allowed_json:
+        return ["*"]
+    try:
+        parsed = json.loads(allowed_json)
+    except (json.JSONDecodeError, TypeError):
+        return ["*"]
+    if not isinstance(parsed, list):
+        return ["*"]
+    return [str(x) for x in parsed]
+
+
+def _is_task_allowed(task_type: str, allowed: list[str]) -> bool:
+    return "*" in allowed or task_type in allowed
 
 router = APIRouter()
 
@@ -41,7 +61,7 @@ _FETCH_SQL_PG = text("""
        END DESC,
        t.scheduled_at ASC NULLS FIRST,
        t.id ASC
-     LIMIT 1
+     LIMIT 10
      FOR UPDATE OF t SKIP LOCKED
 """)
 
@@ -64,7 +84,7 @@ _FETCH_SQL_SQLITE = text("""
        END DESC,
        t.scheduled_at ASC,
        t.id ASC
-     LIMIT 1
+     LIMIT 10
 """)
 
 
@@ -74,13 +94,24 @@ def fetch_tasks(worker: Worker = Depends(worker_auth)) -> dict:
     try:
         dialect = db.bind.dialect.name
         q = _FETCH_SQL_PG if dialect == "postgresql" else _FETCH_SQL_SQLITE
-        row = db.execute(q).first()
-        if row is None:
+        rows = db.execute(q).fetchall()  # 최대 10개 후보
+        if not rows:
             return {"tasks": []}
 
-        task = db.get(Task, row[0])
-        if task is None or task.status != "pending":
-            # 레이스: 다른 워커가 먼저 집어간 경우
+        # Task 37: allowed_task_types 필터 (wildcard 포함)
+        allowed = _parse_allowed(worker.allowed_task_types)
+
+        task = None
+        for (tid,) in rows:
+            candidate = db.get(Task, tid)
+            if candidate is None or candidate.status != "pending":
+                continue
+            if not _is_task_allowed(candidate.task_type, allowed):
+                continue
+            task = candidate
+            break
+
+        if task is None:
             return {"tasks": []}
 
         account = db.get(Account, task.account_id)
