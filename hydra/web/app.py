@@ -16,6 +16,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from hydra.db.session import init_db
 from hydra.web.routes import accounts, brands, campaigns, dashboard, keywords, videos, settings, pools, logs, system, export, creator, recovery
+from hydra.web.routes import (
+    admin_auth, admin_workers, admin_avatars, admin_deploy, admin_audit,
+    worker_api, tasks_api, avatar_serving,
+)
 from hydra.api.workers import router as workers_router
 from hydra.api.tasks import router as tasks_router
 from hydra.api.presets import router as presets_router
@@ -73,6 +77,17 @@ app.include_router(ws_router)
 app.include_router(profile_locks_router)
 app.include_router(version_router)
 app.include_router(ai_router)
+
+# --- 신규 /api/admin/* + /api/workers, /api/tasks 네임스페이스 (Task 17 stub) ---
+# 실제 엔드포인트는 후속 task 에서 채워짐. 기존 flat routes 는 유지 (Task 17.6 에서 통합).
+app.include_router(admin_auth.router,    prefix="/api/admin/auth",    tags=["admin-auth"])
+app.include_router(admin_workers.router, prefix="/api/admin/workers", tags=["admin-workers"])
+app.include_router(admin_avatars.router, prefix="/api/admin/avatars", tags=["admin-avatars"])
+app.include_router(admin_deploy.router,  prefix="/api/admin",         tags=["admin-deploy"])
+app.include_router(admin_audit.router,   prefix="/api/admin/audit",   tags=["admin-audit"])
+app.include_router(worker_api.router,    prefix="/api/workers",       tags=["worker"])
+app.include_router(tasks_api.router,     prefix="/api/tasks",         tags=["tasks"])
+app.include_router(avatar_serving.router, prefix="/api/avatars",      tags=["avatar-static"])
 
 
 @app.get("/", response_class=HTMLResponse)
