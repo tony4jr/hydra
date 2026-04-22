@@ -10,7 +10,8 @@ def test_worker_config_defaults():
     assert cfg.heartbeat_interval == 30
     assert cfg.task_fetch_interval == 5
     assert cfg.max_concurrent_tasks == 3
-    assert cfg.worker_version == "0.1.0"
+    # Task 33: worker_version 이 git short hash 로 자동 감지되므로 문자열만 검증
+    assert isinstance(cfg.worker_version, str) and len(cfg.worker_version) >= 4
 
 
 def test_worker_config_from_env(monkeypatch):

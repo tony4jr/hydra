@@ -66,10 +66,11 @@ def test_os_environ_overrides_file(tmp_path, monkeypatch):
     env = tmp_path / ".env"
     env.write_text("SERVER_URL=https://from-file\nWORKER_TOKEN=file-token\n")
     monkeypatch.setattr("worker.secrets._dotenv_path", lambda: env)
+    # 다른 테스트가 누수시킨 SERVER_URL 제거 후 WORKER_TOKEN 만 override
+    monkeypatch.delenv("SERVER_URL", raising=False)
     monkeypatch.setenv("WORKER_TOKEN", "overridden")
     result = load_secrets()
     assert result["WORKER_TOKEN"] == "overridden"
-    # file 기반도 유지
     assert result["SERVER_URL"] == "https://from-file"
 
 
