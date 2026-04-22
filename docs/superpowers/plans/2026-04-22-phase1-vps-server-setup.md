@@ -97,18 +97,271 @@ docs/
 
 ---
 
-## Task 목록 (전체 36개)
+## Task 목록 (전체 45개) — 5개 sub-phase 로 분할
 
-### 그룹 A: VPS 프로비저닝 (Task 1~4)
-### 그룹 B: 기본 인프라 설정 (Task 5~8)
-### 그룹 C: Alembic 마이그레이션 (Task 9~14)
-### 그룹 D: 인증 + 네임스페이스 (Task 15~17)
-### 그룹 E: 핵심 API (Task 18~23)
-### 그룹 F: 배포 파이프라인 (Task 24~25)
-### 그룹 G: 프론트엔드 (Task 26~29)
-### 그룹 H: 아바타 마이그레이션 + 워커 설치 (Task 30~31)
-### 그룹 I: 워커 코드 VPS 전환 (Task 32~35) ⭐ 핵심
-### 그룹 J: end-to-end 검증 (Task 36)
+**실행 순서 원칙:** 각 sub-phase 종료마다 "작동하는 무언가" 확보 → 체크포인트에서 다음 결정.
+
+### 📦 Phase 1a: Foundation (3~4일) — curl 로 검증 가능한 인프라
+- Task 0: 환경 준비 (.env, conftest, axios, vite alias, admin 시드)
+- Task 1~4: VPS 프로비저닝
+- Task 5: repo clone + deps
+- Task 6~14: Alembic 마이그레이션 전체
+- Task 15: auth 모듈
+- Task 16: 감사 로그 미들웨어
+- Task 17: stub 라우터 + namespace
+- Task 17.5: CORS 설정
+- Task 17.6: 기존 flat routes 통합 결정
+
+**체크포인트:** `curl /openapi.json` 작동, DB 전체 테이블 존재, 로그인 API 통과.
+
+### 📦 Phase 1b: Core Backend (3~4일) — 워커-서버 통신 curl 로 완전 검증
+- Task 18: 어드민 로그인 API
+- Task 19: 워커 enrollment
+- Task 20: heartbeat + 시크릿 수신
+- Task 21: fetch/complete/fail (SKIP LOCKED)
+- Task 22: 좀비 태스크 복구
+- Task 23: 아바타 API
+- Task 24: deploy.sh + systemd + nginx
+- Task 25: 배포/정지/카나리 엔드포인트
+- Task 25.5: admin_session Depends 일괄 적용 ⭐ 보안
+- Task 37: 워커 특화 (allowed_task_types) ⭐
+- Task 38: 계정 생성 결과 업로드 API ⭐
+
+**체크포인트:** curl 로 enrollment→heartbeat→fetch→complete 전체 작동. 배포는 SSH 에서 `bash deploy.sh`.
+
+### 📦 Phase 1c: Minimal Admin UI (2~3일) — 일상 운영 가능
+- Task 26: Tailwind + shadcn 세팅
+- Task 27: 로그인 + 반응형 AppShell
+- Task 28: 배포 버튼 + 긴급정지 바
+- Task 28.5: 워커 목록 페이지 (간단)
+
+**체크포인트:** 어드민 UI 로 로그인 → 배포 → 긴급정지, 모바일 포함.
+
+### 📦 Phase 1d: Worker 전환 (2~3일) — Windows 워커 1대 실전
+- Task 30: 아바타 Mac → VPS rsync
+- Task 31: PowerShell setup 스크립트
+- Task 32: 시크릿 로딩 (DPAPI)
+- Task 33: Config 재구성
+- Task 34: 자가 업데이트
+- Task 35: 로컬 DB 의존성 제거
+
+**체크포인트:** 테스트 워커 설치 완료, heartbeat 확인, 실제 태스크 1개 수행.
+
+### 📦 Phase 1e: UI 완성 + 종합 검증 (2~3일)
+- Task 29: 아바타 관리 UI (반응형)
+- Task 39: 워커 특화 편집 UI ⭐
+- Task 39.5: 감사 로그 뷰어
+- Task 36: end-to-end 검증 체크리스트
+
+**체크포인트:** 모든 기능 UI 에서 사용 가능, 전체 파이프라인 검증 통과.
+
+---
+
+## Task 0: 환경 준비 (env, conftest, axios, vite alias, admin 시드)
+
+**목적:** Phase 1 전체를 관통하는 공통 설정 파일들. 이게 먼저 있어야 후속 task 들이 매끄럽게 실행됨.
+
+**Files:**
+- Create: `.env.example`
+- Create: `tests/conftest.py`
+- Create: `frontend/src/lib/api.ts`
+- Modify: `frontend/vite.config.ts`
+- Create: `scripts/create_admin.py`
+
+- [ ] **Step 1: .env.example 작성**
+
+프로젝트 루트 `.env.example`:
+```bash
+# 개발(Mac) / 프로덕션(VPS) 공통 템플릿. 실제 .env 는 git 커밋 금지.
+
+# DB 연결 (Mac: sqlite, VPS: postgresql)
+DATABASE_URL=sqlite:///data/hydra.db
+# DATABASE_URL=postgresql://hydra:STRONGPASS@localhost/hydra_prod
+
+# 암호화 키 (accounts.password / totp_secret 등 AES)
+DB_CRYPTO_KEY=generate-with-openssl-rand-base64-32
+
+# JWT 세션 서명 키
+JWT_SECRET=generate-with-openssl-rand-base64-64
+
+# 워커 enrollment 토큰 서명 키 (JWT_SECRET 과 분리)
+ENROLLMENT_SECRET=generate-with-openssl-rand-base64-32
+
+# 공개 URL
+SERVER_URL=http://localhost:8000
+# SERVER_URL=https://api.hydra.com
+
+# 아바타 파일 저장 위치
+AVATAR_STORAGE_DIR=./data/avatars
+# AVATAR_STORAGE_DIR=/var/hydra/avatars
+```
+
+생성 명령 주석도 포함되어 있음. VPS 세팅 시 복사해서 실제 값 채움.
+
+- [ ] **Step 2: tests/conftest.py — 테스트 DB 격리**
+
+`tests/conftest.py`:
+```python
+"""pytest 전역 설정 — 테스트마다 격리된 sqlite 메모리 DB 사용."""
+import os
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+
+@pytest.fixture(scope="function", autouse=True)
+def _isolated_test_db(monkeypatch, tmp_path):
+    """각 테스트마다 /tmp 에 임시 sqlite 파일 사용. alembic head 까지 migration."""
+    db_path = tmp_path / "test.db"
+    test_url = f"sqlite:///{db_path}"
+    monkeypatch.setenv("DATABASE_URL", test_url)
+
+    # SessionLocal / engine 을 test url 로 재바인딩
+    import hydra.db.session as sess
+    engine = create_engine(test_url, connect_args={"check_same_thread": False})
+    sess.engine = engine
+    sess.SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+
+    # Alembic upgrade head
+    from alembic.config import Config
+    from alembic import command
+    cfg = Config("alembic.ini")
+    cfg.set_main_option("sqlalchemy.url", test_url)
+    command.upgrade(cfg, "head")
+    yield
+    # tmp_path 가 자동 정리
+```
+
+**효과:** 기존 `data/hydra.db` 프로덕션 DB 건드리지 않음. 테스트끼리 격리. CI 안정.
+
+- [ ] **Step 3: frontend/src/lib/api.ts — axios instance + JWT interceptor**
+
+`frontend/src/lib/api.ts`:
+```typescript
+import axios from "axios";
+
+// baseURL 은 빌드 시점 env (VITE_API_URL) 또는 dev proxy.
+// dev 에선 vite.config.ts 의 proxy 가 /api 를 http://localhost:8000 으로 포워딩.
+// prod 에선 admin.hydra.com 에서 /api 호출이 api.hydra.com 으로 가도록 nginx 가 처리.
+export const api = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || "",
+  timeout: 30000,
+});
+
+// 요청 시 JWT 자동 주입
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem("hydra_token");
+  if (token && config.headers) {
+    config.headers["Authorization"] = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// 401 응답 시 자동 로그인 페이지
+api.interceptors.response.use(
+  (resp) => resp,
+  (err) => {
+    if (err.response?.status === 401) {
+      localStorage.removeItem("hydra_token");
+      window.location.href = "/login";
+    }
+    return Promise.reject(err);
+  }
+);
+```
+
+이후 모든 task 의 frontend 코드는 `import { api } from "@/lib/api"` 로 `api.post(...)` 형태 사용.
+
+- [ ] **Step 4: frontend/vite.config.ts — path alias 설정**
+
+`frontend/vite.config.ts` 를 수정 (기존 내용 유지 + alias 추가):
+```typescript
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import path from "path";
+
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
+  server: {
+    proxy: {
+      "/api": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
+    },
+  },
+});
+```
+
+**효과:** `@/components/ui/button` import 작동. dev server 가 `/api` 호출을 FastAPI 로 프록시.
+
+tsconfig.json 에도:
+```json
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  }
+}
+```
+
+- [ ] **Step 5: scripts/create_admin.py — 첫 관리자 생성 CLI**
+
+`scripts/create_admin.py`:
+```python
+#!/usr/bin/env python3
+"""첫 관리자 계정을 DB 에 생성. VPS 최초 세팅 직후 1회 실행.
+
+usage: python scripts/create_admin.py <email> <password>
+"""
+import sys
+from hydra.db.session import SessionLocal
+from hydra.db.models import User
+from hydra.core.auth import hash_password
+
+
+def main():
+    if len(sys.argv) != 3:
+        print("usage: create_admin.py <email> <password>"); sys.exit(1)
+    email, password = sys.argv[1], sys.argv[2]
+    db = SessionLocal()
+    try:
+        if db.query(User).filter_by(email=email).first():
+            print(f"user {email} already exists"); return
+        user = User(email=email, password_hash=hash_password(password), role="admin")
+        db.add(user); db.commit()
+        print(f"created admin: id={user.id} email={user.email}")
+    finally:
+        db.close()
+
+
+if __name__ == "__main__":
+    main()
+```
+
+- [ ] **Step 6: 검증 — pytest conftest 작동 확인**
+
+```bash
+pytest tests/test_users_model.py -v
+```
+
+예상: test_user_creation_with_role pass (격리된 DB 에서 수행되고 자동 정리).
+
+**주의:** 이 Task 는 Task 6~10 (Alembic 마이그레이션) 이전에 실행되면 conftest 의 `command.upgrade(cfg, "head")` 가 실패함. 실제 실행은 Task 14 (마이그레이션 완료) 이후 재검증 필요. **Task 0 의 코드는 준비해두되 검증은 Task 14 에서.**
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add .env.example tests/conftest.py frontend/src/lib/api.ts frontend/vite.config.ts scripts/create_admin.py
+git commit -m "infra: env 템플릿 + 테스트 DB 격리 + axios 인터셉터 + vite alias + admin 시드"
+```
 
 ---
 
@@ -1482,6 +1735,210 @@ git add hydra/web/main.py
 git commit -m "refactor(api): /api/admin, /api/workers, /api/v1 네임스페이스 분리"
 ```
 
+**중요:** Task 17 은 **stub 라우터만** 먼저 만든다는 점 명시. 각 `admin_*.py` 파일은 **빈 `router = APIRouter()`** 만 존재하는 상태로 만들고, 실제 엔드포인트는 Task 18~23 에서 채워짐. 이 순서로 하지 않으면 ImportError 로 서버가 안 뜸.
+
+- [ ] **Step 5: stub 라우터 파일 생성**
+
+```bash
+# 빈 router 만 있는 파일들 생성
+for f in admin_accounts admin_campaigns admin_workers admin_avatars admin_deploy admin_audit admin_auth worker_api tasks_api avatar_serving; do
+  cat > "hydra/web/routes/${f}.py" <<'EOF'
+"""Stub — 실제 엔드포인트는 후속 task 에서 채워짐."""
+from fastapi import APIRouter
+router = APIRouter()
+EOF
+done
+```
+
+**기존 파일 처리:** `hydra/web/routes/` 에 이미 있는 `accounts.py`, `campaigns.py` 등은 Task 17.6 에서 통합 처리 (아래).
+
+- [ ] **Step 6: 실행 확인**
+
+```bash
+python -c "from hydra.web.main import app; print([r.path for r in app.routes][:10])"
+```
+
+검증: ImportError 없이 app 로드됨. 기본 경로만 출력 (/openapi.json 등).
+
+---
+
+## Task 17.5: CORS 미들웨어 설정
+
+**목적:** admin.hydra.com (React) → api.hydra.com (FastAPI) 크로스 도메인 요청 허용.
+
+**Files:**
+- Modify: `hydra/web/main.py`
+- Test: `tests/test_cors.py`
+
+- [ ] **Step 1: 테스트 작성**
+
+`tests/test_cors.py`:
+```python
+from fastapi.testclient import TestClient
+from hydra.web.main import app
+
+client = TestClient(app)
+
+
+def test_cors_preflight_from_admin_domain_allowed():
+    resp = client.options(
+        "/api/admin/auth/login",
+        headers={
+            "Origin": "https://admin.hydra.com",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type,authorization",
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.headers.get("access-control-allow-origin") == "https://admin.hydra.com"
+
+
+def test_cors_random_origin_blocked():
+    resp = client.options(
+        "/api/admin/auth/login",
+        headers={
+            "Origin": "https://evil.example.com",
+            "Access-Control-Request-Method": "POST",
+        },
+    )
+    # 거절되거나 allow-origin 헤더 없음
+    assert resp.headers.get("access-control-allow-origin") != "https://evil.example.com"
+```
+
+- [ ] **Step 2: 실행 → FAIL**
+
+```bash
+pytest tests/test_cors.py -v
+```
+
+- [ ] **Step 3: CORSMiddleware 등록**
+
+`hydra/web/main.py` 상단:
+```python
+import os
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI(title="HYDRA API")
+
+_allowed = os.getenv("CORS_ALLOWED_ORIGINS",
+    "https://admin.hydra.com,http://localhost:5173").split(",")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in _allowed],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ... 기존 include_router 코드
+```
+
+`.env.example` 에 추가:
+```bash
+CORS_ALLOWED_ORIGINS=https://admin.hydra.com,http://localhost:5173
+```
+
+- [ ] **Step 4: 실행 → PASS**
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add hydra/web/main.py .env.example tests/test_cors.py
+git commit -m "feat(api): CORS 미들웨어 (admin.hydra.com + dev localhost)"
+```
+
+---
+
+## Task 17.6: 기존 flat routes 를 admin_ 네임스페이스로 통합
+
+**목적:** 이미 있는 `hydra/web/routes/accounts.py`, `campaigns.py` 등을 Task 17 의 stub 파일들과 합친다. 리팩터링 최소화 — 파일 경로 이동 없이 **main.py 에서 prefix 만 조정**.
+
+**Files:**
+- Modify: `hydra/web/main.py` (기존 routes 들을 `/api/admin/*` prefix 로 mount)
+- Delete: stub 파일 중 중복되는 것
+
+- [ ] **Step 1: 기존 routes 식별**
+
+```bash
+ls hydra/web/routes/*.py | grep -v __init__
+```
+
+기존: accounts, brands, campaigns, creator, dashboard, export, keywords, logs, pools, recovery, settings, system, videos.
+
+이 중 관리 기능(어드민) 성격인 것들: accounts, brands, campaigns, creator, dashboard, export, keywords, pools, settings, system, videos, logs, recovery.
+
+- [ ] **Step 2: main.py 에서 prefix 통합**
+
+```python
+# hydra/web/main.py
+
+# Task 17 에서 생성한 stub 파일 중 기존에 이미 있는 것은 삭제
+# (accounts.py, campaigns.py 등은 이미 있으므로 stub 필요 없음.
+#  admin_workers, admin_auth, admin_avatars, admin_deploy, admin_audit 만 신규)
+
+from hydra.web.routes import (
+    # 기존 (어드민 성격)
+    accounts, campaigns, brands, creator, dashboard, export_, keywords,
+    logs, pools, recovery, settings, system, videos,
+    # 신규
+    admin_auth, admin_workers, admin_avatars, admin_deploy, admin_audit,
+    worker_api, tasks_api, avatar_serving,
+)
+
+# 기존 flat routes → /api/admin/ prefix 로 마운트
+app.include_router(accounts.router,   prefix="/api/admin/accounts",    tags=["admin"])
+app.include_router(campaigns.router,  prefix="/api/admin/campaigns",   tags=["admin"])
+app.include_router(brands.router,     prefix="/api/admin/brands",      tags=["admin"])
+app.include_router(dashboard.router,  prefix="/api/admin/dashboard",   tags=["admin"])
+app.include_router(logs.router,       prefix="/api/admin/logs",        tags=["admin"])
+# ... 나머지 동일 패턴
+
+# 신규 어드민
+app.include_router(admin_auth.router,    prefix="/api/admin/auth",    tags=["admin-auth"])
+app.include_router(admin_workers.router, prefix="/api/admin/workers", tags=["admin-workers"])
+app.include_router(admin_avatars.router, prefix="/api/admin/avatars", tags=["admin-avatars"])
+app.include_router(admin_deploy.router,  prefix="/api/admin",         tags=["admin-deploy"])
+app.include_router(admin_audit.router,   prefix="/api/admin/audit",   tags=["admin-audit"])
+
+# 워커
+app.include_router(worker_api.router,  prefix="/api/workers", tags=["worker"])
+app.include_router(tasks_api.router,   prefix="/api/tasks",   tags=["tasks"])
+app.include_router(avatar_serving.router, prefix="/api/avatars", tags=["avatar-static"])
+```
+
+- [ ] **Step 3: 중복 stub 삭제**
+
+```bash
+# Task 17 에서 만든 stub 중 이미 있는 파일들은 삭제
+# (accounts 등은 이미 있으므로 admin_accounts stub 생성 안 함, main.py 에서 기존 accounts 직접 참조)
+rm hydra/web/routes/admin_accounts.py hydra/web/routes/admin_campaigns.py
+```
+
+- [ ] **Step 4: 동작 확인**
+
+```bash
+python -c "from hydra.web.main import app; print([r.path for r in app.routes if 'admin' in r.path][:10])"
+```
+
+검증: `/api/admin/accounts/...`, `/api/admin/auth/login` 등 경로 모두 표시.
+
+- [ ] **Step 5: 프론트에서의 호출 경로 수정**
+
+기존 프론트 코드에 `axios.get("/api/accounts")` 같은 호출이 있다면 → `/api/admin/accounts` 로 변경. 전부 find/replace 후 검증.
+
+```bash
+grep -rn 'axios\|fetch' frontend/src/ | grep "/api/" | head
+```
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add hydra/web/main.py hydra/web/routes/ frontend/src/
+git commit -m "refactor(api): 기존 flat routes 를 /api/admin/* prefix 로 통합"
+```
+
 ---
 
 ## Task 18: 어드민 로그인 API
@@ -2638,6 +3095,382 @@ git commit -m "feat(admin): /api/admin/deploy, /pause, /unpause, /canary"
 
 ---
 
+## Task 25.5: admin_session Depends 일괄 적용 ⭐ 보안
+
+**목적:** 모든 `/api/admin/*` 라우터에 `Depends(admin_session)` 강제. 현재는 Task 18 에서 로그인 API 만 공개, 나머지 라우터들은 적용 안 돼있어 로그인 없이 호출 가능 상태. 배포 전 반드시 막아야 함.
+
+**Files:**
+- Modify: `hydra/web/main.py` (router include 시 dependencies 주입)
+- Test: `tests/test_admin_requires_auth.py`
+
+- [ ] **Step 1: 테스트 작성**
+
+`tests/test_admin_requires_auth.py`:
+```python
+from fastapi.testclient import TestClient
+from hydra.web.main import app
+
+client = TestClient(app)
+
+
+def test_admin_endpoint_without_token_returns_401():
+    endpoints = [
+        ("POST", "/api/admin/deploy"),
+        ("POST", "/api/admin/pause"),
+        ("POST", "/api/admin/workers/enroll"),
+        ("GET",  "/api/admin/audit/list"),
+        ("POST", "/api/admin/avatars/upload"),
+    ]
+    for method, path in endpoints:
+        resp = client.request(method, path)
+        assert resp.status_code in (401, 403, 422), (
+            f"{method} {path} returned {resp.status_code}, expected 401/403"
+        )
+
+
+def test_admin_auth_login_is_public():
+    """로그인 자체는 토큰 없어도 접근 가능해야 함."""
+    resp = client.post("/api/admin/auth/login",
+                       json={"email": "x@y.z", "password": "wrong"})
+    assert resp.status_code in (401, 400, 422)  # 인증 실패지만 auth 미들웨어는 통과
+```
+
+- [ ] **Step 2: 실행 → FAIL** (현재는 대부분 200)
+
+- [ ] **Step 3: main.py 에서 admin 라우터 dependencies 주입**
+
+```python
+from fastapi import Depends
+from hydra.web.routes.admin_auth import admin_session
+
+# 로그인 라우터 — 공개
+app.include_router(admin_auth.router, prefix="/api/admin/auth", tags=["admin-auth"])
+
+# 나머지 admin 전부 — admin_session 필수
+_ADMIN_DEPS = [Depends(admin_session)]
+app.include_router(accounts.router,       prefix="/api/admin/accounts",   dependencies=_ADMIN_DEPS, tags=["admin"])
+app.include_router(campaigns.router,      prefix="/api/admin/campaigns",  dependencies=_ADMIN_DEPS, tags=["admin"])
+app.include_router(admin_workers.router,  prefix="/api/admin/workers",    dependencies=_ADMIN_DEPS, tags=["admin"])
+app.include_router(admin_avatars.router,  prefix="/api/admin/avatars",    dependencies=_ADMIN_DEPS, tags=["admin"])
+app.include_router(admin_deploy.router,   prefix="/api/admin",            dependencies=_ADMIN_DEPS, tags=["admin"])
+app.include_router(admin_audit.router,    prefix="/api/admin/audit",      dependencies=_ADMIN_DEPS, tags=["admin"])
+# ... 기존 flat 도 전부 동일 패턴
+```
+
+- [ ] **Step 4: 실행 → PASS**
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add hydra/web/main.py tests/test_admin_requires_auth.py
+git commit -m "security: 모든 /api/admin/* 에 admin_session Depends 강제 (login 제외)"
+```
+
+---
+
+## Task 37: 워커 특화 (allowed_task_types) 마이그레이션 + fetch 필터
+
+**목적:** 워커별로 처리 가능한 task_type 제한. "워커 A 는 계정 생성만", "워커 B 는 댓글만".
+
+**Files:**
+- Create: `alembic/versions/009_worker_allowed_task_types.py`
+- Modify: `hydra/db/models.py` (Worker 에 `allowed_task_types` 추가)
+- Modify: `hydra/web/routes/tasks_api.py` (fetch 쿼리 필터)
+- Test: `tests/test_worker_task_types_filter.py`
+
+- [ ] **Step 1: 테스트 작성**
+
+`tests/test_worker_task_types_filter.py`:
+```python
+import json
+from datetime import datetime, UTC
+from hydra.db.session import SessionLocal
+from hydra.db.models import Worker, Task
+from hydra.web.routes.tasks_api import _filter_tasks_by_worker_types
+
+
+def test_worker_wildcard_sees_all_task_types():
+    allowed = '["*"]'
+    assert _filter_tasks_by_worker_types(["create_account", "comment"], allowed) == \
+           ["create_account", "comment"]
+
+
+def test_specialized_worker_sees_only_allowed():
+    allowed = '["create_account"]'
+    assert _filter_tasks_by_worker_types(["create_account", "comment"], allowed) == \
+           ["create_account"]
+
+
+def test_multi_type_worker_sees_intersection():
+    allowed = '["comment", "watch_video"]'
+    assert _filter_tasks_by_worker_types(
+        ["create_account", "comment", "watch_video", "onboarding_verify"],
+        allowed,
+    ) == ["comment", "watch_video"]
+
+
+def test_empty_allowed_returns_empty():
+    allowed = '[]'
+    assert _filter_tasks_by_worker_types(["create_account"], allowed) == []
+```
+
+- [ ] **Step 2: 실행 → FAIL**
+
+- [ ] **Step 3: alembic revision**
+
+```bash
+alembic revision -m "worker_allowed_task_types"
+```
+
+`alembic/versions/009_worker_allowed_task_types.py`:
+```python
+"""worker_allowed_task_types"""
+from alembic import op
+import sqlalchemy as sa
+
+revision = "009_worker_allowed_task_types"
+down_revision = "008_worker_token_hash"
+
+
+def upgrade():
+    with op.batch_alter_table("workers") as batch:
+        batch.add_column(sa.Column("allowed_task_types", sa.Text, nullable=False,
+                                    server_default='["*"]'))
+
+
+def downgrade():
+    with op.batch_alter_table("workers") as batch:
+        batch.drop_column("allowed_task_types")
+```
+
+- [ ] **Step 4: models.py 에 컬럼 추가**
+
+```python
+# hydra/db/models.py Worker 클래스
+allowed_task_types = Column(Text, nullable=False, default='["*"]')
+```
+
+- [ ] **Step 5: tasks_api.py 에 필터 헬퍼 + fetch 쿼리 수정**
+
+```python
+import json
+
+def _filter_tasks_by_worker_types(task_types: list[str], allowed_json: str) -> list[str]:
+    """워커의 allowed_task_types 로 task_type 리스트 필터링.
+    
+    '["*"]' 이면 모두 허용.
+    """
+    allowed = json.loads(allowed_json)
+    if allowed == ["*"]:
+        return task_types
+    return [t for t in task_types if t in allowed]
+
+
+# fetch_tasks 쿼리 WHERE 절 수정
+@router.post("/fetch")
+def fetch_tasks(worker: Worker = Depends(worker_auth)):
+    db = SessionLocal()
+    try:
+        allowed = json.loads(worker.allowed_task_types or '["*"]')
+        is_wildcard = allowed == ["*"]
+        
+        q = db.query(Task).filter(
+            Task.status == "pending",
+            # ... 기존 조건들
+        )
+        if not is_wildcard:
+            q = q.filter(Task.task_type.in_(allowed))
+        # account_lock 체크는 create_account 태스크에선 skip
+        # ... 이하 기존 로직
+```
+
+- [ ] **Step 6: 실행 → PASS**
+
+```bash
+DATABASE_URL=sqlite:///data/hydra.db alembic upgrade head
+pytest tests/test_worker_task_types_filter.py -v
+```
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add alembic/versions/009_worker_allowed_task_types.py hydra/db/models.py hydra/web/routes/tasks_api.py tests/test_worker_task_types_filter.py
+git commit -m "feat(worker-spec): allowed_task_types 컬럼 + fetch 필터"
+```
+
+---
+
+## Task 38: 계정 생성 결과 업로드 API ⭐
+
+**목적:** 워커가 Google 가입 후 생성된 계정 정보를 VPS 에 업로드. DB 쓰기는 VPS 독점.
+
+**Files:**
+- Modify: `hydra/web/routes/tasks_api.py` (신규 엔드포인트 추가)
+- Test: `tests/test_account_creation_upload.py`
+
+- [ ] **Step 1: 테스트 작성**
+
+`tests/test_account_creation_upload.py`:
+```python
+from fastapi.testclient import TestClient
+from hydra.web.main import app
+from hydra.db.session import SessionLocal
+from hydra.db.models import Task, Account, Worker
+from hydra.core import crypto
+
+client = TestClient(app)
+
+
+def _setup_worker_with_task(db):
+    worker = Worker(hostname="test-creator", token_hash="HASHED")
+    db.add(worker); db.flush()
+    task = Task(worker_id=worker.id, task_type="create_account", status="running",
+                account_id=None)
+    db.add(task); db.commit()
+    return worker.id, task.id
+
+
+def test_account_created_upload_inserts_new_account():
+    db = SessionLocal()
+    worker_id, task_id = _setup_worker_with_task(db)
+    db.close()
+
+    body = {
+        "gmail": "brandnew1234@gmail.com",
+        "encrypted_password": crypto.encrypt("secretPass!23"),
+        "recovery_email": "rec1@911panel.us",
+        "adspower_profile_id": "k1new001",
+        "persona": {"name": "테스트유저", "age": 27},
+        "encrypted_totp_secret": None,
+    }
+    resp = client.post(f"/api/tasks/{task_id}/result/account-created",
+                        json=body,
+                        headers={"X-Worker-Token": "FIXTURE_WORKER_TOKEN"})
+    assert resp.status_code == 200
+    new_id = resp.json()["account_id"]
+
+    db = SessionLocal()
+    created = db.get(Account, new_id)
+    assert created.gmail == "brandnew1234@gmail.com"
+    assert created.adspower_profile_id == "k1new001"
+    # task 도 완료 처리됨
+    t = db.get(Task, task_id)
+    assert t.status == "done"
+    db.close()
+
+
+def test_duplicate_gmail_returns_409():
+    db = SessionLocal()
+    db.add(Account(gmail="dup@gmail.com", password="x", adspower_profile_id="p",
+                   status="warmup"))
+    worker_id, task_id = _setup_worker_with_task(db)
+    db.commit(); db.close()
+
+    body = {"gmail": "dup@gmail.com", "encrypted_password": "enc", 
+            "adspower_profile_id": "p2", "persona": {}}
+    resp = client.post(f"/api/tasks/{task_id}/result/account-created",
+                        json=body,
+                        headers={"X-Worker-Token": "FIXTURE_WORKER_TOKEN"})
+    assert resp.status_code == 409
+
+
+def test_wrong_worker_cannot_submit_result():
+    """이 task 가 할당되지 않은 워커가 결과 업로드 시 거절."""
+    # ... (Worker A 소유 task 에 Worker B 가 업로드 시도)
+    pass  # 구현
+```
+
+- [ ] **Step 2: 실행 → FAIL**
+
+- [ ] **Step 3: 엔드포인트 구현**
+
+`hydra/web/routes/tasks_api.py` 에 추가:
+```python
+from datetime import datetime, UTC
+from fastapi import HTTPException
+from pydantic import BaseModel
+import json
+
+
+class AccountCreationResult(BaseModel):
+    gmail: str
+    encrypted_password: str
+    recovery_email: str | None = None
+    adspower_profile_id: str
+    persona: dict
+    encrypted_totp_secret: str | None = None
+    youtube_channel_id: str | None = None
+    phone_number: str | None = None
+    fingerprint_snapshot: str | None = None
+
+
+@router.post("/{task_id}/result/account-created")
+def account_created(task_id: int, req: AccountCreationResult,
+                     worker: Worker = Depends(worker_auth)):
+    db = SessionLocal()
+    try:
+        task = db.get(Task, task_id)
+        if task is None:
+            raise HTTPException(404, "task not found")
+        if task.worker_id != worker.id:
+            raise HTTPException(403, "this task is not assigned to you")
+        if task.task_type != "create_account":
+            raise HTTPException(400, "not a create_account task")
+        # 중복 gmail 체크
+        existing = db.query(Account).filter_by(gmail=req.gmail).first()
+        if existing is not None:
+            raise HTTPException(409, f"gmail already exists: {req.gmail}")
+
+        new_account = Account(
+            gmail=req.gmail,
+            password=req.encrypted_password,   # 이미 암호화됨
+            recovery_email=req.recovery_email,
+            adspower_profile_id=req.adspower_profile_id,
+            persona=json.dumps(req.persona, ensure_ascii=False),
+            totp_secret=req.encrypted_totp_secret,
+            youtube_channel_id=req.youtube_channel_id,
+            phone_number=req.phone_number,
+            status="profile_set",   # 생성 직후 상태
+            created_at=datetime.now(UTC),
+        )
+        db.add(new_account); db.flush()
+
+        # task 완료 처리
+        task.status = "done"
+        task.completed_at = datetime.now(UTC)
+        task.result = json.dumps({"account_id": new_account.id})
+        task.account_id = new_account.id
+
+        # audit log
+        from hydra.db.models import AuditLog
+        db.add(AuditLog(
+            user_id=None,
+            action="account_created",
+            target_type="account",
+            target_id=new_account.id,
+            metadata_json=json.dumps({
+                "created_by_worker": worker.id,
+                "task_id": task_id,
+                "gmail": req.gmail,
+            }),
+        ))
+        db.commit()
+        return {"account_id": new_account.id}
+    finally:
+        db.close()
+```
+
+- [ ] **Step 4: 실행 → PASS**
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add hydra/web/routes/tasks_api.py tests/test_account_creation_upload.py
+git commit -m "feat(api): 워커 → VPS 계정 생성 결과 업로드 + audit log"
+```
+
+---
+
 ## Task 26: 프론트엔드 프로젝트 세팅 (Tailwind + shadcn)
 
 **Files:**
@@ -3082,6 +3915,271 @@ App 라우팅에 `/avatars` 경로 추가. `npm run build` 성공 확인.
 ```bash
 git add frontend/src/features/avatars/
 git commit -m "frontend: 아바타 관리 UI (업로드/목록/삭제, 반응형)"
+```
+
+---
+
+## Task 39: 워커 상세 페이지 + 특화 편집 UI
+
+**목적:** 어드민 UI 에서 워커별 `allowed_task_types` 편집. 체크박스 + 커스텀 JSON.
+
+**Files:**
+- Create: `frontend/src/features/workers/WorkerDetail.tsx`
+- Create: `frontend/src/features/workers/TaskTypeSelector.tsx`
+
+- [ ] **Step 1: 서버 측 워커 상세 API 추가**
+
+`hydra/web/routes/admin_workers.py` 에:
+```python
+from pydantic import BaseModel
+import json
+
+
+class WorkerUpdate(BaseModel):
+    allowed_task_types: list[str] | None = None
+
+
+@router.get("/{worker_id}")
+def get_worker(worker_id: int):
+    db = SessionLocal()
+    try:
+        w = db.get(Worker, worker_id)
+        if w is None: raise HTTPException(404)
+        return {
+            "id": w.id, "hostname": w.hostname, "version": w.version,
+            "last_heartbeat": w.last_heartbeat,
+            "allowed_task_types": json.loads(w.allowed_task_types or '["*"]'),
+            "health_snapshot": json.loads(w.health_snapshot or '{}'),
+        }
+    finally: db.close()
+
+
+@router.patch("/{worker_id}")
+def update_worker(worker_id: int, req: WorkerUpdate):
+    db = SessionLocal()
+    try:
+        w = db.get(Worker, worker_id)
+        if w is None: raise HTTPException(404)
+        if req.allowed_task_types is not None:
+            w.allowed_task_types = json.dumps(req.allowed_task_types)
+        db.commit()
+        # audit log
+        from hydra.db.models import AuditLog
+        db.add(AuditLog(action="worker_change", target_type="worker",
+                        target_id=worker_id,
+                        metadata_json=json.dumps({"allowed_task_types": req.allowed_task_types})))
+        db.commit()
+        return {"ok": True}
+    finally: db.close()
+```
+
+- [ ] **Step 2: TaskTypeSelector 컴포넌트**
+
+`frontend/src/features/workers/TaskTypeSelector.tsx`:
+```tsx
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+
+const KNOWN_TYPES = [
+  { value: "create_account",     label: "계정 생성" },
+  { value: "onboarding_verify",  label: "온보딩 검증" },
+  { value: "warmup",             label: "워밍업" },
+  { value: "comment",            label: "댓글 작성" },
+  { value: "watch_video",        label: "영상 시청" },
+  { value: "ranking_observe",    label: "상단 노출 관찰" },
+];
+
+export function TaskTypeSelector({ value, onChange }: {
+  value: string[];
+  onChange: (types: string[]) => void;
+}) {
+  const [custom, setCustom] = useState("");
+  const isWildcard = value.length === 1 && value[0] === "*";
+  
+  const toggle = (t: string) => {
+    const next = value.includes(t) ? value.filter(x => x !== t) : [...value, t];
+    onChange(next);
+  };
+  
+  return (
+    <div className="space-y-3">
+      <Button onClick={() => onChange(["*"])} 
+              variant={isWildcard ? "default" : "outline"}
+              size="sm" className="w-full sm:w-auto">
+        만능 워커 (모든 태스크 처리)
+      </Button>
+      {!isWildcard && (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {KNOWN_TYPES.map(t => (
+              <label key={t.value} className="flex items-center gap-2 p-2 border border-slate-700 rounded cursor-pointer hover:bg-slate-800">
+                <input type="checkbox" checked={value.includes(t.value)}
+                       onChange={() => toggle(t.value)} />
+                <span className="text-sm">{t.label}</span>
+              </label>
+            ))}
+          </div>
+          <div className="text-xs text-slate-500">
+            커스텀 type: 
+            <input value={custom} onChange={e => setCustom(e.target.value)}
+                   className="ml-2 bg-slate-800 px-2 py-1 rounded" placeholder="my_custom_type"/>
+            <Button size="sm" onClick={() => {
+              if (custom.trim() && !value.includes(custom)) onChange([...value, custom.trim()]);
+              setCustom("");
+            }}>추가</Button>
+          </div>
+        </>
+      )}
+      <div className="text-xs text-slate-400">
+        현재: {isWildcard ? "전체" : value.join(", ") || "(없음)"}
+      </div>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 3: WorkerDetail 페이지**
+
+`frontend/src/features/workers/WorkerDetail.tsx`:
+```tsx
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { TaskTypeSelector } from "./TaskTypeSelector";
+import { useState } from "react";
+
+export function WorkerDetail({ workerId }: { workerId: number }) {
+  const qc = useQueryClient();
+  const { data: worker } = useQuery({
+    queryKey: ["worker", workerId],
+    queryFn: () => api.get(`/api/admin/workers/${workerId}`).then(r => r.data),
+  });
+  const [types, setTypes] = useState<string[] | null>(null);
+  const save = useMutation({
+    mutationFn: () => api.patch(`/api/admin/workers/${workerId}`, { allowed_task_types: types }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["worker", workerId] }); setTypes(null); },
+  });
+
+  if (!worker) return <div>Loading...</div>;
+  const current = types ?? worker.allowed_task_types;
+
+  return (
+    <div className="space-y-4 max-w-2xl">
+      <h1 className="text-2xl font-bold">{worker.hostname}</h1>
+      <Card className="p-4 space-y-2">
+        <div className="grid grid-cols-2 gap-2 text-sm">
+          <div>버전: <code>{worker.version}</code></div>
+          <div>마지막 heartbeat: {worker.last_heartbeat}</div>
+        </div>
+      </Card>
+      <Card className="p-4 space-y-3">
+        <h2 className="font-bold">허용된 태스크 타입</h2>
+        <TaskTypeSelector value={current} onChange={setTypes}/>
+        {types && (
+          <Button onClick={() => save.mutate()} disabled={save.isPending}>
+            {save.isPending ? "저장 중..." : "변경 저장"}
+          </Button>
+        )}
+      </Card>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 4: 라우트 등록 + 모바일 검증**
+
+`/workers/:id` 경로 연결. 모바일에서 체크박스 영역이 2열로 표시, 버튼 44pt 이상.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add frontend/src/features/workers/ hydra/web/routes/admin_workers.py
+git commit -m "frontend: 워커 상세 페이지 + 특화 편집 UI (반응형)"
+```
+
+---
+
+## Task 39.5: 감사 로그 뷰어 (간단)
+
+**Files:**
+- Create: `hydra/web/routes/admin_audit.py` (body 채우기)
+- Create: `frontend/src/features/audit/AuditLogPage.tsx`
+
+- [ ] **Step 1: 서버 측**
+
+```python
+# hydra/web/routes/admin_audit.py
+from fastapi import APIRouter, Query
+from hydra.db.session import SessionLocal
+from hydra.db.models import AuditLog
+
+router = APIRouter()
+
+
+@router.get("/list")
+def list_audit(action: str | None = None, limit: int = Query(100, le=500)):
+    db = SessionLocal()
+    try:
+        q = db.query(AuditLog).order_by(AuditLog.timestamp.desc())
+        if action:
+            q = q.filter(AuditLog.action == action)
+        rows = q.limit(limit).all()
+        return [{
+            "id": r.id, "action": r.action, "user_id": r.user_id,
+            "target_type": r.target_type, "target_id": r.target_id,
+            "metadata_json": r.metadata_json, "ip_address": r.ip_address,
+            "timestamp": r.timestamp.isoformat() if r.timestamp else None,
+        } for r in rows]
+    finally: db.close()
+```
+
+- [ ] **Step 2: 프론트 뷰어**
+
+```tsx
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+
+export function AuditLogPage() {
+  const { data } = useQuery({
+    queryKey: ["audit"],
+    queryFn: () => api.get("/api/admin/audit/list?limit=200").then(r => r.data),
+    refetchInterval: 30000,
+  });
+  return (
+    <div className="space-y-2">
+      <h1 className="text-2xl font-bold">감사 로그</h1>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="border-b border-slate-700">
+            <tr><th className="text-left p-2">시각</th><th>액션</th><th>대상</th><th>IP</th></tr>
+          </thead>
+          <tbody>
+            {data?.map((row: any) => (
+              <tr key={row.id} className="border-b border-slate-800 hover:bg-slate-800/30">
+                <td className="p-2 text-xs">{row.timestamp}</td>
+                <td className="p-2"><code>{row.action}</code></td>
+                <td className="p-2 text-xs">{row.target_type}:{row.target_id}</td>
+                <td className="p-2 text-xs">{row.ip_address}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 3: 모바일 확인**
+
+`overflow-x-auto` 로 모바일에서 가로 스크롤. 필수 컬럼만 표시되도록 반응형 축약 고려.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add hydra/web/routes/admin_audit.py frontend/src/features/audit/
+git commit -m "frontend: 감사 로그 뷰어 (필터 + 가로 스크롤 반응형)"
 ```
 
 ---
@@ -4182,13 +5280,32 @@ git commit -m "docs: Phase 1 완료 검증 체크리스트"
 
 ## Phase 1 완료 기준 요약
 
+**인프라:**
 - ✅ VPS (Ubuntu 22.04) 에서 hydra-server + PostgreSQL + nginx + TLS 동작
-- ✅ Alembic 마이그레이션 7개 적용 (customer_id/server_config/users/execution_logs/audit_logs/account_locks/worker_token_hash)
-- ✅ 어드민 UI 에서 로그인 → 배포 버튼/긴급정지/아바타 관리 사용 가능 (**모바일 포함**)
-- ✅ 워커 설치 스크립트로 Windows PC 에 1회 세팅 완료 (NTP 포함)
-- ✅ 워커가 **DPAPI/.env 기반으로 시크릿 로딩** (평문 전달 없음)
-- ✅ 워커가 **heartbeat 응답의 current_version 감지 → 자가 업데이트** (drain + git pull)
-- ✅ 워커가 **로컬 DB 없이 AccountSnapshot 기반으로만 태스크 실행** 가능
+- ✅ Alembic 마이그레이션 9개 적용 (baseline / customer_id / server_config / users / execution_logs / audit_logs / account_locks / worker_token_hash / worker_allowed_task_types)
+- ✅ 환경 준비 완료 (.env.example / conftest DB 격리 / axios interceptor / vite alias / create_admin CLI)
+
+**보안:**
+- ✅ 모든 `/api/admin/*` 에 admin_session Depends 강제 (login 제외)
+- ✅ CORS 허용 리스트 명시적 설정
+- ✅ 감사 로그 자동 기록 (deploy / pause / worker_change / account_created 등)
+
+**프론트엔드 (반응형 — 모바일/태블릿/PC 전부):**
+- ✅ 로그인 → 대시보드 → 배포 → 긴급정지 → 아바타 관리 → 워커 상세/특화 편집 → 감사 로그 전체 사용 가능
+- ✅ 모바일에서 햄버거 메뉴 + 터치 친화 버튼 (44pt+)
+
+**워커 (Windows):**
+- ✅ 설치 스크립트로 1회 세팅 완료 (NTP 포함)
+- ✅ DPAPI/.env 기반 시크릿 로딩 (평문 전달 없음)
+- ✅ heartbeat 응답의 current_version 감지 → 자가 업데이트 (drain + git pull + 롤백)
+- ✅ 로컬 DB 없이 AccountSnapshot 기반으로만 태스크 실행
+
+**워커 특화 + 데이터 흐름:**
+- ✅ `allowed_task_types` 로 워커별 역할 제한 ("계정 생성 전용 워커" 등)
+- ✅ 워커가 생성한 계정 정보를 VPS API 로 업로드 → VPS DB 에 INSERT (로컬 DB 안 씀)
+- ✅ audit log 에 "account_created by worker X" 기록
+
+**파이프라인:**
 - ✅ Mac git push → 어드민 UI 배포 버튼 → VPS + 워커 갱신 end-to-end 작동
 - ✅ 감사 로그 + 좀비 복구 + enrollment + 아바타 서빙 모두 검증됨
 

@@ -510,7 +510,89 @@ VPS 5분마다 실행되는 크론:
 
 `30 minutes` 는 기본값. 태스크 타입별로 다르게 설정 가능 (natural_browsing 은 15분, login 은 10분 등).
 
-### 5.4 계정 락
+### 5.4 워커 특화 (task type 제한)
+
+**목적:** 워커마다 수행 가능한 태스크 타입을 제한 — "워커 A 는 오늘 계정 생성만", "워커 B 는 댓글만". fleet 의 역할 분담.
+
+**스키마:**
+```sql
+ALTER TABLE workers ADD COLUMN allowed_task_types TEXT NOT NULL DEFAULT '["*"]';
+```
+- `["*"]` (기본): 모든 task_type 처리 가능 (만능)
+- `["create_account"]`: 계정 생성만
+- `["comment", "watch_video"]`: 댓글 작업 + 워밍업 영상 시청만
+- `["onboarding_verify", "warmup"]`: 온보딩 + 워밍업 전용
+
+**fetch_tasks 쿼리 필터:**
+```python
+# workers.allowed_task_types 가 ["*"] 면 모두 허용, 아니면 포함된 것만
+if worker.allowed_task_types == '["*"]':
+    # 필터 생략
+    pass
+else:
+    allowed = json.loads(worker.allowed_task_types)
+    query = query.filter(Task.task_type.in_(allowed))
+```
+
+**어드민 UI:** 워커 상세 페이지에서 체크박스 + 커스텀 JSON 입력으로 편집. 변경 시 audit_log 기록.
+
+**특수 케이스 — 계정 생성 태스크의 account_id:**
+- 계정 생성 태스크는 실행 시점에 아직 계정이 없음 → `tasks.account_id` NULL 허용
+- `account_locks` 는 `task_type != 'create_account'` 일 때만 검사/생성
+- fetch 쿼리에서 해당 조건 분기
+
+### 5.5 워커가 생성한 데이터 VPS 로 업로드
+
+**원칙:** 모든 DB 쓰기는 VPS 가 독점 관리. 워커는 로컬 DB 에 쓰지 않고 API 로만 "결과 보고".
+
+#### 계정 생성 결과 업로드
+
+워커가 새 Gmail 계정을 성공적으로 만든 후:
+
+```
+POST /api/tasks/{task_id}/result/account-created
+Headers: X-Worker-Token: <token>
+Body:
+{
+  "gmail": "newuser1234@gmail.com",
+  "encrypted_password": "<AES 암호화 — DB_CRYPTO_KEY>",
+  "recovery_email": "xxx@911panel.us",
+  "adspower_profile_id": "k1abc...",
+  "persona": {"name": "김민수", "age": 28, "channel_plan": {...}},
+  "encrypted_totp_secret": "...",
+  "youtube_channel_id": null,
+  "phone_number": null,
+  "fingerprint_snapshot": "..."
+}
+```
+
+**VPS 처리:**
+1. 워커 토큰 검증 + 해당 task 가 워커에게 할당됐는지 검증
+2. `accounts` 테이블에 INSERT (password/totp 는 이미 암호화된 상태로 저장)
+3. `audit_logs` 에 `action="account_created", target_type="account", target_id=<new_id>` 기록
+4. `tasks` 상태 `done` 으로 전환, `result={"account_id": <new_id>}` 저장
+5. 응답: `{"account_id": <new_id>}`
+
+**보안:**
+- 워커가 `DB_CRYPTO_KEY` 로 password/totp_secret 을 **미리 암호화** 후 업로드
+- TLS 로 추가 보호 (HTTPS)
+- 중복 gmail 체크 (UNIQUE constraint) — 이미 존재하면 409 Conflict
+
+#### 다른 태스크 타입의 결과 업로드 (향후 확장)
+
+동일 패턴으로:
+- `POST /api/tasks/{id}/result/comment-posted` — 댓글 작성 결과 + 시간 + URL
+- `POST /api/tasks/{id}/result/warmup-completed` — 워밍업 종료 상태
+- `POST /api/tasks/{id}/result/ranking-observed` — 상단 노출 관찰 데이터
+
+모두 **VPS DB 에 직접 저장**. 워커는 로컬에 어떤 비즈니스 데이터도 쓰지 않음.
+
+**예외 (로컬 임시 저장 허용):**
+- 스크린샷 파일 (업로드 실패 시 재시도용 버퍼)
+- 로그 버퍼 (배치 업로드 전 임시)
+- AdsPower 프로필 캐시 (앱 자체 관리)
+
+### 5.6 계정 락
 
 ```sql
 CREATE TABLE account_locks (

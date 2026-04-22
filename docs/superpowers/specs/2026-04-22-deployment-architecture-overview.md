@@ -377,6 +377,35 @@ A. 네. 어드민 UI 가 **반응형 PWA** 로 설계되어 있어서 휴대폰 
 
 ---
 
+## 🎯 워커 특화 + 계정 생성 데이터 흐름
+
+```
+[어드민 UI] 워커별 allowed_task_types 설정:
+  워커 1: ["*"]                          → 모든 태스크 처리
+  워커 A: ["create_account"]             → 계정 생성 전용
+  워커 B: ["comment", "watch_video"]     → 댓글+영상시청 전용
+  워커 C: ["onboarding_verify"]          → 온보딩만
+
+[fetch] VPS 는 워커 allowed 에 포함된 task_type 만 반환
+
+[계정 생성 워커 A 의 동작]
+  A가 create_account task 받음 (account_id=NULL 상태)
+    ↓ Playwright + AdsPower 로 Google 가입 수행
+    ↓ gmail/password/recovery_email/totp/persona 수집
+    ↓ DB_CRYPTO_KEY 로 password/totp 미리 암호화
+    ↓
+  POST /api/tasks/{id}/result/account-created
+    {"gmail": "...", "encrypted_password": "...", "adspower_profile_id": "...", ...}
+    ↓
+  VPS: accounts 테이블에 INSERT + audit_log + task done
+    ↓
+  응답 {"account_id": 123} → 워커는 다음 태스크
+```
+
+**원칙:** 모든 DB 쓰기는 VPS 가 독점 관리. 워커는 로컬 DB 에 쓰지 않음. 향후 생길 모든 데이터 (댓글 결과, 상단 노출 관찰 등)도 동일 패턴.
+
+---
+
 ## 🖼️ 아바타 파일 관리 (프로필 사진)
 
 ```
