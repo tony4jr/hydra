@@ -9,3 +9,6 @@ logs/
 .DS_Store
 .superpowers/
 .worktrees/
+
+# 프로필 아바타 2.1GB — VPS 에 rsync 로 직접 전송 (git 추적 제외)
+data/avatars/
