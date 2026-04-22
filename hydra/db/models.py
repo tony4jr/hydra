@@ -659,3 +659,27 @@ class ExecutionLog(Base):
         Index("idx_exec_worker_time", "worker_id", "timestamp"),
         Index("idx_exec_account_time", "account_id", "timestamp"),
     )
+
+
+class AuditLog(Base):
+    """관리자 액션 감사 로그 — 누가/언제/무엇을 기록.
+
+    SQLAlchemy Declarative 에서 'metadata' 는 예약어라 'metadata_json' 사용.
+    민감 정보는 미들웨어에서 필터 후 저장.
+    """
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    action = Column(String(64), nullable=False)         # deploy, pause, campaign_create 등
+    target_type = Column(String(32), nullable=True)     # campaign, account, worker, preset
+    target_id = Column(Integer, nullable=True)
+    metadata_json = Column(Text, nullable=True)         # JSON
+    ip_address = Column(String(45), nullable=True)
+    user_agent = Column(Text, nullable=True)
+    timestamp = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+
+    __table_args__ = (
+        Index("idx_audit_user_time", "user_id", "timestamp"),
+        Index("idx_audit_action_time", "action", "timestamp"),
+    )
