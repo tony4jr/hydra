@@ -83,3 +83,5 @@ bash scripts/e2e_check.sh
 - [ ] 워커 크래시 시뮬레이션 → 30분 후 좀비 복구 (cron) 확인
 
 # deploy flow verify
+
+# deploy v2 test
