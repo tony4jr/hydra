@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from hydra.core.enrollment import generate_enrollment_token
 from hydra.db import session as _db_session
-from hydra.db.models import Worker
+from hydra.db.models import Task, Worker
 from hydra.web.routes.admin_auth import admin_session
 
 router = APIRouter()
@@ -68,6 +68,12 @@ def create_enrollment(
     )
 
 
+class CurrentTaskInfo(BaseModel):
+    id: int
+    task_type: str
+    started_at: Optional[datetime] = None
+
+
 class WorkerOut(BaseModel):
     id: int
     name: str
@@ -79,15 +85,23 @@ class WorkerOut(BaseModel):
     allow_campaign: Optional[bool] = None
     allowed_task_types: list[str] = []
     enrolled_at: Optional[datetime] = None
+    current_task: Optional[CurrentTaskInfo] = None  # M2.1-5
 
 
-def _worker_to_out(w: Worker) -> WorkerOut:
+def _worker_to_out(w: Worker, current_task: Optional[Task] = None) -> WorkerOut:
     try:
         types = json.loads(w.allowed_task_types or '["*"]')
         if not isinstance(types, list):
             types = ["*"]
     except json.JSONDecodeError:
         types = ["*"]
+    ct = None
+    if current_task is not None:
+        ct = CurrentTaskInfo(
+            id=current_task.id,
+            task_type=current_task.task_type,
+            started_at=current_task.started_at,
+        )
     return WorkerOut(
         id=w.id, name=w.name, status=w.status,
         last_heartbeat=w.last_heartbeat,
@@ -95,6 +109,7 @@ def _worker_to_out(w: Worker) -> WorkerOut:
         allow_preparation=w.allow_preparation, allow_campaign=w.allow_campaign,
         allowed_task_types=[str(t) for t in types],
         enrolled_at=w.enrolled_at,
+        current_task=ct,
     )
 
 
@@ -102,7 +117,16 @@ def _worker_to_out(w: Worker) -> WorkerOut:
 def list_workers(_session: dict = Depends(admin_session)) -> list[WorkerOut]:
     db = _db_session.SessionLocal()
     try:
-        return [_worker_to_out(w) for w in db.query(Worker).order_by(Worker.id).all()]
+        workers = db.query(Worker).order_by(Worker.id).all()
+        result = []
+        for w in workers:
+            running = (
+                db.query(Task)
+                .filter(Task.worker_id == w.id, Task.status == "running")
+                .first()
+            )
+            result.append(_worker_to_out(w, running))
+        return result
     finally:
         db.close()
 
@@ -150,6 +174,11 @@ def update_worker(
 
         db.commit()
         db.refresh(w)
-        return _worker_to_out(w)
+        running = (
+            db.query(Task)
+            .filter(Task.worker_id == w.id, Task.status == "running")
+            .first()
+        )
+        return _worker_to_out(w, running)
     finally:
         db.close()
