@@ -32,7 +32,11 @@ print(json.load(urllib.request.urlopen(req))['worker_token'])
 ")
 
 echo "[4/4] launching worker (Ctrl+C to stop)"
+# worker/secrets.py 가 SERVER_URL / WORKER_TOKEN 을 최우선으로 읽음.
+# .env 의 localhost 값을 덮어쓰기 위해 양쪽 모두 export.
 export HYDRA_WORKER_DRY_RUN=1
+export SERVER_URL="$SERVER_URL"
+export WORKER_TOKEN="$WT"
 export HYDRA_SERVER_URL="$SERVER_URL"
 export HYDRA_WORKER_TOKEN="$WT"
 .venv/bin/python -m worker
