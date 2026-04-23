@@ -105,6 +105,24 @@ class WorkerApp:
 
     async def _execute_session(self, tasks: list, profile_id: str, account_id: int):
         """한 계정의 세션 — 여러 태스크를 자연스럽게 실행."""
+        # M2.1 DRY-RUN: WorkerSession/AdsPower/Playwright 를 완전히 우회하고
+        # 각 태스크를 즉시 complete 처리. executor 내부 DRY-RUN 가드보다 먼저.
+        import os
+        if os.getenv("HYDRA_WORKER_DRY_RUN", "").strip().lower() in ("1", "true", "yes"):
+            import asyncio
+            for task in tasks:
+                task_id = task["id"]
+                task_type = task.get("task_type", "?")
+                print(f"[Worker DRY-RUN] complete task {task_id} ({task_type})")
+                self._current_task_id = task_id
+                await asyncio.sleep(0.5)
+                try:
+                    self.client.complete_task(task_id, result='{"dry_run":true}')
+                except Exception as e:
+                    print(f"[Worker DRY-RUN] complete failed for {task_id}: {e}")
+                self._current_task_id = None
+            return
+
         from worker.session import WorkerSession
         from hydra.infra.ip_errors import IPRotationFailed
 
