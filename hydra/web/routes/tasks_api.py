@@ -127,6 +127,19 @@ def fetch_tasks(worker: Worker = Depends(worker_auth)) -> dict:
         ))
         db.commit()
 
+        # Task 35: 로컬 DB 없이도 태스크 실행 가능하도록 account_snapshot 동봉
+        snapshot = {
+            "id": account.id,
+            "gmail": account.gmail,
+            "encrypted_password": account.password,  # 이미 암호화된 채 저장됨
+            "recovery_email": account.recovery_email,
+            "adspower_profile_id": account.adspower_profile_id,
+            "persona": account.persona,  # JSON 문자열
+            "encrypted_totp_secret": account.totp_secret,
+            "status": account.status,
+            "ipp_flagged": account.ipp_flagged,
+            "youtube_channel_id": account.youtube_channel_id,
+        }
         return {"tasks": [{
             "id": task.id,
             "account_id": task.account_id,
@@ -134,6 +147,7 @@ def fetch_tasks(worker: Worker = Depends(worker_auth)) -> dict:
             "task_type": task.task_type,
             "payload": task.payload,
             "priority": task.priority,
+            "account_snapshot": snapshot,
         }]}
     finally:
         db.close()
