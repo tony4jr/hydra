@@ -14,6 +14,7 @@ import {
   Settings2,
   Command,
   Image,
+  ScrollText,
 } from 'lucide-react'
 import { type SidebarData } from '../types'
 
@@ -83,6 +84,11 @@ export const sidebarData: SidebarData = {
           title: '아바타',
           url: '/avatars',
           icon: Image,
+        },
+        {
+          title: '감사 로그',
+          url: '/audit',
+          icon: ScrollText,
         },
         {
           title: '설정',

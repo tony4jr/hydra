@@ -25,6 +25,7 @@ import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authen
 import { Route as AuthenticatedCampaignsIndexRouteImport } from './routes/_authenticated/campaigns/index'
 import { Route as AuthenticatedBrandsIndexRouteImport } from './routes/_authenticated/brands/index'
 import { Route as AuthenticatedAvatarsIndexRouteImport } from './routes/_authenticated/avatars/index'
+import { Route as AuthenticatedAuditIndexRouteImport } from './routes/_authenticated/audit/index'
 import { Route as AuthenticatedAnalyticsIndexRouteImport } from './routes/_authenticated/analytics/index'
 import { Route as AuthenticatedAccountsIndexRouteImport } from './routes/_authenticated/accounts/index'
 import { Route as AuthenticatedSettingsPresetsRouteImport } from './routes/_authenticated/settings/presets'
@@ -122,6 +123,11 @@ const AuthenticatedAvatarsIndexRoute =
     path: '/avatars/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedAuditIndexRoute = AuthenticatedAuditIndexRouteImport.update({
+  id: '/audit/',
+  path: '/audit/',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedAnalyticsIndexRoute =
   AuthenticatedAnalyticsIndexRouteImport.update({
     id: '/analytics/',
@@ -202,6 +208,7 @@ export interface FileRoutesByFullPath {
   '/settings/presets': typeof AuthenticatedSettingsPresetsRoute
   '/accounts/': typeof AuthenticatedAccountsIndexRoute
   '/analytics/': typeof AuthenticatedAnalyticsIndexRoute
+  '/audit/': typeof AuthenticatedAuditIndexRoute
   '/avatars/': typeof AuthenticatedAvatarsIndexRoute
   '/brands/': typeof AuthenticatedBrandsIndexRoute
   '/campaigns/': typeof AuthenticatedCampaignsIndexRoute
@@ -228,6 +235,7 @@ export interface FileRoutesByTo {
   '/settings/presets': typeof AuthenticatedSettingsPresetsRoute
   '/accounts': typeof AuthenticatedAccountsIndexRoute
   '/analytics': typeof AuthenticatedAnalyticsIndexRoute
+  '/audit': typeof AuthenticatedAuditIndexRoute
   '/avatars': typeof AuthenticatedAvatarsIndexRoute
   '/brands': typeof AuthenticatedBrandsIndexRoute
   '/campaigns': typeof AuthenticatedCampaignsIndexRoute
@@ -257,6 +265,7 @@ export interface FileRoutesById {
   '/_authenticated/settings/presets': typeof AuthenticatedSettingsPresetsRoute
   '/_authenticated/accounts/': typeof AuthenticatedAccountsIndexRoute
   '/_authenticated/analytics/': typeof AuthenticatedAnalyticsIndexRoute
+  '/_authenticated/audit/': typeof AuthenticatedAuditIndexRoute
   '/_authenticated/avatars/': typeof AuthenticatedAvatarsIndexRoute
   '/_authenticated/brands/': typeof AuthenticatedBrandsIndexRoute
   '/_authenticated/campaigns/': typeof AuthenticatedCampaignsIndexRoute
@@ -286,6 +295,7 @@ export interface FileRouteTypes {
     | '/settings/presets'
     | '/accounts/'
     | '/analytics/'
+    | '/audit/'
     | '/avatars/'
     | '/brands/'
     | '/campaigns/'
@@ -312,6 +322,7 @@ export interface FileRouteTypes {
     | '/settings/presets'
     | '/accounts'
     | '/analytics'
+    | '/audit'
     | '/avatars'
     | '/brands'
     | '/campaigns'
@@ -340,6 +351,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/presets'
     | '/_authenticated/accounts/'
     | '/_authenticated/analytics/'
+    | '/_authenticated/audit/'
     | '/_authenticated/avatars/'
     | '/_authenticated/brands/'
     | '/_authenticated/campaigns/'
@@ -473,6 +485,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAvatarsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/audit/': {
+      id: '/_authenticated/audit/'
+      path: '/audit'
+      fullPath: '/audit/'
+      preLoaderRoute: typeof AuthenticatedAuditIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/analytics/': {
       id: '/_authenticated/analytics/'
       path: '/analytics'
@@ -581,6 +600,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
   AuthenticatedAccountsIndexRoute: typeof AuthenticatedAccountsIndexRoute
   AuthenticatedAnalyticsIndexRoute: typeof AuthenticatedAnalyticsIndexRoute
+  AuthenticatedAuditIndexRoute: typeof AuthenticatedAuditIndexRoute
   AuthenticatedAvatarsIndexRoute: typeof AuthenticatedAvatarsIndexRoute
   AuthenticatedBrandsIndexRoute: typeof AuthenticatedBrandsIndexRoute
   AuthenticatedCampaignsIndexRoute: typeof AuthenticatedCampaignsIndexRoute
@@ -595,6 +615,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
   AuthenticatedAccountsIndexRoute: AuthenticatedAccountsIndexRoute,
   AuthenticatedAnalyticsIndexRoute: AuthenticatedAnalyticsIndexRoute,
+  AuthenticatedAuditIndexRoute: AuthenticatedAuditIndexRoute,
   AuthenticatedAvatarsIndexRoute: AuthenticatedAvatarsIndexRoute,
   AuthenticatedBrandsIndexRoute: AuthenticatedBrandsIndexRoute,
   AuthenticatedCampaignsIndexRoute: AuthenticatedCampaignsIndexRoute,

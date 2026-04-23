@@ -61,6 +61,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Task 39.5: /api/admin/* 쓰기 감사 로그 자동 기록
+from hydra.web.middleware.audit_middleware import AuditLogMiddleware
+app.add_middleware(AuditLogMiddleware)
+
 # Static & templates
 STATIC_DIR = Path(__file__).parent / "static"
 TEMPLATE_DIR = Path(__file__).parent / "templates"
