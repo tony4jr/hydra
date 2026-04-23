@@ -177,3 +177,52 @@ def test_fetch_returns_empty_when_no_pending(env):
 
     resp = env["client"].post("/api/tasks/v2/fetch", headers=_hdr(env["worker_token"]))
     assert resp.json() == {"tasks": []}
+
+
+def test_complete_onboarding_auto_enqueues_warmup(env):
+    """M1-7: complete 훅이 orchestrator 전이 유발."""
+    from hydra.db.models import Account, Task
+
+    # 기존 pending account 지우고 새 시나리오 셋업
+    db = env["session"]()
+    db.query(Task).delete()
+    db.query(Account).delete()
+    acc = Account(
+        gmail="onb@x.com", password="x",
+        adspower_profile_id="p-onb", status="registered",
+    )
+    db.add(acc); db.flush()
+    db.add(Task(
+        account_id=acc.id, task_type="onboarding_verify",
+        status="pending", priority="normal",
+    ))
+    db.commit()
+    acc_id = acc.id
+    db.close()
+
+    # 워커가 fetch 해서 running 으로 만들기
+    fetch_resp = env["client"].post(
+        "/api/tasks/v2/fetch",
+        headers={"X-Worker-Token": env["worker_token"]},
+    )
+    fetched = fetch_resp.json()["tasks"][0]
+    tid = fetched["id"]
+
+    # complete 호출
+    r = env["client"].post(
+        "/api/tasks/v2/complete",
+        headers={"X-Worker-Token": env["worker_token"]},
+        json={"task_id": tid},
+    )
+    assert r.status_code == 200
+
+    # orchestrator 훅 동작 확인
+    db = env["session"]()
+    acc = db.get(Account, acc_id)
+    assert acc.status == "warmup"
+    assert acc.warmup_day == 1
+    warmup_task = db.query(Task).filter_by(
+        account_id=acc_id, task_type="warmup", status="pending",
+    ).first()
+    assert warmup_task is not None
+    db.close()

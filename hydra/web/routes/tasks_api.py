@@ -184,6 +184,9 @@ def complete(
         t.completed_at = datetime.now(UTC)
         t.result = req.result
         _release_lock(db, t.id)
+        # M1-7: 상태 전이 훅 — 같은 트랜잭션에서
+        from hydra.core.orchestrator import on_task_complete
+        on_task_complete(t.id, db)
         db.commit()
         return {"ok": True}
     finally:
@@ -286,6 +289,9 @@ def fail(
         t.completed_at = datetime.now(UTC)
         t.error_message = req.error
         _release_lock(db, t.id)
+        # M1-7: 실패 전이 훅
+        from hydra.core.orchestrator import on_task_fail
+        on_task_fail(t.id, db)
         db.commit()
         return {"ok": True}
     finally:
