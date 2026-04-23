@@ -20,6 +20,7 @@ from hydra.web.routes.admin_auth import admin_session
 router = APIRouter()
 
 DEPLOY_SCRIPT = Path("/opt/hydra/scripts/deploy.sh")
+DEPLOY_UNIT = "hydra-deploy.service"
 
 
 @router.get("/server-config")
@@ -34,21 +35,25 @@ def get_server_config(_session: dict = Depends(admin_session)) -> dict:
 
 @router.post("/deploy")
 def trigger_deploy(_session: dict = Depends(admin_session)) -> dict:
-    """scripts/deploy.sh 비동기 실행.
+    """`systemctl start --no-block hydra-deploy.service` 로 트리거.
 
-    systemctl restart 로 hydra-server 자신이 죽을 수 있으므로 start_new_session 으로
-    프로세스 세션 분리 (부모 죽어도 deploy.sh 계속 진행).
-    stdout/stderr 는 systemd journal 로 (PIPE 안 씀 — 버퍼 막힘 방지).
+    deploy.sh 를 별도 systemd oneshot 유닛에서 실행 — hydra-server restart 시 같은
+    cgroup 에 있으면 함께 kill 돼서 bump_version 단계에 못 도달하는 문제 방지.
+    로그: /var/log/hydra/deploy.log + `journalctl -u hydra-deploy`.
     """
     if not DEPLOY_SCRIPT.is_file():
         raise HTTPException(500, f"deploy script not found: {DEPLOY_SCRIPT}")
-    proc = subprocess.Popen(
-        ["bash", str(DEPLOY_SCRIPT)],
-        start_new_session=True,  # 부모 세션 죽어도 child 유지
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    return {"started": True, "pid": proc.pid}
+    try:
+        subprocess.check_call(
+            ["sudo", "systemctl", "start", "--no-block", DEPLOY_UNIT],
+            timeout=10,
+        )
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(500, f"systemctl start failed (rc={e.returncode})")
+    except FileNotFoundError:
+        # dev (Mac) 환경 — systemctl 없음. 테스트 모킹으로 커버됨.
+        raise HTTPException(500, "systemctl not available")
+    return {"started": True, "unit": DEPLOY_UNIT}
 
 
 @router.post("/pause")

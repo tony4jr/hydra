@@ -111,23 +111,24 @@ def test_canary_empty_list_clears(env):
 
 # ── deploy (subprocess mocking) ──
 
-def test_deploy_starts_subprocess(env, tmp_path, monkeypatch):
-    # 실제 스크립트 대신 가짜 경로 — is_file() True 되도록 tmp 에 작성
+def test_deploy_triggers_systemctl_unit(env, tmp_path, monkeypatch):
     fake_script = tmp_path / "deploy.sh"
     fake_script.write_text("#!/bin/bash\necho ok\n")
     monkeypatch.setattr("hydra.web.routes.admin_deploy.DEPLOY_SCRIPT", fake_script)
 
-    with patch("subprocess.Popen") as popen:
-        popen.return_value.pid = 99999
+    with patch("subprocess.check_call") as check_call:
         resp = env["client"].post("/api/admin/deploy", headers=_hdr(env))
     assert resp.status_code == 200
     body = resp.json()
     assert body["started"] is True
-    assert body["pid"] == 99999
-    popen.assert_called_once()
-    # start_new_session=True 필수 (부모 죽어도 계속)
-    kwargs = popen.call_args.kwargs
-    assert kwargs.get("start_new_session") is True
+    assert body["unit"] == "hydra-deploy.service"
+    # systemctl start --no-block hydra-deploy.service
+    args = check_call.call_args.args[0]
+    assert args[0] == "sudo"
+    assert "systemctl" in args
+    assert "start" in args
+    assert "--no-block" in args
+    assert "hydra-deploy.service" in args
 
 
 def test_deploy_returns_500_if_script_missing(env, tmp_path, monkeypatch):
