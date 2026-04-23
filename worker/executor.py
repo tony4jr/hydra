@@ -1,6 +1,16 @@
 """태스크 실행기 — 실제 브라우저 자동화 기반 핸들러 디스패치."""
 import json
+import os as _os
 import random
+
+
+def _parse_dry_run_flag() -> bool:
+    return _os.getenv("HYDRA_WORKER_DRY_RUN", "").strip().lower() in (
+        "1", "true", "yes",
+    )
+
+
+_DRY_RUN = _parse_dry_run_flag()
 
 from hydra.browser.actions import (
     human_click,
@@ -41,8 +51,17 @@ class TaskExecutor:
             "onboard": self._handle_onboard,
         }
 
-    async def execute(self, task: dict, session: WorkerSession) -> str:
+    async def execute(self, task: dict, session: WorkerSession = None) -> str:
         """태스크 실행. 결과 JSON 문자열 반환."""
+        # M2.1-1: DRY-RUN 모드 — 실 로직 건너뛰고 즉시 성공
+        if _DRY_RUN:
+            import asyncio
+            await asyncio.sleep(0.5)
+            return {
+                "ok": True,
+                "dry_run": True,
+                "task_type": task.get("task_type"),
+            }
         task_type = task["task_type"]
         payload = json.loads(task.get("payload") or "{}")
         handler = self.handlers.get(task_type)
