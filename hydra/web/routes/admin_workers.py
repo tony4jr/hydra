@@ -6,15 +6,30 @@
 """
 from __future__ import annotations
 
+import json
 import os
+from datetime import datetime
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from hydra.core.enrollment import generate_enrollment_token
+from hydra.db import session as _db_session
+from hydra.db.models import Worker
 from hydra.web.routes.admin_auth import admin_session
 
 router = APIRouter()
+
+VALID_TASK_TYPES = {
+    "*",
+    "create_account",
+    "comment",
+    "like",
+    "watch_video",
+    "warmup",
+    "onboarding_verify",
+}
 
 
 class EnrollRequest(BaseModel):
@@ -51,3 +66,90 @@ def create_enrollment(
         install_command=install_command,
         expires_in_hours=req.ttl_hours,
     )
+
+
+class WorkerOut(BaseModel):
+    id: int
+    name: str
+    status: Optional[str] = None
+    last_heartbeat: Optional[datetime] = None
+    current_version: Optional[str] = None
+    os_type: Optional[str] = None
+    allow_preparation: Optional[bool] = None
+    allow_campaign: Optional[bool] = None
+    allowed_task_types: list[str] = []
+    enrolled_at: Optional[datetime] = None
+
+
+def _worker_to_out(w: Worker) -> WorkerOut:
+    try:
+        types = json.loads(w.allowed_task_types or '["*"]')
+        if not isinstance(types, list):
+            types = ["*"]
+    except json.JSONDecodeError:
+        types = ["*"]
+    return WorkerOut(
+        id=w.id, name=w.name, status=w.status,
+        last_heartbeat=w.last_heartbeat,
+        current_version=w.current_version, os_type=w.os_type,
+        allow_preparation=w.allow_preparation, allow_campaign=w.allow_campaign,
+        allowed_task_types=[str(t) for t in types],
+        enrolled_at=w.enrolled_at,
+    )
+
+
+@router.get("/", response_model=list[WorkerOut])
+def list_workers(_session: dict = Depends(admin_session)) -> list[WorkerOut]:
+    db = _db_session.SessionLocal()
+    try:
+        return [_worker_to_out(w) for w in db.query(Worker).order_by(Worker.id).all()]
+    finally:
+        db.close()
+
+
+class WorkerPatch(BaseModel):
+    allowed_task_types: Optional[list[str]] = None
+    allow_preparation: Optional[bool] = None
+    allow_campaign: Optional[bool] = None
+    status: Optional[str] = None  # online|offline|paused
+
+
+@router.patch("/{worker_id}", response_model=WorkerOut)
+def update_worker(
+    worker_id: int,
+    req: WorkerPatch,
+    _session: dict = Depends(admin_session),
+) -> WorkerOut:
+    db = _db_session.SessionLocal()
+    try:
+        w = db.get(Worker, worker_id)
+        if w is None:
+            raise HTTPException(404, "worker not found")
+
+        if req.allowed_task_types is not None:
+            types = list(req.allowed_task_types)
+            unknown = [t for t in types if t not in VALID_TASK_TYPES]
+            if unknown:
+                raise HTTPException(
+                    400, f"unknown task_type(s): {unknown}. "
+                    f"allowed: {sorted(VALID_TASK_TYPES)}",
+                )
+            # wildcard 는 단독
+            if "*" in types:
+                types = ["*"]
+            w.allowed_task_types = json.dumps(types)
+
+        if req.allow_preparation is not None:
+            w.allow_preparation = bool(req.allow_preparation)
+        if req.allow_campaign is not None:
+            w.allow_campaign = bool(req.allow_campaign)
+        if req.status is not None:
+            if req.status not in ("online", "offline", "paused"):
+                raise HTTPException(400, f"invalid status: {req.status}")
+            w.status = req.status
+
+        db.commit()
+        db.refresh(w)
+        return _worker_to_out(w)
+    finally:
+        db.close()

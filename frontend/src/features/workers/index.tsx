@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Pause, Play, Lock, Monitor } from 'lucide-react'
+import { Plus, Pause, Play, Lock, Monitor, Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Header } from '@/components/layout/header'
@@ -9,6 +9,7 @@ import { ThemeSwitch } from '@/components/theme-switch'
 import { fetchApi } from '@/lib/api'
 import { useCountUp } from '@/hooks/use-count-up'
 import { WorkerAddDialog } from './worker-add-dialog'
+import { WorkerEditDialog } from './worker-edit-dialog'
 
 interface Worker {
   id: number
@@ -21,6 +22,7 @@ interface Worker {
   running_tasks: number
   allow_preparation?: boolean
   allow_campaign?: boolean
+  allowed_task_types?: string[]
 }
 
 function SummaryCard({ label, value, sub }: { label: string; value: number; sub?: string }) {
@@ -36,14 +38,27 @@ function SummaryCard({ label, value, sub }: { label: string; value: number; sub?
 
 export default function WorkersPage() {
   const [addDialogOpen, setAddDialogOpen] = useState(false)
+  const [editWorker, setEditWorker] = useState<Worker | null>(null)
   const [workers, setWorkers] = useState<Worker[]>([])
   const [loading, setLoading] = useState(true)
 
   const loadWorkers = () => {
     setLoading(true)
-    fetchApi<Worker[]>('/api/workers/')
-      .then(data => setWorkers(Array.isArray(data) ? data : []))
-      .catch(() => setWorkers([]))
+    // Task 39: /api/admin/workers/ 가 allowed_task_types 포함. 기존 legacy 는
+    // running_tasks/locked_profiles 를 조인해서 주니 둘 다 받아 병합.
+    Promise.all([
+      fetchApi<Worker[]>('/api/admin/workers/').catch(() => []),
+      fetchApi<Worker[]>('/api/workers/').catch(() => []),
+    ])
+      .then(([adminList, legacyList]) => {
+        const byId = new Map<number, Worker>()
+        for (const w of adminList) byId.set(w.id, { ...w, locked_profiles: 0, running_tasks: 0 })
+        for (const w of legacyList) {
+          const existing = byId.get(w.id) || w
+          byId.set(w.id, { ...existing, ...w, allowed_task_types: existing.allowed_task_types })
+        }
+        setWorkers(Array.from(byId.values()).sort((a, b) => a.id - b.id))
+      })
       .finally(() => setLoading(false))
   }
 
@@ -170,21 +185,28 @@ export default function WorkersPage() {
                     </div>
 
                     {/* Actions */}
-                    {isOffline ? (
-                      <p className='text-muted-foreground text-[12px]'>워커가 오프라인입니다. PC 연결을 확인하세요.</p>
-                    ) : (
-                      <div>
-                        {worker.status === 'online' && (
-                          <Button variant='outline' size='sm' className='w-full hydra-btn-press' onClick={() => handlePause(worker.id)}>
-                            <Pause className='mr-1 h-3 w-3' /> 일시정지
-                          </Button>
-                        )}
-                        {worker.status === 'paused' && (
-                          <Button variant='outline' size='sm' className='w-full hydra-btn-press' onClick={() => handleResume(worker.id)}>
-                            <Play className='mr-1 h-3 w-3' /> 재개
-                          </Button>
-                        )}
-                      </div>
+                    <div className='flex gap-2'>
+                      <Button
+                        variant='outline'
+                        size='sm'
+                        className='flex-1 hydra-btn-press'
+                        onClick={() => setEditWorker(worker)}
+                      >
+                        <Pencil className='mr-1 h-3 w-3' /> 편집
+                      </Button>
+                      {!isOffline && worker.status === 'online' && (
+                        <Button variant='outline' size='sm' className='flex-1 hydra-btn-press' onClick={() => handlePause(worker.id)}>
+                          <Pause className='mr-1 h-3 w-3' /> 일시정지
+                        </Button>
+                      )}
+                      {!isOffline && worker.status === 'paused' && (
+                        <Button variant='outline' size='sm' className='flex-1 hydra-btn-press' onClick={() => handleResume(worker.id)}>
+                          <Play className='mr-1 h-3 w-3' /> 재개
+                        </Button>
+                      )}
+                    </div>
+                    {isOffline && (
+                      <p className='text-muted-foreground text-[11px] mt-2'>오프라인 — PC 연결을 확인하세요</p>
                     )}
                   </div>
                 )
@@ -198,6 +220,22 @@ export default function WorkersPage() {
         open={addDialogOpen}
         onOpenChange={setAddDialogOpen}
         onCreated={loadWorkers}
+      />
+      <WorkerEditDialog
+        open={editWorker !== null}
+        onOpenChange={(v) => !v && setEditWorker(null)}
+        worker={
+          editWorker
+            ? {
+                id: editWorker.id,
+                name: editWorker.name,
+                allowed_task_types: editWorker.allowed_task_types || ['*'],
+                allow_preparation: editWorker.allow_preparation,
+                allow_campaign: editWorker.allow_campaign,
+              }
+            : null
+        }
+        onSaved={loadWorkers}
       />
     </>
   )
