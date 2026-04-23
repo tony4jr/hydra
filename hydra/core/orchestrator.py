@@ -76,3 +76,47 @@ def on_task_fail(task_id: int, session: Session) -> None:
         max_retries=task.max_retries,
     ))
     session.flush()
+
+
+_ACTIVE_STATUSES = ("registered", "warmup")
+
+
+def sweep_stuck_accounts(session: Session) -> int:
+    """진행 중인 account 중 next task 가 없는 것 감지 + 재enqueue.
+
+    Returns: 복구한 account 수.
+    """
+    candidates = (
+        session.query(Account)
+        .filter(Account.status.in_(_ACTIVE_STATUSES))
+        .all()
+    )
+    recovered = 0
+    for acc in candidates:
+        has_pending = (
+            session.query(Task)
+            .filter_by(account_id=acc.id, status="pending")
+            .first()
+            is not None
+        )
+        has_running = (
+            session.query(Task)
+            .filter_by(account_id=acc.id, status="running")
+            .first()
+            is not None
+        )
+        if has_pending or has_running:
+            continue
+        # 현재 상태에 맞는 태스크 재생성
+        if acc.status == "registered":
+            tt = "onboarding_verify"
+        else:  # warmup
+            tt = "warmup"
+        session.add(Task(
+            account_id=acc.id, task_type=tt,
+            status="pending",
+        ))
+        recovered += 1
+    if recovered:
+        session.commit()
+    return recovered

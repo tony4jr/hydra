@@ -6,7 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from hydra.core.orchestrator import on_task_complete, on_task_fail
+from hydra.core.orchestrator import on_task_complete, on_task_fail, sweep_stuck_accounts
 from hydra.db.models import Account, Base, Task
 
 
@@ -175,6 +175,54 @@ def test_task_fail_with_max_retries_zero_suspends_immediately(session):
         account_id=acc.id, status="pending",
     ).count()
     assert pending == 0
+
+
+def test_sweep_detects_warmup_without_pending_task_and_reenqueues(session):
+    """warmup 중인데 pending 태스크가 없으면 재enqueue."""
+    acc = Account(
+        gmail="a@x.com", password="x",
+        adspower_profile_id="p1", status="warmup", warmup_day=2,
+    )
+    session.add(acc)
+    session.commit()
+
+    count = sweep_stuck_accounts(session)
+    assert count == 1
+
+    nxt = session.query(Task).filter_by(
+        account_id=acc.id, task_type="warmup", status="pending",
+    ).first()
+    assert nxt is not None
+
+
+def test_sweep_ignores_accounts_with_pending_task(session):
+    acc = Account(
+        gmail="a@x.com", password="x",
+        adspower_profile_id="p1", status="warmup", warmup_day=1,
+    )
+    session.add(acc)
+    session.flush()
+    session.add(Task(
+        account_id=acc.id, task_type="warmup", status="pending",
+    ))
+    session.commit()
+
+    count = sweep_stuck_accounts(session)
+    assert count == 0
+
+
+def test_sweep_ignores_active_and_suspended(session):
+    session.add_all([
+        Account(gmail="a@x.com", password="x", adspower_profile_id="p1",
+                status="active", warmup_day=4),
+        Account(gmail="b@x.com", password="x", adspower_profile_id="p2",
+                status="suspended"),
+        Account(gmail="c@x.com", password="x", adspower_profile_id="p3",
+                status="retired"),
+    ])
+    session.commit()
+
+    assert sweep_stuck_accounts(session) == 0
 
 
 def test_task_fail_on_suspended_account_is_noop(session):
