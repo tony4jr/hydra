@@ -13,6 +13,7 @@ import {
   ListChecks,
   Settings2,
   Command,
+  Image,
 } from 'lucide-react'
 import { type SidebarData } from '../types'
 
@@ -77,6 +78,11 @@ export const sidebarData: SidebarData = {
           title: '워커',
           url: '/workers',
           icon: Monitor,
+        },
+        {
+          title: '아바타',
+          url: '/avatars',
+          icon: Image,
         },
         {
           title: '설정',
