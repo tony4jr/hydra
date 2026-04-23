@@ -20,6 +20,7 @@ from worker.login import auto_login
 from worker.warmup import WarmupExecutor
 from worker.session import WorkerSession
 from worker.comment_behavior import read_comments_before_posting
+from worker.account_snapshot import AccountSnapshot
 from hydra.browser.adspower import adspower
 
 
@@ -236,14 +237,15 @@ class TaskExecutor:
         video_id = payload["video_id"]
         target_comment_id = payload.get("target_comment_id", "")
 
-        # 타이밍 설정 로드 (대시보드 Settings > 좋아요 부스팅 > 세션 타이밍)
-        from hydra.db.session import SessionLocal
-        from hydra.services.like_boost_config import load as load_lb_cfg
-        _db = SessionLocal()
-        try:
-            tc = load_lb_cfg(_db)
-        finally:
-            _db.close()
+        # 타이밍 설정 — VPS 가 task payload 에 like_boost_config 를 동봉하면 사용,
+        # 없으면 DEFAULTS. 워커는 로컬 DB 를 보지 않는다 (M1-12).
+        from hydra.services.like_boost_config import DEFAULTS as _LB_DEFAULTS
+        tc = dict(_LB_DEFAULTS)
+        override = payload.get("like_boost_config") or {}
+        if isinstance(override, dict):
+            for k, v in override.items():
+                if k in tc and v is not None:
+                    tc[k] = v
 
         await self._navigate_to_video(session, video_id, payload.get("video_title", ""))
 
@@ -491,58 +493,48 @@ class TaskExecutor:
         session 은 이미 WorkerSession.start() 이후 상태 (ensure_safe_ip 완료).
         """
         from worker.onboard_session import run_onboard_session
+        from hydra.core import crypto
 
-        persona = payload.get("persona") or {}
+        # AccountSnapshot 에서 기본 자격증명 복원 (payload override 우선).
+        snap = None
+        try:
+            if task.get("account_snapshot"):
+                snap = AccountSnapshot.from_payload(task)
+        except Exception:
+            snap = None
+
+        persona = payload.get("persona") or (snap.persona if snap else {}) or {}
         if isinstance(persona, str):
             try:
                 persona = json.loads(persona)
             except Exception:
                 persona = {}
 
+        email = payload.get("email") or (snap.gmail if snap else None)
+        password = payload.get("password") or (snap.password if snap else None)
+        recovery_email = payload.get("recovery_email") or (snap.recovery_email if snap else None)
+
         page = session.browser.page
         result = await run_onboard_session(
             page,
             persona=persona,
-            email=payload.get("email"),
-            password=payload.get("password"),
-            recovery_email=payload.get("recovery_email"),
+            email=email,
+            password=password,
+            recovery_email=recovery_email,
             duration_min_sec=payload.get("duration_min_sec", 120),
             duration_max_sec=payload.get("duration_max_sec", 300),
         )
 
-        # OTP 시크릿 등록됐으면 DB 에 암호화 저장 (실패해도 시크릿은 확보됐으니 먼저 저장)
-        if result.otp_secret and session.account_id:
-            from hydra.db.session import SessionLocal
-            from hydra.db.models import Account
-            from hydra.core import crypto
-            _db = SessionLocal()
-            try:
-                acct = _db.get(Account, session.account_id)
-                if acct and not acct.totp_secret:
-                    acct.totp_secret = crypto.encrypt(result.otp_secret)
-                    _db.commit()
-            finally:
-                _db.close()
+        # OTP 시크릿 등록됐으면 결과 JSON 에 암호화하여 포함 — 서버가 complete 처리 시
+        # Account.totp_secret 에 반영한다 (M1-12: 워커는 로컬 DB 접근 금지).
+        encrypted_otp_secret = (
+            crypto.encrypt(result.otp_secret) if result.otp_secret else None
+        )
 
-        # 본인 인증 잠금(7일 쿨다운) — 재시도해도 복구 불가. 계정 상태를 전환하고
-        # 태스크는 failed (max_retries 무시). 7일 뒤 수동/스케줄러가 status 복구.
+        # 본인 인증 잠금(7일 쿨다운) — 서버가 error 메시지의 magic string 을 보고
+        # 계정 status 를 identity_challenge 로 전환 + 7일 cooldown 설정. 워커는
+        # 더 이상 직접 DB 를 쓰지 않는다 (M1-12).
         if any("identity_challenge:locked" in f for f in result.critical_failures):
-            if session.account_id:
-                from datetime import datetime, timedelta, UTC
-                from hydra.db.session import SessionLocal
-                from hydra.db.models import Account
-                _db = SessionLocal()
-                try:
-                    acct = _db.get(Account, session.account_id)
-                    if acct:
-                        acct.status = "identity_challenge"
-                        acct.identity_challenge_until = datetime.now(UTC) + timedelta(days=7)
-                        acct.identity_challenge_count = (acct.identity_challenge_count or 0) + 1
-                        _db.commit()
-                finally:
-                    _db.close()
-            # retry 무시하고 즉시 최종 failed — worker.fail_task 가 retry_count 올리지만
-            # max_retries 넘는 error 메시지로 뺄 방법이 현재 없어 일반 RuntimeError 로 raise
             raise RuntimeError(
                 "onboard blocked by identity challenge — account marked for 7-day cooldown"
             )
@@ -562,6 +554,7 @@ class TaskExecutor:
             "actions": result.actions,
             "searched_query": result.searched_query,
             "otp_registered": bool(result.otp_secret),
+            "encrypted_otp_secret": encrypted_otp_secret,
             "critical_failures": result.critical_failures,
             "error": result.error,
         }, ensure_ascii=False)
