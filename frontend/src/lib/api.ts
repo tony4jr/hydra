@@ -3,7 +3,9 @@ import axios, { type AxiosRequestConfig } from 'axios'
 const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
 
 // 단일 axios 인스턴스 — 전역 공용. 모든 API 호출이 이 인터셉터 체인을 지남.
-const http = axios.create({
+// 내부 axios 인스턴스. 외부에서 multipart 등 필요 시 `http` 로 export 하여 쓸 수 있음
+// (JWT 인터셉터 동일 적용).
+export const http = axios.create({
   baseURL: API_BASE,
   timeout: 30000,
 })
@@ -88,8 +90,4 @@ export async function fetchApi<T>(path: string, options?: RequestInit): Promise<
   }
 }
 
-/**
- * 직접적인 axios 인스턴스 export — 스트리밍/업로드/캔슬 등 고급 기능 필요 시.
- * 일반 호출은 fetchApi 사용 권장.
- */
-export { http }
+// 참고: http 는 이미 최상단에서 export const 로 선언됨.

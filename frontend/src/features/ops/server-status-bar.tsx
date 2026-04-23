@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Play, Rocket } from 'lucide-react'
-import axios from 'axios'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { fetchApi } from '@/lib/api'
 import { toast } from 'sonner'
 
 type ServerConfig = {
@@ -11,32 +11,29 @@ type ServerConfig = {
   canary_worker_ids: number[]
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
-
-function authed<T>(fn: () => Promise<T>) {
-  return fn()
-}
-
+// fetchApi 를 사용해야 axios 인스턴스 인터셉터로 JWT 가 자동 주입된다.
+// 직접 axios.get() 쓰면 Authorization 헤더 없이 호출되어 401 → data 없어 바 숨겨짐 버그.
 async function fetchServerConfig(): Promise<ServerConfig> {
-  const r = await axios.get(`${API_BASE}/api/admin/server-config`)
-  return r.data
+  return fetchApi<ServerConfig>('/api/admin/server-config')
 }
 
 async function postPause() {
-  return (await axios.post(`${API_BASE}/api/admin/pause`)).data
+  return fetchApi<{ paused: boolean }>('/api/admin/pause', { method: 'POST' })
 }
 async function postUnpause() {
-  return (await axios.post(`${API_BASE}/api/admin/unpause`)).data
+  return fetchApi<{ paused: boolean }>('/api/admin/unpause', { method: 'POST' })
 }
 async function postDeploy() {
-  return (await axios.post(`${API_BASE}/api/admin/deploy`)).data
+  return fetchApi<{ started: boolean; unit: string }>('/api/admin/deploy', {
+    method: 'POST',
+  })
 }
 
 export function ServerStatusBar() {
   const qc = useQueryClient()
   const { data } = useQuery({
     queryKey: ['server-config'],
-    queryFn: () => authed(fetchServerConfig),
+    queryFn: fetchServerConfig,
     refetchInterval: 10_000,
   })
 
@@ -61,7 +58,7 @@ export function ServerStatusBar() {
   const deploy = useMutation({
     mutationFn: postDeploy,
     onSuccess: (res) => {
-      toast.success(`배포 시작 — pid=${res.pid}`)
+      toast.success(`배포 시작 — ${res.unit}`)
       // 배포 완료까지 수 분. 몇 초 후 상태 한 번 갱신.
       setTimeout(
         () => qc.invalidateQueries({ queryKey: ['server-config'] }),
