@@ -47,6 +47,7 @@ def _hdr(env):
 
 def test_all_endpoints_require_auth(env):
     for method, path, body in [
+        ("GET",  "/api/admin/server-config", None),
         ("POST", "/api/admin/deploy", None),
         ("POST", "/api/admin/pause", None),
         ("POST", "/api/admin/unpause", None),
@@ -54,6 +55,19 @@ def test_all_endpoints_require_auth(env):
     ]:
         resp = env["client"].request(method, path, json=body)
         assert resp.status_code == 401, f"{method} {path}"
+
+
+def test_server_config_returns_current_state(env):
+    scfg.set_current_version("abc1234")
+    scfg.set_paused(True)
+    scfg.set_canary_worker_ids([5, 6])
+
+    resp = env["client"].get("/api/admin/server-config", headers=_hdr(env))
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["current_version"] == "abc1234"
+    assert body["paused"] is True
+    assert body["canary_worker_ids"] == [5, 6]
 
 
 # ── pause / unpause ──

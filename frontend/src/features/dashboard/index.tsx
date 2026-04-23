@@ -7,6 +7,7 @@ import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { fetchApi } from '@/lib/api'
 import { useCountUp } from '@/hooks/use-count-up'
+import { ServerStatusBar } from '@/features/ops/server-status-bar'
 import type { DashboardStats, WorkerInfo } from './types'
 
 interface ActiveCampaign {
@@ -121,6 +122,9 @@ export function Dashboard() {
 
       <Main>
         <div className='space-y-5'>
+
+          {/* === Task 28: 서버 상태 바 (배포 + 긴급정지) === */}
+          <ServerStatusBar />
 
           {/* === System Status Banner === */}
           <div className={`rounded-xl p-5 flex items-center justify-between ${

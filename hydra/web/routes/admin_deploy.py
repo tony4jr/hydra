@@ -22,6 +22,16 @@ router = APIRouter()
 DEPLOY_SCRIPT = Path("/opt/hydra/scripts/deploy.sh")
 
 
+@router.get("/server-config")
+def get_server_config(_session: dict = Depends(admin_session)) -> dict:
+    """현재 서버 상태 (버전/정지/카나리). UI 상단 킬스위치 바에서 10초마다 폴링."""
+    return {
+        "current_version": scfg.get_current_version(),
+        "paused": scfg.is_paused(),
+        "canary_worker_ids": scfg.get_canary_worker_ids(),
+    }
+
+
 @router.post("/deploy")
 def trigger_deploy(_session: dict = Depends(admin_session)) -> dict:
     """scripts/deploy.sh 비동기 실행.
