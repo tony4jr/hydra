@@ -13,9 +13,9 @@ class ServerClient:
         self.http = httpx.Client(timeout=30)
 
     def heartbeat(self) -> dict:
-        """Heartbeat 전송."""
+        """Heartbeat 전송 (M1-10: v2 엔드포인트)."""
         resp = self.http.post(
-            f"{self.base_url}/api/workers/heartbeat",
+            f"{self.base_url}/api/workers/heartbeat/v2",
             headers=self.headers,
             json={
                 "version": config.worker_version,
@@ -26,18 +26,24 @@ class ServerClient:
         return resp.json()
 
     def fetch_tasks(self) -> list[dict]:
-        """서버에서 태스크 가져오기."""
+        """서버에서 태스크 가져오기 (M1-10: v2 엔드포인트).
+
+        v2 응답 형식 `{"tasks": [...]}` 에서 list 만 추출하여 기존 호출자 호환 유지.
+        """
         resp = self.http.post(
-            f"{self.base_url}/api/tasks/fetch",
+            f"{self.base_url}/api/tasks/v2/fetch",
             headers=self.headers,
         )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        if isinstance(data, dict):
+            return data.get("tasks", [])
+        return data
 
     def complete_task(self, task_id: int, result: str = None) -> dict:
-        """태스크 완료 보고."""
+        """태스크 완료 보고 (M1-10: v2 엔드포인트)."""
         resp = self.http.post(
-            f"{self.base_url}/api/tasks/complete",
+            f"{self.base_url}/api/tasks/v2/complete",
             headers=self.headers,
             json={"task_id": task_id, "result": result},
         )
@@ -45,9 +51,9 @@ class ServerClient:
         return resp.json()
 
     def fail_task(self, task_id: int, error: str) -> dict:
-        """태스크 실패 보고."""
+        """태스크 실패 보고 (M1-10: v2 엔드포인트)."""
         resp = self.http.post(
-            f"{self.base_url}/api/tasks/fail",
+            f"{self.base_url}/api/tasks/v2/fail",
             headers=self.headers,
             json={"task_id": task_id, "error": error},
         )

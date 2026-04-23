@@ -51,3 +51,132 @@ def test_worker_app_init(monkeypatch):
     assert app.running is True
     assert app.last_heartbeat is None
     app.client.close()
+
+
+def test_client_heartbeat_calls_v2_endpoint(monkeypatch):
+    monkeypatch.setenv("HYDRA_SERVER_URL", "http://mock:8000")
+    monkeypatch.setenv("HYDRA_WORKER_TOKEN", "wt-123")
+    for k in ("SERVER_URL", "WORKER_TOKEN"):
+        monkeypatch.delenv(k, raising=False)
+    from worker.config import WorkerConfig
+    import worker.config as cfg_module
+    import worker.client as client_module
+    new_cfg = WorkerConfig()
+    monkeypatch.setattr(cfg_module, "config", new_cfg)
+    monkeypatch.setattr(client_module, "config", new_cfg)
+    from worker.client import ServerClient
+
+    calls = []
+
+    class FakeResp:
+        status_code = 200
+        def json(self):
+            return {
+                "current_version": "v1", "paused": False,
+                "canary_worker_ids": [], "restart_requested": False,
+                "worker_config": {"poll_interval_sec": 15},
+            }
+        def raise_for_status(self):
+            pass
+
+    class FakeHttp:
+        def post(self, url, **kw):
+            calls.append(url)
+            return FakeResp()
+        def close(self):
+            pass
+
+    client = ServerClient()
+    client.http = FakeHttp()
+    result = client.heartbeat()
+
+    assert any("/api/workers/heartbeat/v2" in u for u in calls)
+    assert result["current_version"] == "v1"
+    client.close()
+
+
+def test_client_fetch_tasks_calls_v2_endpoint(monkeypatch):
+    monkeypatch.setenv("HYDRA_SERVER_URL", "http://mock:8000")
+    monkeypatch.setenv("HYDRA_WORKER_TOKEN", "wt-123")
+    for k in ("SERVER_URL", "WORKER_TOKEN"):
+        monkeypatch.delenv(k, raising=False)
+    from worker.config import WorkerConfig
+    import worker.config as cfg_module
+    import worker.client as client_module
+    new_cfg = WorkerConfig()
+    monkeypatch.setattr(cfg_module, "config", new_cfg)
+    monkeypatch.setattr(client_module, "config", new_cfg)
+    from worker.client import ServerClient
+
+    calls = []
+    class FakeResp:
+        status_code = 200
+        def json(self): return {"tasks": []}
+        def raise_for_status(self): pass
+    class FakeHttp:
+        def post(self, url, **kw):
+            calls.append(url); return FakeResp()
+        def close(self): pass
+
+    c = ServerClient(); c.http = FakeHttp()
+    c.fetch_tasks()
+    assert any("/api/tasks/v2/fetch" in u for u in calls)
+    c.close()
+
+
+def test_client_complete_task_calls_v2_endpoint(monkeypatch):
+    monkeypatch.setenv("HYDRA_SERVER_URL", "http://mock:8000")
+    monkeypatch.setenv("HYDRA_WORKER_TOKEN", "wt-123")
+    for k in ("SERVER_URL", "WORKER_TOKEN"):
+        monkeypatch.delenv(k, raising=False)
+    from worker.config import WorkerConfig
+    import worker.config as cfg_module
+    import worker.client as client_module
+    new_cfg = WorkerConfig()
+    monkeypatch.setattr(cfg_module, "config", new_cfg)
+    monkeypatch.setattr(client_module, "config", new_cfg)
+    from worker.client import ServerClient
+
+    calls = []
+    class FakeResp:
+        status_code = 200
+        def json(self): return {"ok": True}
+        def raise_for_status(self): pass
+    class FakeHttp:
+        def post(self, url, **kw):
+            calls.append(url); return FakeResp()
+        def close(self): pass
+
+    c = ServerClient(); c.http = FakeHttp()
+    c.complete_task(123, result='{"ok":true}')
+    assert any("/api/tasks/v2/complete" in u for u in calls)
+    c.close()
+
+
+def test_client_fail_task_calls_v2_endpoint(monkeypatch):
+    monkeypatch.setenv("HYDRA_SERVER_URL", "http://mock:8000")
+    monkeypatch.setenv("HYDRA_WORKER_TOKEN", "wt-123")
+    for k in ("SERVER_URL", "WORKER_TOKEN"):
+        monkeypatch.delenv(k, raising=False)
+    from worker.config import WorkerConfig
+    import worker.config as cfg_module
+    import worker.client as client_module
+    new_cfg = WorkerConfig()
+    monkeypatch.setattr(cfg_module, "config", new_cfg)
+    monkeypatch.setattr(client_module, "config", new_cfg)
+    from worker.client import ServerClient
+
+    calls = []
+    class FakeResp:
+        status_code = 200
+        def json(self): return {"ok": True}
+        def raise_for_status(self): pass
+    class FakeHttp:
+        def post(self, url, **kw):
+            calls.append(url); return FakeResp()
+        def close(self): pass
+
+    c = ServerClient(); c.http = FakeHttp()
+    c.fail_task(123, error="boom")
+    assert any("/api/tasks/v2/fail" in u for u in calls)
+    c.close()
