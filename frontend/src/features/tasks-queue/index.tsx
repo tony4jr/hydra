@@ -11,6 +11,7 @@ import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { fetchApi } from '@/lib/api'
 import { useCountUp } from '@/hooks/use-count-up'
+import { TaskStatsPanel } from '@/features/tasks/stats-panel'
 
 interface Task {
   id: number
@@ -134,6 +135,10 @@ export default function TasksQueuePage() {
                 </SelectContent>
               </Select>
             )}
+          </div>
+
+          <div className='mb-4'>
+            <TaskStatsPanel />
           </div>
 
           {/* Stat cards */}

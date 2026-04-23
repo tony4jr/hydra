@@ -186,7 +186,7 @@ export default function AccountsPage() {
     }
     load(true)
     // 10초 폴링 — 실시간감 + 부하 낮음 (skeleton 은 최초만 표시)
-    const id = setInterval(() => load(false), 10_000)
+    const id = setInterval(() => load(false), 3_000)
     return () => { mounted = false; clearInterval(id) }
   }, [reloadKey])
 

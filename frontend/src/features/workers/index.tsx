@@ -23,6 +23,11 @@ interface Worker {
   allow_preparation?: boolean
   allow_campaign?: boolean
   allowed_task_types?: string[]
+  current_task?: {
+    id: number
+    task_type: string
+    started_at?: string | null
+  } | null
 }
 
 function SummaryCard({ label, value, sub }: { label: string; value: number; sub?: string }) {
@@ -62,7 +67,11 @@ export default function WorkersPage() {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { loadWorkers() }, [])
+  useEffect(() => {
+    loadWorkers()
+    const id = setInterval(loadWorkers, 3_000)
+    return () => clearInterval(id)
+  }, [])
 
   const onlineCount = workers.filter(w => w.status === 'online').length
   const totalTasks = workers.reduce((sum, w) => sum + (w.running_tasks || 0), 0)
@@ -156,6 +165,14 @@ export default function WorkersPage() {
                       <div className='flex justify-between'>
                         <span className='text-muted-foreground'>OS / 버전</span>
                         <span>{worker.os_type || '-'} / {worker.version || '-'}</span>
+                      </div>
+                      <div className='flex justify-between'>
+                        <span className='text-muted-foreground'>현재 태스크</span>
+                        <span className='font-mono text-[12px]'>
+                          {worker.current_task
+                            ? `#${worker.current_task.id} · ${worker.current_task.task_type}`
+                            : '-'}
+                        </span>
                       </div>
                       <div className='flex justify-between'>
                         <span className='text-muted-foreground'>실행중 태스크</span>

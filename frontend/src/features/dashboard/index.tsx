@@ -72,7 +72,7 @@ export function Dashboard() {
       setLoading(false)
     }
     load()
-    const interval = setInterval(load, 30_000)
+    const interval = setInterval(load, 10_000)
     return () => clearInterval(interval)
   }, [])
 
