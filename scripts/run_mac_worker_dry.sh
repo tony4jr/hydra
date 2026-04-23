@@ -32,8 +32,17 @@ print(json.load(urllib.request.urlopen(req))['worker_token'])
 ")
 
 echo "[4/4] launching worker (Ctrl+C to stop)"
-# worker/secrets.py 가 SERVER_URL / WORKER_TOKEN 을 최우선으로 읽음.
-# .env 의 localhost 값을 덮어쓰기 위해 양쪽 모두 export.
+# 과거 ~/.hydra-worker/config.json 에 저장된 localhost:8000 을 덮어쓴다.
+# (worker/app.main() 이 config.load() 로 이 파일 값을 우선시함.)
+mkdir -p "$HOME/.hydra-worker"
+cat > "$HOME/.hydra-worker/config.json" <<JSON
+{
+  "server_url": "$SERVER_URL",
+  "worker_token": "$WT"
+}
+JSON
+
+# env 도 함께 export — worker/secrets.py 진입 경로 보완.
 export HYDRA_WORKER_DRY_RUN=1
 export SERVER_URL="$SERVER_URL"
 export WORKER_TOKEN="$WT"
