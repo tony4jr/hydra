@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import {
   Users, CheckCircle2, Flame, Snowflake, ShieldOff, Ghost,
   ChevronLeft, ChevronRight, ShieldAlert, ShieldCheck, UserCheck,
-  ImageOff, AlertTriangle,
+  ImageOff, AlertTriangle, Plus,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -18,6 +18,7 @@ import { ThemeSwitch } from '@/components/theme-switch'
 import { fetchApi } from '@/lib/api'
 import { useCountUp } from '@/hooks/use-count-up'
 import { AccountDetailSheet } from './account-detail-sheet'
+import { AccountRegisterDialog } from './account-register-dialog'
 
 interface Account {
   id: number
@@ -155,6 +156,9 @@ export default function AccountsPage() {
 
   const [stats, setStats] = useState<AccountStats>({ total: 0, active: 0, warmup: 0, cooldown: 0, retired: 0, ghost: 0, identity_challenge: 0 })
 
+  const [regOpen, setRegOpen] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
+
   useEffect(() => {
     let mounted = true
     const load = async (initial: boolean) => {
@@ -184,7 +188,7 @@ export default function AccountsPage() {
     // 10초 폴링 — 실시간감 + 부하 낮음 (skeleton 은 최초만 표시)
     const id = setInterval(() => load(false), 10_000)
     return () => { mounted = false; clearInterval(id) }
-  }, [])
+  }, [reloadKey])
 
   const warmupDayDescs: Record<string, string> = {
     '1': 'Day 1: 시청 + 좋아요 + 채널 설정',
@@ -298,11 +302,16 @@ export default function AccountsPage() {
       </Header>
       <Main>
         <div >
-          <div className='mb-5'>
-            <h2 className='text-[22px] font-bold'>계정</h2>
-            <p className='text-muted-foreground text-[13px]'>
-              YouTube 계정 라이프사이클 관리
-            </p>
+          <div className='mb-5 flex items-start justify-between gap-4'>
+            <div>
+              <h2 className='text-[22px] font-bold'>계정</h2>
+              <p className='text-muted-foreground text-[13px]'>
+                YouTube 계정 라이프사이클 관리
+              </p>
+            </div>
+            <Button onClick={() => setRegOpen(true)}>
+              <Plus className='mr-1 h-4 w-4' /> 계정 등록
+            </Button>
           </div>
 
           {/* Stat cards */}
@@ -473,6 +482,12 @@ export default function AccountsPage() {
             accountId={selectedAccountId}
             open={sheetOpen}
             onOpenChange={setSheetOpen}
+          />
+
+          <AccountRegisterDialog
+            open={regOpen}
+            onOpenChange={setRegOpen}
+            onCreated={() => setReloadKey(k => k + 1)}
           />
         </div>
       </Main>
