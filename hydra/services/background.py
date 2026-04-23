@@ -15,6 +15,7 @@ class BackgroundScheduler:
         self.running = False
         self.intervals = {
             "worker_health": 30,              # 30초마다 워커 상태 체크
+            "m1_tick": 30,                    # 30초마다 sweep + campaign scan
             "auto_campaign": 300,             # 5분마다 자동 캠페인
             "collect_new_videos": 14400,      # 4시간마다 (초)
             "collect_popular_videos": 86400,  # 1일마다
@@ -44,6 +45,8 @@ class BackgroundScheduler:
 
             if task_name == "worker_health":
                 await self._check_workers()
+            elif task_name == "m1_tick":
+                await self._m1_tick()
             elif task_name == "auto_campaign":
                 await self._auto_campaigns()
             elif task_name == "collect_new_videos":
@@ -105,8 +108,33 @@ class BackgroundScheduler:
         finally:
             db.close()
 
+    async def _m1_tick(self):
+        """M1-8: sweep stuck accounts + scan active accounts (campaign stub)."""
+        try:
+            await asyncio.to_thread(m1_tick)
+        except Exception as e:
+            print(f"[Scheduler] m1_tick failed: {e}")
+
     def stop(self):
         self.running = False
+
+
+def m1_tick() -> dict:
+    """M1-8: orchestrator.sweep_stuck_accounts + campaign_stub.scan_active_accounts.
+
+    기존 scheduler 의 주기 tick 에서 호출. 독립 함수라 테스트 용이.
+    """
+    from hydra.core.orchestrator import sweep_stuck_accounts
+    from hydra.core.campaign_stub import scan_active_accounts
+    from hydra.db import session as _s
+
+    db = _s.SessionLocal()
+    try:
+        swept = sweep_stuck_accounts(db)
+        scanned = scan_active_accounts(db)
+        return {"swept": swept, "scanned": scanned}
+    finally:
+        db.close()
 
 
 scheduler = BackgroundScheduler()
