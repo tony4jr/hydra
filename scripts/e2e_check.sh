@@ -168,6 +168,30 @@ else
     _fail "audit/list 비어있음 (이번 E2E 가 최소 1건 생성했어야)"
 fi
 
+# ── 9. 태스크 통계/최근 + 워커 current_task ──
+_section "9. 태스크 통계 + 최근 + 워커 current_task"
+
+STATS=$(curl -s -H "Authorization: Bearer $TOKEN" "$URL/api/admin/tasks/stats")
+if echo "$STATS" | python3 -c 'import json,sys;json.load(sys.stdin)["pending"]' 2>/dev/null; then
+    _ok "tasks/stats 응답 정상"
+else
+    _fail "tasks/stats 응답 이상: $STATS"
+fi
+
+RECENT=$(curl -s -H "Authorization: Bearer $TOKEN" "$URL/api/admin/tasks/recent?limit=5")
+if echo "$RECENT" | python3 -c 'import json,sys;json.load(sys.stdin)["items"]' 2>/dev/null; then
+    _ok "tasks/recent 응답 정상"
+else
+    _fail "tasks/recent 응답 이상"
+fi
+
+WORKERS=$(curl -s -H "Authorization: Bearer $TOKEN" "$URL/api/admin/workers/")
+if echo "$WORKERS" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert isinstance(d, list); print("ok" if not d or "current_task" in d[0] else "no_field")' 2>&1 | grep -q "ok"; then
+    _ok "workers list 에 current_task 필드"
+else
+    _fail "workers list current_task 필드 누락"
+fi
+
 # ── 요약 ──
 _section "결과"
 echo "PASS: $PASS"
