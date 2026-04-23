@@ -1,12 +1,12 @@
 """AI 댓글 생성 API — Worker에서 요청 시 content_agent 호출."""
 import json
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from hydra.db.session import get_db
-from hydra.db.models import Brand, Preset, Video
-from hydra.services import worker_service
+from hydra.db.models import Brand, Preset, Video, Worker
+from hydra.web.routes.worker_api import worker_auth
 
 router = APIRouter(prefix="/api", tags=["ai"])
 
@@ -14,14 +14,10 @@ router = APIRouter(prefix="/api", tags=["ai"])
 @router.post("/generate-comment")
 def generate_comment(
     body: dict,
-    x_worker_token: str = Header(...),
+    _worker: Worker = Depends(worker_auth),
     db: Session = Depends(get_db),
 ):
-    """Worker에서 요청 시 AI 댓글 생성."""
-    worker = worker_service.verify_token(db, x_worker_token)
-    if not worker:
-        raise HTTPException(status_code=401, detail="Invalid worker token")
-
+    """Worker에서 요청 시 AI 댓글 생성. worker_auth 로 보호."""
     from hydra.ai.agents.content_agent import generate_conversation
 
     video_id = body.get("video_id", "")

@@ -96,7 +96,7 @@ app.include_router(tasks_router)
 app.include_router(presets_router, dependencies=_ADMIN_DEPS)
 app.include_router(profile_locks_router, dependencies=_ADMIN_DEPS)
 app.include_router(version_router, dependencies=_ADMIN_DEPS)
-app.include_router(ai_router, dependencies=_ADMIN_DEPS)
+app.include_router(ai_router)  # 개별 라우트가 worker_auth 로 보호 (M1-9)
 # WebSocket — Starlette dependencies 미지원, 별도 인증 핸들러 추후
 app.include_router(ws_router)
 
