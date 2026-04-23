@@ -1,7 +1,8 @@
 """M1 상태 전이 엔진 (Task M1-1~M1-5).
 
 task 완료/실패 시 account 상태를 전이시키고 다음 단계 태스크를 큐에 넣는다.
-같은 세션에서 호출되어 하나의 트랜잭션으로 원자성 보장.
+on_task_complete/on_task_fail 은 호출자 세션에 참여 (같은 트랜잭션, flush 만).
+sweep_stuck_accounts 는 top-level scheduler 진입점 — 스스로 commit.
 """
 from __future__ import annotations
 
@@ -82,7 +83,11 @@ _ACTIVE_STATUSES = ("registered", "warmup")
 
 
 def sweep_stuck_accounts(session: Session) -> int:
-    """진행 중인 account 중 next task 가 없는 것 감지 + 재enqueue.
+    """Top-level scheduler entry — pending/running 태스크 없는 활성 계정 재복구.
+
+    Commit 책임: 이 함수는 on_task_complete/on_task_fail 과 달리 외부 트랜잭션에
+    포함되지 않고 **스스로 commit** 한다 (background m1_tick 에서 직접 호출되는
+    top-level 이기 때문). 호출자는 commit 하지 말 것.
 
     Returns: 복구한 account 수.
     """

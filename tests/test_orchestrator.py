@@ -248,3 +248,41 @@ def test_task_fail_on_suspended_account_is_noop(session):
         account_id=acc.id, status="pending",
     ).count()
     assert pending == 0
+
+
+def test_sweep_reenqueues_onboarding_verify_for_registered(session):
+    """registered 상태 account 에 태스크 없으면 onboarding_verify 재생성."""
+    acc = Account(
+        gmail="r@x.com", password="x",
+        adspower_profile_id="p-r", status="registered",
+    )
+    session.add(acc)
+    session.commit()
+
+    assert sweep_stuck_accounts(session) == 1
+    task = session.query(Task).filter_by(
+        account_id=acc.id, task_type="onboarding_verify", status="pending",
+    ).first()
+    assert task is not None
+
+
+def test_sweep_ignores_done_tasks_and_reenqueues(session):
+    """오래된 done/failed 태스크만 있는 활성 계정은 새 태스크 재생성."""
+    acc = Account(
+        gmail="d@x.com", password="x",
+        adspower_profile_id="p-d", status="warmup", warmup_day=2,
+    )
+    session.add(acc)
+    session.flush()
+    # 과거 태스크들 (done/failed) 만 있는 상태
+    session.add_all([
+        Task(account_id=acc.id, task_type="warmup", status="done"),
+        Task(account_id=acc.id, task_type="warmup", status="failed"),
+    ])
+    session.commit()
+
+    assert sweep_stuck_accounts(session) == 1
+    pending = session.query(Task).filter_by(
+        account_id=acc.id, status="pending",
+    ).count()
+    assert pending == 1
