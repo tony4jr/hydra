@@ -46,3 +46,29 @@ def on_task_complete(task_id: int, session: Session) -> None:
             account.warmup_day = 4
             account.status = "active"
         session.flush()
+
+
+def on_task_fail(task_id: int, session: Session) -> None:
+    """task가 failed 로 커밋되기 직전 호출. 같은 세션 공유."""
+    task = session.get(Task, task_id)
+    if task is None or task.account_id is None:
+        return
+    account = session.get(Account, task.account_id)
+    if account is None:
+        return
+
+    if task.retry_count >= (task.max_retries or 3):
+        account.status = "suspended"
+        session.flush()
+        return
+
+    # 재시도: 같은 task_type 으로 새 태스크 (retry_count + 1)
+    session.add(Task(
+        account_id=account.id,
+        task_type=task.task_type,
+        status="pending",
+        priority=task.priority,
+        retry_count=task.retry_count + 1,
+        max_retries=task.max_retries,
+    ))
+    session.flush()

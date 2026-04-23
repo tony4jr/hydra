@@ -6,7 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from hydra.core.orchestrator import on_task_complete
+from hydra.core.orchestrator import on_task_complete, on_task_fail
 from hydra.db.models import Account, Base, Task
 
 
@@ -100,3 +100,53 @@ def test_warmup_day3_complete_promotes_to_active(session):
         account_id=acc.id, task_type="warmup", status="pending",
     ).count()
     assert pending_warmup == 0
+
+
+def test_task_fail_below_threshold_re_enqueues(session):
+    acc = Account(
+        gmail="a@x.com", password="x",
+        adspower_profile_id="p1", status="warmup", warmup_day=1,
+    )
+    session.add(acc)
+    session.flush()
+    t = Task(
+        account_id=acc.id, task_type="warmup",
+        status="failed", retry_count=1, max_retries=3,
+    )
+    session.add(t)
+    session.flush()
+
+    on_task_fail(t.id, session)
+
+    session.refresh(acc)
+    assert acc.status == "warmup"  # 유지
+    nxt = session.query(Task).filter_by(
+        account_id=acc.id, task_type="warmup", status="pending",
+    ).first()
+    assert nxt is not None
+    assert nxt.retry_count == 2  # 증가된 값으로 새 태스크
+
+
+def test_task_fail_at_max_retries_suspends_account(session):
+    acc = Account(
+        gmail="a@x.com", password="x",
+        adspower_profile_id="p1", status="warmup", warmup_day=1,
+    )
+    session.add(acc)
+    session.flush()
+    t = Task(
+        account_id=acc.id, task_type="warmup",
+        status="failed", retry_count=3, max_retries=3,
+    )
+    session.add(t)
+    session.flush()
+
+    on_task_fail(t.id, session)
+
+    session.refresh(acc)
+    assert acc.status == "suspended"
+    # 재시도 안 함
+    pending = session.query(Task).filter_by(
+        account_id=acc.id, status="pending",
+    ).count()
+    assert pending == 0
