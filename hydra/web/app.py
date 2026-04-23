@@ -19,7 +19,7 @@ from hydra.db.session import init_db
 from hydra.web.routes import accounts, brands, campaigns, dashboard, keywords, videos, settings, pools, logs, system, export, creator, recovery
 from hydra.web.routes import (
     admin_auth, admin_workers, admin_avatars, admin_deploy, admin_audit,
-    admin_accounts,
+    admin_accounts, admin_tasks,
     avatar_serving, worker_api, tasks_api,
 )
 from hydra.api.workers import router as workers_router
@@ -112,6 +112,8 @@ app.include_router(admin_deploy.router,  prefix="/api/admin",         tags=["adm
 app.include_router(admin_audit.router,   prefix="/api/admin/audit",   tags=["admin-audit"],   dependencies=_ADMIN_DEPS)
 app.include_router(admin_accounts.router, prefix="/api/admin/accounts",
                    tags=["admin-accounts"], dependencies=_ADMIN_DEPS)
+app.include_router(admin_tasks.router, prefix="/api/admin/tasks",
+                   tags=["admin-tasks"], dependencies=_ADMIN_DEPS)
 app.include_router(avatar_serving.router, prefix="/api/avatars",      tags=["avatar-static"])
 # Task 20: 신규 워커 프로토콜 (/enroll, /heartbeat/v2). legacy /api/workers/register,
 # /heartbeat 는 hydra.api.workers 에 공존 유지 (Phase 1d 전환 완료 후 제거 예정).
