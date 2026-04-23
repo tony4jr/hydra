@@ -81,3 +81,5 @@ bash scripts/e2e_check.sh
 - [ ] `/api/admin/workers/{id}` PATCH → 다음 fetch 에 반영 확인
 - [ ] 실제 create_account task 1건 → account-created 업로드 → accounts row 생성
 - [ ] 워커 크래시 시뮬레이션 → 30분 후 좀비 복구 (cron) 확인
+
+# deploy flow verify
