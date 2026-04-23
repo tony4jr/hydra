@@ -150,3 +150,53 @@ def test_task_fail_at_max_retries_suspends_account(session):
         account_id=acc.id, status="pending",
     ).count()
     assert pending == 0
+
+
+def test_task_fail_with_max_retries_zero_suspends_immediately(session):
+    """max_retries=0 이면 즉시 suspended (0 or 3 collapse 방지)."""
+    acc = Account(
+        gmail="a@x.com", password="x",
+        adspower_profile_id="p1", status="warmup", warmup_day=1,
+    )
+    session.add(acc)
+    session.flush()
+    t = Task(
+        account_id=acc.id, task_type="warmup",
+        status="failed", retry_count=0, max_retries=0,
+    )
+    session.add(t)
+    session.flush()
+
+    on_task_fail(t.id, session)
+
+    session.refresh(acc)
+    assert acc.status == "suspended"
+    pending = session.query(Task).filter_by(
+        account_id=acc.id, status="pending",
+    ).count()
+    assert pending == 0
+
+
+def test_task_fail_on_suspended_account_is_noop(session):
+    """이미 suspended 된 계정은 fail 재진입에도 태스크 생성 금지."""
+    acc = Account(
+        gmail="a@x.com", password="x",
+        adspower_profile_id="p1", status="suspended", warmup_day=2,
+    )
+    session.add(acc)
+    session.flush()
+    t = Task(
+        account_id=acc.id, task_type="warmup",
+        status="failed", retry_count=1, max_retries=3,
+    )
+    session.add(t)
+    session.flush()
+
+    on_task_fail(t.id, session)
+
+    session.refresh(acc)
+    assert acc.status == "suspended"  # 유지
+    pending = session.query(Task).filter_by(
+        account_id=acc.id, status="pending",
+    ).count()
+    assert pending == 0

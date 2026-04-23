@@ -57,7 +57,11 @@ def on_task_fail(task_id: int, session: Session) -> None:
     if account is None:
         return
 
-    if task.retry_count >= (task.max_retries or 3):
+    if account.status in ("suspended", "banned", "retired"):
+        return  # terminal — 더 이상 전이 없음
+
+    max_retries = task.max_retries if task.max_retries is not None else 3
+    if task.retry_count >= max_retries:
         account.status = "suspended"
         session.flush()
         return
