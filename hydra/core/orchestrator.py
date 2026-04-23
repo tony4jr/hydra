@@ -32,3 +32,17 @@ def on_task_complete(task_id: int, session: Session) -> None:
             priority="normal",
         ))
         session.flush()
+
+    if task.task_type == "warmup" and account.status == "warmup":
+        if account.warmup_day < 3:
+            account.warmup_day += 1
+            session.add(Task(
+                account_id=account.id,
+                task_type="warmup",
+                status="pending",
+            ))
+        else:
+            # day 3 → active 졸업
+            account.warmup_day = 4
+            account.status = "active"
+        session.flush()

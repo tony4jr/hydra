@@ -50,3 +50,53 @@ def test_onboarding_complete_promotes_to_warmup_day1(session):
         account_id=acc.id, task_type="warmup", status="pending",
     ).first()
     assert queued is not None
+
+
+def test_warmup_day1_complete_advances_to_day2(session):
+    acc = Account(
+        gmail="a@x.com", password="x",
+        adspower_profile_id="p1", status="warmup", warmup_day=1,
+    )
+    session.add(acc)
+    session.flush()
+    t = Task(
+        account_id=acc.id, task_type="warmup",
+        status="done", completed_at=datetime.now(UTC),
+    )
+    session.add(t)
+    session.flush()
+
+    on_task_complete(t.id, session)
+
+    session.refresh(acc)
+    assert acc.warmup_day == 2
+    assert acc.status == "warmup"
+    nxt = session.query(Task).filter_by(
+        account_id=acc.id, task_type="warmup", status="pending",
+    ).first()
+    assert nxt is not None
+
+
+def test_warmup_day3_complete_promotes_to_active(session):
+    acc = Account(
+        gmail="a@x.com", password="x",
+        adspower_profile_id="p1", status="warmup", warmup_day=3,
+    )
+    session.add(acc)
+    session.flush()
+    t = Task(
+        account_id=acc.id, task_type="warmup",
+        status="done", completed_at=datetime.now(UTC),
+    )
+    session.add(t)
+    session.flush()
+
+    on_task_complete(t.id, session)
+
+    session.refresh(acc)
+    assert acc.status == "active"
+    assert acc.warmup_day == 4
+    pending_warmup = session.query(Task).filter_by(
+        account_id=acc.id, task_type="warmup", status="pending",
+    ).count()
+    assert pending_warmup == 0
