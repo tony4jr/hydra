@@ -180,3 +180,53 @@ def test_client_fail_task_calls_v2_endpoint(monkeypatch):
     c.fail_task(123, error="boom")
     assert any("/api/tasks/v2/fail" in u for u in calls)
     c.close()
+
+
+def test_worker_app_skips_fetch_when_paused(monkeypatch):
+    monkeypatch.setenv("HYDRA_SERVER_URL", "http://mock:8000")
+    monkeypatch.setenv("HYDRA_WORKER_TOKEN", "wt")
+    for k in ("SERVER_URL", "WORKER_TOKEN"):
+        monkeypatch.delenv(k, raising=False)
+    from worker.config import WorkerConfig
+    import worker.config as cfg_mod
+    import worker.client as cli_mod
+    import worker.app as app_mod
+    new_cfg = WorkerConfig()
+    for m in (cfg_mod, cli_mod, app_mod):
+        monkeypatch.setattr(m, "config", new_cfg)
+    from worker.app import WorkerApp
+
+    app = WorkerApp()
+
+    fetch_calls = []
+
+    class FakeClient:
+        def heartbeat(self):
+            return {"paused": True, "current_version": "v1"}
+        def fetch_tasks(self):
+            fetch_calls.append(1)
+            return []
+        def close(self): pass
+
+    app.client = FakeClient()
+    import asyncio
+    asyncio.run(app._async_tick())
+
+    # paused=True 이므로 fetch 호출되지 않아야
+    assert fetch_calls == []
+
+
+def test_worker_app_current_task_id_default_none(monkeypatch):
+    monkeypatch.setenv("HYDRA_SERVER_URL", "http://mock:8000")
+    monkeypatch.setenv("HYDRA_WORKER_TOKEN", "wt")
+    for k in ("SERVER_URL", "WORKER_TOKEN"):
+        monkeypatch.delenv(k, raising=False)
+    from worker.config import WorkerConfig
+    import worker.config as cfg_mod, worker.client as cli_mod, worker.app as app_mod
+    new_cfg = WorkerConfig()
+    for m in (cfg_mod, cli_mod, app_mod):
+        monkeypatch.setattr(m, "config", new_cfg)
+    from worker.app import WorkerApp
+
+    app = WorkerApp()
+    assert getattr(app, "_current_task_id", "MISSING") is None
