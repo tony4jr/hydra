@@ -9,6 +9,18 @@
 3. **Phase 전환은 사용자 명시적 승인** — AI 가 "됐다" 선언 금지
 4. **임시방편 금지** — 증상만 덮지 않고 근본 원인 규명 후 수정
 
+## 워커 PC 세팅 운영 정책
+
+새 워커 PC 세팅 시 순서:
+1. `setup.ps1` 실행 (워커 enrollment + Task Scheduler 등록)
+2. **AdsPower 앱 실행 + 로그인**
+3. **AdsPower 앱에서 프로필 > 편집 > 브라우저 코어 > 모든 Chrome 버전 수동 다운로드**
+4. `Start-ScheduledTask -TaskName HydraWorker` 로 워커 기동
+5. 어드민 UI 에서 워커 online 확인
+
+→ 첫 태스크 실행 시 커널 다운로드 대기로 실패하지 않음.
+→ 자동화 스크립트는 안 씀 (AdsPower UI 가 더 신뢰성 있음).
+
 ---
 
 ## 현재 상태 (2026-04-24)
