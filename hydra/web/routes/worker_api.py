@@ -8,6 +8,7 @@ Legacy `/api/workers/register`, `/api/workers/heartbeat` (hydra.api.workers) 는
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import secrets as _secrets
@@ -28,6 +29,11 @@ router = APIRouter()
 
 
 _SETUP_PS1 = _Path(__file__).resolve().parents[3] / "setup" / "hydra-worker-setup.ps1"
+
+
+def _sha256_hex(s: str) -> str:
+    """워커 토큰 → SHA-256 hex. 256bit 랜덤 토큰이라 bcrypt 불필요."""
+    return hashlib.sha256(s.encode("utf-8")).hexdigest()
 
 
 @router.get("/setup.ps1")
@@ -75,8 +81,9 @@ def enroll(req: EnrollRequest) -> EnrollResponse:
             db.flush()
 
         raw_token = _secrets.token_urlsafe(32)
-        worker.token_hash = hash_password(raw_token)
-        worker.token_prefix = raw_token[:8]  # O(1) auth 용 — bcrypt 전수순회 방지
+        worker.token_hash = hash_password(raw_token)  # [LEGACY] 폐기 예정
+        worker.token_prefix = raw_token[:8]            # [LEGACY] 폐기 예정
+        worker.token_sha256 = _sha256_hex(raw_token)   # [PRIMARY] O(1) auth
         worker.os_type = "windows"
         worker.enrolled_at = datetime.now(UTC)
         db.commit()
@@ -92,31 +99,38 @@ def enroll(req: EnrollRequest) -> EnrollResponse:
 
 # ───────────── worker_auth Depends ─────────────
 def worker_auth(x_worker_token: str = Header(default="")) -> Worker:
+    """워커 토큰 검증 — O(1) SHA-256 조회 우선, 레거시 bcrypt fallback.
+
+    설계 근거: 워커 토큰은 `secrets.token_urlsafe(32)` (256bit 랜덤) 이라
+    brute force 불가. bcrypt (slow hash) 는 사람 비밀번호용이지 API 토큰용이 아님.
+    SHA-256 + UNIQUE 인덱스면 잘못된 토큰도 DB 0건 = 즉시 401 (bcrypt 순회 없음).
+    """
     if not x_worker_token:
         raise HTTPException(401, "missing worker token")
     db = _db_session.SessionLocal()
     try:
-        prefix = x_worker_token[:8]
-        # 1차: token_prefix 매칭 → 후보 1-2개만 bcrypt (O(1))
-        # 2차: 아직 prefix 없는 레거시 워커만 fallback 전수순회 (마이그레이션 과도기용)
-        candidates = db.query(Worker).filter(Worker.token_prefix == prefix).all()
-        for w in candidates:
-            if w.token_hash and verify_password(x_worker_token, w.token_hash):
-                db.expunge(w)
-                return w
+        # [FAST PATH] SHA-256 O(1) 조회 — 정상 경로
+        token_sha = _sha256_hex(x_worker_token)
+        w = db.query(Worker).filter(Worker.token_sha256 == token_sha).first()
+        if w is not None:
+            db.expunge(w)
+            return w
 
+        # [LEGACY] SHA-256 미백필 워커 — 과도기 경로
+        # token_sha256 이 있는 워커는 위에서 이미 판정됨 → 여기 오면 무조건 "sha256 없는" 워커뿐
         legacy = db.query(Worker).filter(
             Worker.token_hash.isnot(None),
-            Worker.token_prefix.is_(None),
+            Worker.token_sha256.is_(None),
         ).all()
-        for w in legacy:
-            if verify_password(x_worker_token, w.token_hash):
-                # 재발견 시 prefix 백필 (다음 요청부터 빠르게)
-                w.token_prefix = x_worker_token[:8]
+        for lw in legacy:
+            if verify_password(x_worker_token, lw.token_hash):
+                # 재발견 시 sha256 + prefix 백필 (다음 요청부터 fast path)
+                lw.token_sha256 = token_sha
+                lw.token_prefix = x_worker_token[:8]
                 db.commit()
-                db.refresh(w)  # commit 후 expired attrs 재로드 — detach 후 접근 위함
-                db.expunge(w)
-                return w
+                db.refresh(lw)
+                db.expunge(lw)
+                return lw
 
         raise HTTPException(401, "invalid worker token")
     finally:

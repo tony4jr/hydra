@@ -507,10 +507,12 @@ class Worker(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=False)
-    token_hash = Column(String, nullable=True)  # enrollment 전엔 null (Task 20)
-    # 토큰 앞 8자 (raw) — O(1) 후보 축소용. bcrypt 전수조회(N×250ms) 방지.
-    # raw token 은 client 만 보유; prefix 는 충돌 가능하지만 후보 좁히는 용도일 뿐.
+    token_hash = Column(String, nullable=True)  # [LEGACY] bcrypt — 점진적 폐기
+    # [LEGACY] 8자 prefix — token_sha256 도입 전 중간 단계. 제거 예정.
     token_prefix = Column(String(8), nullable=True, index=True)
+    # [PRIMARY] SHA-256(raw_token) hex — UNIQUE 인덱스로 O(1) auth.
+    # 워커 토큰은 256bit 랜덤이라 bcrypt 불필요 (brute force 불가).
+    token_sha256 = Column(String(64), nullable=True, unique=True, index=True)
     status = Column(String, default="offline")
     allow_preparation = Column(Boolean, default=False)
     allow_campaign = Column(Boolean, default=True)
