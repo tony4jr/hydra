@@ -136,7 +136,7 @@ def report_to_server(summary: dict) -> None:
 
 
 def main() -> int:
-    base_url = os.environ.get("ADSPOWER_API_URL", "http://local.adspower.net:50325")
+    base_url = os.environ.get("ADSPOWER_API_URL", "http://127.0.0.1:50325")
     api_key = _get_api_key_from_heartbeat()
     if not api_key:
         print("[preload] ERROR: AdsPower API key not available")

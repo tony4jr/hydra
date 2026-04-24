@@ -221,7 +221,7 @@ def report_to_server(summary: dict) -> None:
 
 
 async def main() -> int:
-    base_url = os.environ.get("ADSPOWER_API_URL", "http://local.adspower.net:50325")
+    base_url = os.environ.get("ADSPOWER_API_URL", "http://127.0.0.1:50325")
     api_key = _get_api_key()
     if not api_key:
         print("[diag] ERROR: ADSPOWER_API_KEY not set (secrets.enc 또는 Machine env var)")

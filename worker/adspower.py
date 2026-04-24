@@ -5,7 +5,7 @@ import os
 
 class AdsPowerClient:
     def __init__(self):
-        self.base_url = os.getenv("ADSPOWER_API_URL", "http://local.adspower.net:50325")
+        self.base_url = os.getenv("ADSPOWER_API_URL", "http://127.0.0.1:50325")
         self.http = httpx.Client(timeout=60)
 
     def open_browser(self, profile_id: str) -> dict:

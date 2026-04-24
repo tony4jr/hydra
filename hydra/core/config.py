@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     telegram_chat_id: str = ""
 
     # AdsPower
-    adspower_api_url: str = "http://local.adspower.net:50325"
+    adspower_api_url: str = "http://127.0.0.1:50325"
     adspower_api_key: str = ""
 
     # AdsPower profile OS spoof (affects clipboard modifier key)

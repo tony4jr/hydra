@@ -70,7 +70,7 @@ class WorkerConfig:
         self.max_concurrent_tasks = int(os.getenv("HYDRA_MAX_CONCURRENT", "3"))
         self.adb_device_id = os.getenv("HYDRA_ADB_DEVICE_ID", "")
         self.adspower_api_url = os.getenv(
-            "ADSPOWER_API_URL", "http://local.adspower.net:50325",
+            "ADSPOWER_API_URL", "http://127.0.0.1:50325",
         )
         self.worker_version = _git_short_hash() or DEFAULT_VERSION
         self.config_path = Path.home() / ".hydra-worker" / "config.json"
@@ -115,7 +115,7 @@ def build_config(secrets: dict) -> WorkerConfig:
     cfg.task_fetch_interval = 5
     cfg.max_concurrent_tasks = 3
     cfg.adb_device_id = ""
-    cfg.adspower_api_url = "http://local.adspower.net:50325"
+    cfg.adspower_api_url = "http://127.0.0.1:50325"
     cfg.worker_version = _git_short_hash() or DEFAULT_VERSION
     cfg.config_path = Path.home() / ".hydra-worker" / "config.json"
     return cfg
