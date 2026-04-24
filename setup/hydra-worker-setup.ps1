@@ -113,6 +113,17 @@ $enc = [System.Security.Cryptography.ProtectedData]::Protect(
 # 평문은 즉시 제거
 Remove-Variable envContent, plain -ErrorAction SilentlyContinue
 
+# ─── 7a. AdsPower SunBrowser 버전 프리로드 (선택) ───
+# 설치 직후 한 번 실행해두면 첫 기동 시 브라우저 다운로드로 실패하는 일이 줄어듦.
+# AdsPower 가 실행 중이고 로그인되어 있어야 하므로 실패해도 치명 X.
+Write-Host "[7a/8] AdsPower 브라우저 버전 프리로드..." -ForegroundColor Yellow
+if (Get-Process -Name "AdsPower*" -ErrorAction SilentlyContinue) {
+    & ".\.venv\Scripts\python.exe" scripts\preload_adspower_browsers.py
+} else {
+    Write-Host "  AdsPower 앱 미실행 — 프리로드 스킵. 수동 실행 권장:" -ForegroundColor Yellow
+    Write-Host "  .\.venv\Scripts\python.exe scripts\preload_adspower_browsers.py" -ForegroundColor Yellow
+}
+
 # ─── 8. Task Scheduler 등록 ───
 Write-Host "[8/8] Task Scheduler 등록..." -ForegroundColor Yellow
 $action = New-ScheduledTaskAction `
