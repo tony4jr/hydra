@@ -35,15 +35,41 @@ def _now() -> str:
 
 
 def _get_api_key() -> str:
-    # secrets.enc → os.environ 주입이 되었거나, setup 에서 Machine env var 로 넣었거나
+    """키 조회 우선순위:
+    1) 서버 heartbeat 응답 (어드민이 등록한 워커별 키)
+    2) os.environ (secrets.enc / Machine env var)
+    3) hydra.core.config settings (.env)
+    """
+    # 1) 서버 heartbeat 로 받아보기 — 워커 토큰 있어야 함
+    try:
+        from worker.config import config as _cfg
+        base = _cfg.server_url.rstrip("/")
+        tok = _cfg.worker_token
+        if base and tok:
+            with httpx.Client(timeout=10) as c:
+                r = c.post(
+                    f"{base}/api/workers/heartbeat/v2",
+                    headers={"X-Worker-Token": tok},
+                    json={"version": "diag", "os_type": "windows"},
+                )
+                if r.status_code == 200:
+                    srv_key = r.json().get("adspower_api_key")
+                    if srv_key:
+                        print(f"[diag] got AdsPower key from server heartbeat")
+                        return srv_key
+    except Exception as e:
+        print(f"[diag] heartbeat probe failed: {type(e).__name__}: {e}")
+
+    # 2) os.environ
     key = os.environ.get("ADSPOWER_API_KEY", "")
-    if not key:
-        try:
-            from hydra.core.config import settings
-            key = settings.adspower_api_key
-        except Exception:
-            pass
-    return key
+    if key:
+        return key
+    # 3) settings
+    try:
+        from hydra.core.config import settings
+        return settings.adspower_api_key
+    except Exception:
+        return ""
 
 
 def ads_list_profiles(base_url: str, api_key: str) -> dict:
