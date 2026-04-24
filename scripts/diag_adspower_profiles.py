@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""Stage B 진단 — AdsPower 3 프로필 실 기동 검증.
+"""Stage B 진단 — AdsPower 3 프로필 실 기동 검증 + IP 로테이션.
 
-각 프로필에 대해:
-  1. Local API /api/v1/user/list → 존재 확인
-  2. /api/v1/browser/start → 브라우저 기동 (Playwright 연결 URL 획득)
-  3. Playwright 로 연결 → about:blank 열기
-  4. 1초 대기 후 닫기
-  5. /api/v1/browser/stop
+⚠️ 안티디텍션 핵심: 각 프로필 기동 전에 반드시 IP 를 갈아야 함.
+같은 PC 에서 3 프로필이 동일 exit IP 로 YouTube 접속 = 즉시 클러스터링 탐지.
 
-YouTube 접근 안 함. 브라우저 안티디텍션 스택(프로필+Playwright) 자체만 검증.
-결과를 서버 worker_errors (kind=diagnostic) 로 업로드.
+각 프로필마다:
+  0. ADB 로 USB 테더 폰 IP 로테이션 (svc data off/on) — 최초는 스킵 가능
+  1. Local API /api/v1/user/list → 존재 확인 (1회)
+  2. /api/v1/browser/start → 브라우저 기동
+  3. Playwright 로 연결 → about:blank (IP 확인용 ifconfig 도 옵션)
+  4. /api/v1/browser/stop
+
+YouTube 접근 안 함. 결과를 서버 worker_errors (kind=diagnostic) 로 업로드.
 
 사용:
     cd C:\\hydra
@@ -120,8 +122,40 @@ async def playwright_touch(puppeteer_ws: str) -> dict:
     return {"ok": True, "ms": round((time.perf_counter() - t0) * 1000, 1), "title": title}
 
 
-async def probe_one(base_url: str, api_key: str, profile_id: str) -> dict:
+async def rotate_ip_if_available(device_id: str, rec: dict) -> None:
+    """ADB 로 USB 테더 폰 IP 로테이션. 실패해도 진단은 계속 (로깅만).
+
+    실 워커 경로 재사용 — hydra.infra.ip.rotate_ip (svc data off/on).
+    """
+    if not device_id:
+        rec["ip_rotation"] = {"skipped": "no ADB_DEVICE_ID"}
+        return
+    t0 = time.perf_counter()
+    try:
+        from hydra.infra.ip import rotate_ip, _get_current_ip
+        prev = await _get_current_ip(device_id)
+        new = await rotate_ip(device_id, max_retries=3)
+        rec["ip_rotation"] = {
+            "ok": True,
+            "prev_ip": prev,
+            "new_ip": new,
+            "ms": round((time.perf_counter() - t0) * 1000, 1),
+        }
+    except Exception as e:
+        rec["ip_rotation"] = {
+            "ok": False,
+            "error": f"{type(e).__name__}: {e}",
+            "ms": round((time.perf_counter() - t0) * 1000, 1),
+        }
+
+
+async def probe_one(base_url: str, api_key: str, profile_id: str,
+                    device_id: str, rotate: bool) -> dict:
     rec: dict = {"profile": profile_id, "t": _now()}
+
+    # 0. IP 로테이션 (첫 프로필 제외 — 이미 현재 IP 로 시작)
+    if rotate:
+        await rotate_ip_if_available(device_id, rec)
 
     # 1. start
     t0 = time.perf_counter()
@@ -211,12 +245,23 @@ async def main() -> int:
     if missing:
         print(f"[diag] target MISSING: {missing}")
 
-    # 2. 각 존재 프로필 기동
+    # ADB 디바이스 ID 확인 (IP 로테이션용)
+    device_id = os.environ.get("ADB_DEVICE_ID") or os.environ.get("HYDRA_ADB_DEVICE_ID")
+    if not device_id:
+        try:
+            from hydra.core.config import settings as _s
+            device_id = _s.adb_device_id
+        except Exception:
+            device_id = ""
+    print(f"[diag] ADB device: {device_id or '(none — IP rotation will be skipped!)'}")
+
+    # 2. 각 존재 프로필 기동 — 프로필 사이에 IP 로테이션 (첫 프로필은 현재 IP 유지)
     print("-" * 60)
     results = []
-    for pid in present:
-        print(f"[diag] probing {pid} ({all_profiles[pid]})...")
-        res = await probe_one(base_url, api_key, pid)
+    for i, pid in enumerate(present):
+        rotate = i > 0  # 첫 프로필은 현재 IP 로 테스트, 그 이후는 갈기
+        print(f"[diag] probing {pid} ({all_profiles[pid]})  rotate_ip={rotate}...")
+        res = await probe_one(base_url, api_key, pid, device_id, rotate)
         results.append(res)
         mark = "✓" if res.get("ok") else "✗"
         summary = (
@@ -224,10 +269,18 @@ async def main() -> int:
             f"pw={res.get('playwright', {}).get('ok', '?')}  "
             f"stopped={res.get('stopped', '?')}"
         )
+        ip_info = res.get("ip_rotation")
+        if ip_info:
+            if ip_info.get("ok"):
+                summary += f"  ip: {ip_info['prev_ip']} → {ip_info['new_ip']}"
+            elif ip_info.get("skipped"):
+                summary += f"  ip: SKIP ({ip_info['skipped']})"
+            else:
+                summary += f"  ip: ROTATE FAIL ({ip_info.get('error', '?')[:40]})"
         print(f"  {mark} {pid}  {summary}")
         if not res.get("ok"):
             print(f"    error: {res.get('error') or res.get('playwright', {}).get('error')}")
-        await asyncio.sleep(2)  # 연속 기동 간 휴식
+        await asyncio.sleep(2)
 
     # 3. 요약 + 업로드
     ok_count = sum(1 for r in results if r.get("ok"))
