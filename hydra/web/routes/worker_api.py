@@ -76,6 +76,7 @@ def enroll(req: EnrollRequest) -> EnrollResponse:
 
         raw_token = _secrets.token_urlsafe(32)
         worker.token_hash = hash_password(raw_token)
+        worker.token_prefix = raw_token[:8]  # O(1) auth 용 — bcrypt 전수순회 방지
         worker.os_type = "windows"
         worker.enrolled_at = datetime.now(UTC)
         db.commit()
@@ -95,11 +96,28 @@ def worker_auth(x_worker_token: str = Header(default="")) -> Worker:
         raise HTTPException(401, "missing worker token")
     db = _db_session.SessionLocal()
     try:
-        # ~20대 규모 순회 — 100대+ 되면 prefix 인덱스 도입
-        for w in db.query(Worker).filter(Worker.token_hash.isnot(None)).all():
-            if verify_password(x_worker_token, w.token_hash):
+        prefix = x_worker_token[:8]
+        # 1차: token_prefix 매칭 → 후보 1-2개만 bcrypt (O(1))
+        # 2차: 아직 prefix 없는 레거시 워커만 fallback 전수순회 (마이그레이션 과도기용)
+        candidates = db.query(Worker).filter(Worker.token_prefix == prefix).all()
+        for w in candidates:
+            if w.token_hash and verify_password(x_worker_token, w.token_hash):
                 db.expunge(w)
                 return w
+
+        legacy = db.query(Worker).filter(
+            Worker.token_hash.isnot(None),
+            Worker.token_prefix.is_(None),
+        ).all()
+        for w in legacy:
+            if verify_password(x_worker_token, w.token_hash):
+                # 재발견 시 prefix 백필 (다음 요청부터 빠르게)
+                w.token_prefix = x_worker_token[:8]
+                db.commit()
+                db.refresh(w)  # commit 후 expired attrs 재로드 — detach 후 접근 위함
+                db.expunge(w)
+                return w
+
         raise HTTPException(401, "invalid worker token")
     finally:
         db.close()

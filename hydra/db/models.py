@@ -508,6 +508,9 @@ class Worker(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=False)
     token_hash = Column(String, nullable=True)  # enrollment 전엔 null (Task 20)
+    # 토큰 앞 8자 (raw) — O(1) 후보 축소용. bcrypt 전수조회(N×250ms) 방지.
+    # raw token 은 client 만 보유; prefix 는 충돌 가능하지만 후보 좁히는 용도일 뿐.
+    token_prefix = Column(String(8), nullable=True, index=True)
     status = Column(String, default="offline")
     allow_preparation = Column(Boolean, default=False)
     allow_campaign = Column(Boolean, default=True)
