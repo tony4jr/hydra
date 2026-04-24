@@ -284,4 +284,5 @@ def test_client_falls_back_to_ipv4_on_connect_error(monkeypatch):
     client = ServerClient()
     result = client.heartbeat()
     assert result["current_version"] == "v1"
-    assert client._v4_fallback_used is True
+    # 성공한 쪽이 IPv4 fallback 이었으므로 선호 모드가 v4 로 바뀌어야 함
+    assert client._prefer_v4 is True

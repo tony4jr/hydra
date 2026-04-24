@@ -65,7 +65,10 @@ class WorkerApp:
             hb = self.client.heartbeat() or {}
             self.last_heartbeat = now
         except Exception as e:
+            # sleep 없이 return 하면 while 루프가 즉시 재진입 → 초당 수십 번 spam.
+            # 네트워크 일시 장애 시 exponential backoff 대신 heartbeat_interval 대기.
             print(f"[Worker] Heartbeat failed: {e}")
+            await asyncio.sleep(config.heartbeat_interval)
             return
 
         # M1-11: paused 면 fetch 스킵
