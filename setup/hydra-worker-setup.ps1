@@ -126,9 +126,19 @@ if (Get-Process -Name "AdsPower*" -ErrorAction SilentlyContinue) {
 
 # ─── 8. Task Scheduler 등록 ───
 Write-Host "[8/8] Task Scheduler 등록..." -ForegroundColor Yellow
+# 로그 디렉토리
+$logDir = Join-Path $InstallPath "logs"
+if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
+
+# Task Scheduler 는 stdout 리다이렉트 직접 지원 안 함 → cmd 로 감싸서 처리
+# 로그 파일은 매 기동 시 타임스탬프로 새로 생성 (자동 로테이션 효과 + 기존 파일 보존)
+# 30일 이상 된 로그는 별도 cleanup (아래 Unregister 전에 cleanup 트리거)
+$wrapperCmd = "cmd.exe"
+$wrapperArgs = "/c `"`"$($InstallPath)\.venv\Scripts\python.exe`" -m worker >> `"$($logDir)\worker-%date:~0,4%%date:~5,2%%date:~8,2%.log`" 2>&1`""
+
 $action = New-ScheduledTaskAction `
-    -Execute (Join-Path $InstallPath ".venv\Scripts\python.exe") `
-    -Argument "-m worker" `
+    -Execute $wrapperCmd `
+    -Argument $wrapperArgs `
     -WorkingDirectory $InstallPath
 $trigger = New-ScheduledTaskTrigger -AtStartup
 $settings = New-ScheduledTaskSettingsSet `

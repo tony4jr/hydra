@@ -8,6 +8,7 @@ from datetime import datetime, UTC
 from worker.config import config
 from worker.client import ServerClient
 from worker.executor import TaskExecutor
+from worker.log_shipper import install_log_shipping
 from hydra.db.session import SessionLocal
 from hydra.db.models import Account, Worker
 
@@ -34,6 +35,9 @@ class WorkerApp:
         """Persistent async event loop for Playwright compatibility."""
         print(f"[Worker] Starting v{config.worker_version}")
         print(f"[Worker] Server: {config.server_url}")
+
+        # Python 로그(WARNING+) 와 미처 잡히지 않은 예외를 서버 worker_errors 로 전송
+        install_log_shipping(self.client)
 
         # 초기 연결 확인
         try:
