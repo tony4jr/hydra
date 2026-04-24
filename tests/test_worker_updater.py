@@ -34,13 +34,23 @@ def test_should_update_false_when_server_empty():
 
 # ── perform_update ──
 
-def _mock_git_rev(args, **_):
+def _mock_git_rev_diff(args, **_):
+    """HEAD 와 origin/main 이 다른 상황 — 실 업데이트 경로 테스트용."""
+    if "HEAD" in args:
+        return b"prevhash1234567\n"
+    if "origin/main" in args:
+        return b"newhash7654321\n"
     return b"prevhash1234567\n"
+
+
+def _mock_git_rev_same(args, **_):
+    """HEAD == origin/main — no-op 리턴 경로 테스트용."""
+    return b"samehash0000000\n"
 
 
 def test_perform_update_runs_git_and_pip_then_exit_zero(tmp_path):
     with patch("worker.updater.subprocess.check_call") as mock_call, \
-         patch("worker.updater.subprocess.check_output", side_effect=_mock_git_rev):
+         patch("worker.updater.subprocess.check_output", side_effect=_mock_git_rev_diff):
         with pytest.raises(SystemExit) as exc:
             perform_update(repo_dir=str(tmp_path))
         assert exc.value.code == 0
@@ -52,6 +62,21 @@ def test_perform_update_runs_git_and_pip_then_exit_zero(tmp_path):
     assert any("pip" in " ".join(a) and "install" in " ".join(a) for a in calls_args)
 
 
+def test_perform_update_noop_when_already_on_origin_main(tmp_path):
+    """HEAD == origin/main 이면 exit 없이 리턴 (재시작 루프 방지)."""
+    with patch("worker.updater.subprocess.check_call") as mock_call, \
+         patch("worker.updater.subprocess.check_output", side_effect=_mock_git_rev_same):
+        # SystemExit 가 발생하면 안 됨
+        result = perform_update(repo_dir=str(tmp_path))
+        assert result is None
+
+    calls_args = [c.args[0] for c in mock_call.call_args_list]
+    # fetch 는 호출됐지만, reset/pip 는 호출 안 됨
+    assert any("fetch" in " ".join(a) for a in calls_args)
+    assert not any("reset" in " ".join(a) for a in calls_args)
+    assert not any("pip" in " ".join(a) for a in calls_args)
+
+
 def test_perform_update_rolls_back_on_pip_failure(tmp_path):
     def fake_check_call(args, **_):
         if any("pip" in x for x in args):
@@ -59,7 +84,7 @@ def test_perform_update_rolls_back_on_pip_failure(tmp_path):
         return 0
 
     with patch("worker.updater.subprocess.check_call", side_effect=fake_check_call), \
-         patch("worker.updater.subprocess.check_output", side_effect=_mock_git_rev), \
+         patch("worker.updater.subprocess.check_output", side_effect=_mock_git_rev_diff), \
          patch("worker.updater.subprocess.call") as mock_rollback:
         with pytest.raises(SystemExit) as exc:
             perform_update(repo_dir=str(tmp_path))

@@ -62,6 +62,8 @@ def perform_update(repo_dir: str = r"C:\hydra") -> None:
     """git fetch+reset → pip install -e . → sys.exit. 실패 시 rollback 후 exit(1).
 
     성공 exit(0) 시 Task Scheduler 가 워커를 재시작한다.
+    origin/main 이 이미 로컬 HEAD 와 같으면 (= 서버 current_version 이 뒤쳐진
+    케이스) no-op 으로 리턴. 재시작 루프 방지.
     """
     log.info("updater: pulling latest in %s", repo_dir)
     prev: str | None = None
@@ -74,6 +76,19 @@ def perform_update(repo_dir: str = r"C:\hydra") -> None:
             ["git", "-C", repo_dir, "rev-parse", "HEAD"],
             timeout=10,
         ).decode().strip()
+        remote = subprocess.check_output(
+            ["git", "-C", repo_dir, "rev-parse", "origin/main"],
+            timeout=10,
+        ).decode().strip()
+
+        if prev == remote:
+            # 이미 origin/main 에 있음 → 서버 current_version 이 뒤쳐진 상태.
+            # 재시작 루프 방지 위해 exit 없이 리턴.
+            log.info(
+                "updater: already on origin/main (%s) — server version lags, skipping",
+                prev[:7],
+            )
+            return
 
         subprocess.check_call(
             ["git", "-C", repo_dir, "reset", "--hard", "origin/main"],
@@ -100,6 +115,7 @@ def perform_update(repo_dir: str = r"C:\hydra") -> None:
         log.error("updater: unexpected error: %s", e)
         sys.exit(1)
 
+    # prev == remote 인 경우 위에서 return 함 → 여기까지 오면 실제 업데이트 성공.
     sys.exit(0)
 
 
