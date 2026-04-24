@@ -14,7 +14,7 @@ import os
 import secrets as _secrets
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile, File, Form
 from fastapi.responses import PlainTextResponse, Response
 from pathlib import Path as _Path
 from pydantic import BaseModel, Field
@@ -229,6 +229,101 @@ def report_error(
             context=ctx_json,
             occurred_at=occurred_at,
             received_at=datetime.now(UTC),
+        )
+        db.add(err)
+        db.commit()
+        return ReportErrorResponse(ok=True, deduped=False)
+    finally:
+        db.close()
+
+
+# ───────────── screenshot 업로드 ─────────────
+# 실 YouTube 실패 시 육안 디버깅용. /var/www/hydra/screenshots/ 에 저장.
+# 7일 후 cron 자동 삭제. 어드민 전용 조회 엔드포인트로 서빙.
+_SCREENSHOT_MAX_BYTES = 4 * 1024 * 1024  # 4MB
+_ALLOWED_IMAGE_EXT = frozenset({".png", ".jpg", ".jpeg", ".webp"})
+
+
+def _screenshot_dir() -> _Path:
+    """요청 시점 평가 — 테스트가 env 로 오버라이드 가능."""
+    return _Path(os.getenv("HYDRA_SCREENSHOT_DIR", "/var/www/hydra/screenshots"))
+
+
+@router.post("/report-error-with-screenshot", response_model=ReportErrorResponse)
+async def report_error_with_screenshot(
+    kind: str = Form(...),
+    message: str = Form(...),
+    screenshot: UploadFile = File(...),
+    traceback: str | None = Form(default=None),
+    context: str | None = Form(default=None),  # JSON string
+    worker: Worker = Depends(worker_auth),
+) -> ReportErrorResponse:
+    """에러 + 스크린샷 통합 업로드 (multipart).
+
+    dedupe: JSON 전용 report-error 와 동일 (worker, kind, message, 10분 창).
+    """
+    k = kind if kind in _ALLOWED_ERROR_KINDS else "other"
+
+    # 파일 검증
+    filename = screenshot.filename or "screenshot.png"
+    ext = _Path(filename).suffix.lower()
+    if ext not in _ALLOWED_IMAGE_EXT:
+        raise HTTPException(400, f"unsupported extension: {ext}")
+
+    # 본문 크기 체크 (스트리밍 읽으면서)
+    content = await screenshot.read(_SCREENSHOT_MAX_BYTES + 1)
+    if len(content) > _SCREENSHOT_MAX_BYTES:
+        raise HTTPException(413, f"screenshot too large (>{_SCREENSHOT_MAX_BYTES} bytes)")
+    if not content:
+        raise HTTPException(400, "empty screenshot")
+
+    # 저장 경로: YYYY-MM-DD/<worker_id>-<ts>-<rand>.<ext>
+    now = datetime.now(UTC)
+    base_dir = _screenshot_dir()
+    day_dir = base_dir / now.strftime("%Y-%m-%d")
+    day_dir.mkdir(parents=True, exist_ok=True)
+    rand = _secrets.token_urlsafe(6)
+    rel_path = f"{now.strftime('%Y-%m-%d')}/{worker.id}-{int(now.timestamp())}-{rand}{ext}"
+    abs_path = base_dir / rel_path
+    abs_path.write_bytes(content)
+
+    # DB 저장 + dedupe
+    from datetime import timedelta
+    db = _db_session.SessionLocal()
+    try:
+        cutoff = datetime.now(UTC) - timedelta(seconds=_DEDUPE_WINDOW_SECONDS)
+        dup = (
+            db.query(WorkerError)
+            .filter(
+                WorkerError.worker_id == worker.id,
+                WorkerError.kind == k,
+                WorkerError.message == message,
+                WorkerError.received_at >= cutoff,
+            )
+            .first()
+        )
+        if dup is not None:
+            # dedupe 되어도 스크린샷 URL 만 업데이트 (최신 에러 화면)
+            dup.screenshot_url = rel_path
+            db.commit()
+            return ReportErrorResponse(ok=True, deduped=True)
+
+        ctx_dict = None
+        if context:
+            try:
+                ctx_dict = json.loads(context)
+            except Exception:
+                ctx_dict = {"_raw": context[:500]}
+
+        err = WorkerError(
+            worker_id=worker.id,
+            kind=k,
+            message=message[:2000],
+            traceback=traceback,
+            context=json.dumps(ctx_dict, ensure_ascii=False) if ctx_dict else None,
+            screenshot_url=rel_path,
+            occurred_at=now,
+            received_at=now,
         )
         db.add(err)
         db.commit()

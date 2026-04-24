@@ -164,6 +164,21 @@ class WorkerSession:
             duration = random.randint(10, 45)  # 180 → 45 (데이터 절감)
             await watch_video(page, duration)
 
+    async def capture_screenshot(self) -> bytes | None:
+        """현재 활성 페이지 PNG 캡처. 실패 시 None. 절대 예외 propagate X.
+
+        실 YouTube 태스크 실패 시 executor 가 호출 → report_error_with_screenshot
+        으로 서버 업로드.
+        """
+        try:
+            if not self.browser or not self.browser.page:
+                return None
+            return await self.browser.page.screenshot(
+                type="png", full_page=False, timeout=5000,
+            )
+        except Exception:
+            return None
+
     async def close(self):
         """세션 종료."""
         if self.browser:

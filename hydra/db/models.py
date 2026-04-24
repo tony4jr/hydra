@@ -697,6 +697,7 @@ class WorkerError(Base):
     message = Column(Text, nullable=False)              # 한 줄 요약
     traceback = Column(Text, nullable=True)             # full traceback (있으면)
     context = Column(Text, nullable=True)               # JSON — task_id, url, etc
+    screenshot_url = Column(Text, nullable=True)        # 디스크 상대경로 e.g. 2026-04-25/<worker>-<ts>-<rand>.png
     occurred_at = Column(DateTime, nullable=False)      # 워커가 기록한 시각
     received_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
 

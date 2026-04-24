@@ -201,6 +201,7 @@ class WorkerErrorOut(BaseModel):
     message: str
     traceback: Optional[str] = None
     context: Optional[dict] = None
+    screenshot_url: Optional[str] = None  # 상대경로 (예: 2026-04-25/5-1777.png)
     occurred_at: str
     received_at: str
 
@@ -244,9 +245,31 @@ def list_worker_errors(
                 message=err.message,
                 traceback=err.traceback,
                 context=ctx,
+                screenshot_url=err.screenshot_url,
                 occurred_at=err.occurred_at.isoformat(),
                 received_at=err.received_at.isoformat(),
             ))
         return out
     finally:
         db.close()
+
+
+# ───────────── screenshot 서빙 (admin 인증 필수) ─────────────
+@router.get("/errors/screenshot/{path:path}")
+def get_error_screenshot(path: str, _session: dict = Depends(admin_session)):
+    """worker_errors.screenshot_url 로 저장된 상대경로 이미지 서빙.
+
+    관리자 JWT 필수. path traversal 방지 위해 .. / 절대경로 거부.
+    """
+    from fastapi.responses import FileResponse
+    from pathlib import Path as _P
+    if ".." in path or path.startswith("/"):
+        raise HTTPException(400, "invalid path")
+    base = _P(os.getenv("HYDRA_SCREENSHOT_DIR", "/var/www/hydra/screenshots"))
+    abs_path = (base / path).resolve()
+    # 경로 이탈 재확인
+    if not str(abs_path).startswith(str(base.resolve())):
+        raise HTTPException(400, "path escape")
+    if not abs_path.is_file():
+        raise HTTPException(404, "screenshot not found")
+    return FileResponse(abs_path)

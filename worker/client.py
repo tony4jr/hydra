@@ -170,6 +170,35 @@ class ServerClient:
         except Exception:
             pass
 
+    def report_error_with_screenshot(
+        self,
+        kind: str,
+        message: str,
+        screenshot_bytes: bytes,
+        traceback: str | None = None,
+        context: dict | None = None,
+        filename: str = "screenshot.png",
+    ) -> None:
+        """에러 + 스크린샷 multipart 업로드. 절대 예외 propagate X."""
+        import json as _json
+        files = {"screenshot": (filename, screenshot_bytes, "image/png")}
+        data: dict = {"kind": kind, "message": message[:2000]}
+        if traceback:
+            data["traceback"] = traceback
+        if context:
+            data["context"] = _json.dumps(context, ensure_ascii=False)
+        url = f"{self.base_url}/api/workers/report-error-with-screenshot"
+        # multipart 는 기존 _request 흐름(JSON) 과 다르므로 직접 호출 — 간단한 단일 시도
+        try:
+            with _mk_client(self._prefer_v4) as c:
+                c.post(url, headers=self.headers, files=files, data=data, timeout=30)
+        except Exception:
+            try:
+                with _mk_client(not self._prefer_v4) as c:
+                    c.post(url, headers=self.headers, files=files, data=data, timeout=30)
+            except Exception:
+                pass
+
     def close(self):
         if self.http is not None:
             try:

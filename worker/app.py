@@ -214,6 +214,25 @@ class WorkerApp:
                                 self.client.fail_task(task_id, error)
                             except Exception:
                                 pass
+                            # 스크린샷 캡처 + 서버 업로드 (실 YouTube 실패 디버깅)
+                            try:
+                                import traceback as _tb
+                                shot = await session.capture_screenshot()
+                                if shot:
+                                    self.client.report_error_with_screenshot(
+                                        kind="task_fail",
+                                        message=f"{type(e).__name__}: {error}",
+                                        screenshot_bytes=shot,
+                                        traceback=_tb.format_exc(),
+                                        context={
+                                            "task_id": task_id,
+                                            "task_type": task_type,
+                                            "account_id": account_id,
+                                            "profile_id": profile_id,
+                                        },
+                                    )
+                            except Exception:
+                                pass
                     finally:
                         self._current_task_id = None
             finally:
