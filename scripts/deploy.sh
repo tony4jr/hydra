@@ -37,12 +37,34 @@ set -a
 set +a
 .venv/bin/alembic upgrade head
 
-# 5. 프론트엔드 빌드 — frontend/package.json + npm 둘 다 있을 때만
+# 5. 프론트엔드 빌드 + nginx 로 배포 — frontend/package.json + npm 둘 다 있을 때만
 if [[ -f frontend/package.json ]] && command -v npm >/dev/null 2>&1; then
     echo "[deploy] frontend build..."
     (cd frontend && npm ci --silent && npm run build)
+
+    # 빌드 결과물을 nginx webroot 로 동기화 (--delete 로 고아파일 제거)
+    echo "[deploy] syncing frontend/dist → /var/www/hydra..."
+    sudo mkdir -p /var/www/hydra
+    sudo rsync -a --delete frontend/dist/ /var/www/hydra/
+    sudo chown -R www-data:www-data /var/www/hydra
 else
     echo "[deploy] frontend skipped (no package.json or npm)"
+fi
+
+# 5a. nginx 설정 동기화 — repo 의 deploy/nginx-hydra.conf 가 변경된 경우에만
+if [[ -f deploy/nginx-hydra.conf ]] && command -v nginx >/dev/null 2>&1; then
+    NGINX_TARGET="/etc/nginx/sites-available/hydra"
+    if ! sudo cmp -s deploy/nginx-hydra.conf "$NGINX_TARGET" 2>/dev/null; then
+        echo "[deploy] nginx config changed — applying..."
+        sudo cp deploy/nginx-hydra.conf "$NGINX_TARGET"
+        sudo ln -sf "$NGINX_TARGET" /etc/nginx/sites-enabled/hydra
+        if sudo nginx -t; then
+            sudo systemctl reload nginx
+            echo "[deploy] nginx reloaded"
+        else
+            echo "[deploy] nginx -t failed — config NOT applied, check manually" >&2
+        fi
+    fi
 fi
 
 # 6. 서버 재시작 (deployer 무비번 sudo 설정돼있어야 — Validation B Step 3)
