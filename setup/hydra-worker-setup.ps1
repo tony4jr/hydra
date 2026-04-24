@@ -13,7 +13,8 @@ param(
     [Parameter(Mandatory=$true)] [string]$Token,
     [Parameter(Mandatory=$true)] [string]$ServerUrl,
     [string]$InstallPath = "C:\hydra",
-    [string]$RepoUrl = "https://github.com/tony4jr/hydra.git"
+    [string]$RepoUrl = "https://github.com/tony4jr/hydra.git",
+    [switch]$DryRun  # 실 행동 없이 신호 루프만 (M2.1 검증)
 )
 
 $ErrorActionPreference = "Stop"
@@ -98,6 +99,7 @@ SERVER_URL=$ServerUrl
 WORKER_TOKEN=$workerToken
 WORKER_HOSTNAME=$hostname
 DB_CRYPTO_KEY=$($secrets.DB_CRYPTO_KEY)
+$(if ($DryRun) { "HYDRA_WORKER_DRY_RUN=1" } else { "" })
 "@
 Add-Type -AssemblyName System.Security
 $plain = [System.Text.Encoding]::UTF8.GetBytes($envContent)
@@ -128,6 +130,14 @@ Write-Host ""
 Write-Host "Setup complete." -ForegroundColor Green
 Write-Host "  - secrets: $InstallPath\secrets.enc (DPAPI/LocalMachine)"
 Write-Host "  - Task:    HydraWorker (재부팅 시 자동 시작)"
+if ($DryRun) {
+    Write-Host "  - Mode:    DRY-RUN (실 행동 없음, 신호 루프만)" -ForegroundColor Yellow
+} else {
+    Write-Host "  - Mode:    LIVE (실제 YouTube 액션 수행)" -ForegroundColor Magenta
+}
 Write-Host ""
-Write-Host "수동 시작:"
-Write-Host "  Start-ScheduledTask -TaskName HydraWorker"
+Write-Host "지금 바로 시작하려면:"
+Write-Host "  Start-ScheduledTask -TaskName HydraWorker" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "로그 보려면:"
+Write-Host "  Get-ScheduledTaskInfo -TaskName HydraWorker"
