@@ -66,19 +66,34 @@ def _h(api_key: str) -> dict:
     return {"Authorization": f"Bearer {api_key}"} if api_key else {}
 
 
-def get_kernels(base_url: str, api_key: str) -> list[dict]:
-    """설치된 Chrome/Firefox 커널 리스트."""
+def get_kernels(base_url: str, api_key: str, verbose: bool = True) -> tuple[list, dict]:
+    """설치된 커널 리스트 + raw 응답 (디버깅용)."""
     with httpx.Client(timeout=15) as c:
         r = c.get(f"{base_url}/api/v2/browser-profile/kernels", headers=_h(api_key))
-        r.raise_for_status()
-        d = r.json()
+        raw_body = r.text
+        try:
+            d = r.json()
+        except Exception:
+            return [], {"_raw": raw_body[:500], "_status": r.status_code}
+        if verbose:
+            print(f"  [kernels raw] status={r.status_code} code={d.get('code')} msg={d.get('msg','')} data_type={type(d.get('data')).__name__}")
         if d.get("code") != 0:
-            return []
-        return d.get("data", {}).get("list", []) or d.get("data", []) or []
+            return [], d
+        data = d.get("data")
+        # data 가 list 직접일 수도, dict.list 일 수도
+        if isinstance(data, list):
+            return data, d
+        if isinstance(data, dict):
+            for key in ("list", "kernels", "items"):
+                if isinstance(data.get(key), list):
+                    return data[key], d
+            return [], d
+        return [], d
 
 
-def list_profiles(base_url: str, api_key: str) -> list[dict]:
-    """모든 프로필 (v2, 페이지 반복)."""
+def list_profiles(base_url: str, api_key: str, verbose: bool = True) -> list[dict]:
+    """모든 프로필. v2 시도 → 실패 시 v1 fallback (50개 정상 반환 확인된 경로)."""
+    # v2 먼저
     out: list[dict] = []
     page = 1
     while True:
@@ -89,18 +104,40 @@ def list_profiles(base_url: str, api_key: str) -> list[dict]:
                 headers=_h(api_key),
                 json={"page": page, "page_size": 100},
             )
-            r.raise_for_status()
-            d = r.json()
+            try:
+                d = r.json()
+            except Exception:
+                if verbose:
+                    print(f"  [list v2] raw body (first 300): {r.text[:300]}")
+                break
+            if verbose and page == 1:
+                print(f"  [list v2] code={d.get('code')} msg={d.get('msg','')} "
+                      f"data_keys={list(d.get('data',{}).keys()) if isinstance(d.get('data'), dict) else type(d.get('data')).__name__}")
             if d.get("code") != 0:
                 break
-            lst = d.get("data", {}).get("list", [])
+            lst = d.get("data", {}).get("list", []) if isinstance(d.get("data"), dict) else []
             if not lst:
                 break
             out.extend(lst)
             if len(lst) < 100:
                 break
             page += 1
-    return out
+
+    if out:
+        return out
+
+    # v1 fallback
+    print("  [list] v2 returned empty, falling back to v1 /api/v1/user/list")
+    with httpx.Client(timeout=20) as c:
+        r = c.get(
+            f"{base_url}/api/v1/user/list",
+            params={"page": 1, "page_size": 100},
+            headers=_h(api_key),
+        )
+        d = r.json()
+        if d.get("code") == 0:
+            return d.get("data", {}).get("list", [])
+    return []
 
 
 def try_start(base_url: str, api_key: str, profile_id: str) -> dict:
@@ -143,9 +180,12 @@ def download_kernel(base_url: str, api_key: str, version: int,
             json={"kernel_type": kernel_type, "kernel_version": str(version)},
         )
         try:
-            return r.json()
+            d = r.json()
+            # 전체 응답 디버그 로깅
+            d["_http_status"] = r.status_code
+            return d
         except Exception:
-            return {"code": -1, "msg": f"http {r.status_code}: {r.text[:200]}"}
+            return {"code": -1, "msg": f"http {r.status_code} (non-json): {r.text[:200]}"}
 
 
 def installed_versions(kernels: list[dict]) -> set[str]:
@@ -192,12 +232,16 @@ def main() -> int:
 
     print(f"[preload] AdsPower URL: {base_url}")
     print(f"[preload] Fetching kernels + profiles...")
-    kernels = get_kernels(base_url, api_key)
+    kernels, kernels_raw = get_kernels(base_url, api_key)
     installed = installed_versions(kernels)
-    print(f"[preload] installed kernels: {sorted(installed) if installed else 'unknown/empty'}")
+    print(f"[preload] installed kernels (parsed): {sorted(installed) if installed else 'empty'}")
+    if not installed:
+        print(f"[preload] DEBUG — kernels raw response: {json.dumps(kernels_raw, ensure_ascii=False)[:500]}")
 
     profiles = list_profiles(base_url, api_key)
     print(f"[preload] profiles: {len(profiles)}")
+    if len(profiles) < 10:
+        print(f"[preload] DEBUG — profiles sample: {json.dumps(profiles[:2], ensure_ascii=False)[:500]}")
 
     # 상태 초기화
     state: dict[str, dict] = {
@@ -237,7 +281,8 @@ def main() -> int:
                     # 명시적 다운로드 트리거
                     dk = download_kernel(base_url, api_key, version)
                     download_requested.add(ver_str)
-                    print(f"  ⬇ triggered download-kernel version={version}: {dk.get('msg','')[:60]}")
+                    # 전체 응답 출력 (디버그)
+                    print(f"  ⬇ download-kernel v{version} → code={dk.get('code')} msg={dk.get('msg','(empty)')[:150]} http={dk.get('_http_status')}")
                 s["status"] = "downloading" if dk.get("code") == 0 else "needs_download"
             else:
                 # 버전 추출 불가 — 다른 류 에러
