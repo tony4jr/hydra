@@ -14,7 +14,7 @@ import secrets as _secrets
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, Response
 from pathlib import Path as _Path
 from pydantic import BaseModel, Field
 
@@ -30,13 +30,18 @@ router = APIRouter()
 _SETUP_PS1 = _Path(__file__).resolve().parents[3] / "setup" / "hydra-worker-setup.ps1"
 
 
-@router.get("/setup.ps1", response_class=PlainTextResponse)
-def serve_setup_ps1() -> PlainTextResponse:
-    """Windows 워커 설치 스크립트 (공개 — 토큰은 유저가 param 으로 전달)."""
+@router.get("/setup.ps1")
+def serve_setup_ps1() -> Response:
+    """Windows 워커 설치 스크립트 (공개 — 토큰은 유저가 param 으로 전달).
+
+    UTF-8 BOM 을 prepend — PowerShell 5.1 (Windows 기본) 은 BOM 없으면 cp949 로
+    해석해 한글 주석이 깨지며 ParseError 발생.
+    """
     if not _SETUP_PS1.is_file():
         raise HTTPException(500, "setup script missing")
-    return PlainTextResponse(
-        _SETUP_PS1.read_text(encoding="utf-8"),
+    bom = b"\xef\xbb\xbf"
+    return Response(
+        bom + _SETUP_PS1.read_bytes(),
         media_type="text/plain; charset=utf-8",
     )
 
