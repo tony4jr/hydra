@@ -83,6 +83,9 @@ def test_client_heartbeat_calls_v2_endpoint(monkeypatch):
         def post(self, url, **kw):
             calls.append(url)
             return FakeResp()
+        def request(self, method, url, **kw):
+            calls.append(url)
+            return FakeResp()
         def close(self):
             pass
 
@@ -116,6 +119,8 @@ def test_client_fetch_tasks_calls_v2_endpoint(monkeypatch):
     class FakeHttp:
         def post(self, url, **kw):
             calls.append(url); return FakeResp()
+        def request(self, method, url, **kw):
+            calls.append(url); return FakeResp()
         def close(self): pass
 
     c = ServerClient(); c.http = FakeHttp()
@@ -145,6 +150,8 @@ def test_client_complete_task_calls_v2_endpoint(monkeypatch):
     class FakeHttp:
         def post(self, url, **kw):
             calls.append(url); return FakeResp()
+        def request(self, method, url, **kw):
+            calls.append(url); return FakeResp()
         def close(self): pass
 
     c = ServerClient(); c.http = FakeHttp()
@@ -173,6 +180,8 @@ def test_client_fail_task_calls_v2_endpoint(monkeypatch):
         def raise_for_status(self): pass
     class FakeHttp:
         def post(self, url, **kw):
+            calls.append(url); return FakeResp()
+        def request(self, method, url, **kw):
             calls.append(url); return FakeResp()
         def close(self): pass
 
@@ -230,3 +239,49 @@ def test_worker_app_current_task_id_default_none(monkeypatch):
 
     app = WorkerApp()
     assert getattr(app, "_current_task_id", "MISSING") is None
+
+
+def test_client_falls_back_to_ipv4_on_connect_error(monkeypatch):
+    """Primary (dual-stack) 가 ConnectError 내면 IPv4 클라이언트로 재시도 성공해야."""
+    monkeypatch.setenv("HYDRA_SERVER_URL", "http://mock:8000")
+    monkeypatch.setenv("HYDRA_WORKER_TOKEN", "wt")
+    for k in ("SERVER_URL", "WORKER_TOKEN"):
+        monkeypatch.delenv(k, raising=False)
+    from worker.config import WorkerConfig
+    import worker.config as cfg_mod, worker.client as cli_mod
+    new_cfg = WorkerConfig()
+    for m in (cfg_mod, cli_mod):
+        monkeypatch.setattr(m, "config", new_cfg)
+    from worker.client import ServerClient
+    import httpx
+
+    class FailingHttp:
+        def request(self, method, url, **kw):
+            raise httpx.ConnectError("IPv6 route broken")
+        def close(self): pass
+
+    class FakeResp:
+        status_code = 200
+        def json(self): return {"current_version": "v1", "paused": False,
+                                "canary_worker_ids": [], "restart_requested": False,
+                                "worker_config": {}}
+        def raise_for_status(self): pass
+
+    # 실제 httpx.Client 생성을 가로채서 두 번째 클라이언트는 성공하도록
+    call_count = {"n": 0}
+    orig_client = httpx.Client
+    def fake_client(*a, **kw):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            return FailingHttp()  # primary
+        class OkHttp:
+            def request(self, method, url, **kw):
+                return FakeResp()
+            def close(self): pass
+        return OkHttp()  # fallback (v4)
+    monkeypatch.setattr(httpx, "Client", fake_client)
+
+    client = ServerClient()
+    result = client.heartbeat()
+    assert result["current_version"] == "v1"
+    assert client._v4_fallback_used is True
