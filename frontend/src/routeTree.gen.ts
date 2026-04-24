@@ -28,6 +28,7 @@ import { Route as AuthenticatedAvatarsIndexRouteImport } from './routes/_authent
 import { Route as AuthenticatedAuditIndexRouteImport } from './routes/_authenticated/audit/index'
 import { Route as AuthenticatedAnalyticsIndexRouteImport } from './routes/_authenticated/analytics/index'
 import { Route as AuthenticatedAccountsIndexRouteImport } from './routes/_authenticated/accounts/index'
+import { Route as AuthenticatedWorkersErrorsRouteImport } from './routes/_authenticated/workers/errors'
 import { Route as AuthenticatedSettingsPresetsRouteImport } from './routes/_authenticated/settings/presets'
 import { Route as AuthenticatedSettingsNotificationsRouteImport } from './routes/_authenticated/settings/notifications'
 import { Route as AuthenticatedSettingsGeneralRouteImport } from './routes/_authenticated/settings/general'
@@ -140,6 +141,12 @@ const AuthenticatedAccountsIndexRoute =
     path: '/accounts/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedWorkersErrorsRoute =
+  AuthenticatedWorkersErrorsRouteImport.update({
+    id: '/workers/errors',
+    path: '/workers/errors',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedSettingsPresetsRoute =
   AuthenticatedSettingsPresetsRouteImport.update({
     id: '/presets',
@@ -206,6 +213,7 @@ export interface FileRoutesByFullPath {
   '/settings/general': typeof AuthenticatedSettingsGeneralRoute
   '/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/settings/presets': typeof AuthenticatedSettingsPresetsRoute
+  '/workers/errors': typeof AuthenticatedWorkersErrorsRoute
   '/accounts/': typeof AuthenticatedAccountsIndexRoute
   '/analytics/': typeof AuthenticatedAnalyticsIndexRoute
   '/audit/': typeof AuthenticatedAuditIndexRoute
@@ -233,6 +241,7 @@ export interface FileRoutesByTo {
   '/settings/general': typeof AuthenticatedSettingsGeneralRoute
   '/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/settings/presets': typeof AuthenticatedSettingsPresetsRoute
+  '/workers/errors': typeof AuthenticatedWorkersErrorsRoute
   '/accounts': typeof AuthenticatedAccountsIndexRoute
   '/analytics': typeof AuthenticatedAnalyticsIndexRoute
   '/audit': typeof AuthenticatedAuditIndexRoute
@@ -263,6 +272,7 @@ export interface FileRoutesById {
   '/_authenticated/settings/general': typeof AuthenticatedSettingsGeneralRoute
   '/_authenticated/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/_authenticated/settings/presets': typeof AuthenticatedSettingsPresetsRoute
+  '/_authenticated/workers/errors': typeof AuthenticatedWorkersErrorsRoute
   '/_authenticated/accounts/': typeof AuthenticatedAccountsIndexRoute
   '/_authenticated/analytics/': typeof AuthenticatedAnalyticsIndexRoute
   '/_authenticated/audit/': typeof AuthenticatedAuditIndexRoute
@@ -293,6 +303,7 @@ export interface FileRouteTypes {
     | '/settings/general'
     | '/settings/notifications'
     | '/settings/presets'
+    | '/workers/errors'
     | '/accounts/'
     | '/analytics/'
     | '/audit/'
@@ -320,6 +331,7 @@ export interface FileRouteTypes {
     | '/settings/general'
     | '/settings/notifications'
     | '/settings/presets'
+    | '/workers/errors'
     | '/accounts'
     | '/analytics'
     | '/audit'
@@ -349,6 +361,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/general'
     | '/_authenticated/settings/notifications'
     | '/_authenticated/settings/presets'
+    | '/_authenticated/workers/errors'
     | '/_authenticated/accounts/'
     | '/_authenticated/analytics/'
     | '/_authenticated/audit/'
@@ -506,6 +519,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAccountsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/workers/errors': {
+      id: '/_authenticated/workers/errors'
+      path: '/workers/errors'
+      fullPath: '/workers/errors'
+      preLoaderRoute: typeof AuthenticatedWorkersErrorsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/settings/presets': {
       id: '/_authenticated/settings/presets'
       path: '/presets'
@@ -598,6 +618,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedSettingsRouteRoute: typeof AuthenticatedSettingsRouteRouteWithChildren
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
+  AuthenticatedWorkersErrorsRoute: typeof AuthenticatedWorkersErrorsRoute
   AuthenticatedAccountsIndexRoute: typeof AuthenticatedAccountsIndexRoute
   AuthenticatedAnalyticsIndexRoute: typeof AuthenticatedAnalyticsIndexRoute
   AuthenticatedAuditIndexRoute: typeof AuthenticatedAuditIndexRoute
@@ -613,6 +634,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedSettingsRouteRoute: AuthenticatedSettingsRouteRouteWithChildren,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
+  AuthenticatedWorkersErrorsRoute: AuthenticatedWorkersErrorsRoute,
   AuthenticatedAccountsIndexRoute: AuthenticatedAccountsIndexRoute,
   AuthenticatedAnalyticsIndexRoute: AuthenticatedAnalyticsIndexRoute,
   AuthenticatedAuditIndexRoute: AuthenticatedAuditIndexRoute,

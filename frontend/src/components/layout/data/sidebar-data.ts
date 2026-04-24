@@ -77,8 +77,11 @@ export const sidebarData: SidebarData = {
         },
         {
           title: '워커',
-          url: '/workers',
           icon: Monitor,
+          items: [
+            { title: '목록', url: '/workers' },
+            { title: '에러 로그', url: '/workers/errors' },
+          ],
         },
         {
           title: '아바타',
