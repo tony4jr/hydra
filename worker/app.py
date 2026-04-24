@@ -68,6 +68,15 @@ class WorkerApp:
             # sleep 없이 return 하면 while 루프가 즉시 재진입 → 초당 수십 번 spam.
             # 네트워크 일시 장애 시 exponential backoff 대신 heartbeat_interval 대기.
             print(f"[Worker] Heartbeat failed: {e}")
+            # 리포트 (서버 도달 가능하면) — heartbeat 자체가 실패한 시점이라
+            # report_error 도 실패할 수 있지만 내부에서 조용히 삼킴.
+            import traceback as _tb
+            self.client.report_error(
+                kind="heartbeat_fail",
+                message=f"{type(e).__name__}: {e}",
+                traceback=_tb.format_exc(),
+                context={"server_url": config.server_url},
+            )
             await asyncio.sleep(config.heartbeat_interval)
             return
 
@@ -103,6 +112,12 @@ class WorkerApp:
                     await self._execute_session(account_tasks, profile_id, account_id)
         except Exception as e:
             print(f"[Worker] Task fetch failed: {e}")
+            import traceback as _tb
+            self.client.report_error(
+                kind="fetch_fail",
+                message=f"{type(e).__name__}: {e}",
+                traceback=_tb.format_exc(),
+            )
 
         await asyncio.sleep(config.task_fetch_interval)
 

@@ -140,6 +140,36 @@ class ServerClient:
         resp.raise_for_status()
         return resp.json()
 
+    def report_error(
+        self,
+        kind: str,
+        message: str,
+        traceback: str | None = None,
+        context: dict | None = None,
+    ) -> None:
+        """워커 에러/진단 리포트 — 서버의 worker_errors 테이블에 기록.
+
+        절대 예외를 propagate 하지 않음 (에러 리포트 자체가 에러나면 조용히 포기,
+        원래 실패가 더 중요).
+        """
+        from datetime import datetime, timezone
+        body = {
+            "kind": kind,
+            "message": message[:2000],
+            "traceback": traceback,
+            "context": context or {},
+            "occurred_at": datetime.now(timezone.utc).isoformat(),
+        }
+        try:
+            self._request(
+                "POST", "/api/workers/report-error",
+                headers=self.headers,
+                json=body,
+                timeout=10,
+            )
+        except Exception:
+            pass
+
     def close(self):
         if self.http is not None:
             try:

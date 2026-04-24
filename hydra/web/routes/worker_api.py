@@ -22,7 +22,7 @@ from hydra.core import server_config as scfg
 from hydra.core.auth import hash_password, verify_password
 from hydra.core.enrollment import verify_enrollment_token
 from hydra.db import session as _db_session
-from hydra.db.models import Worker
+from hydra.db.models import Worker, WorkerError
 
 router = APIRouter()
 
@@ -125,6 +125,76 @@ class HeartbeatResponse(BaseModel):
     canary_worker_ids: list[int]
     restart_requested: bool = False
     worker_config: dict
+
+
+# ───────────── error report ─────────────
+_ALLOWED_ERROR_KINDS = frozenset({
+    "heartbeat_fail", "fetch_fail", "task_fail", "diagnostic",
+    "update_fail", "other",
+})
+_DEDUPE_WINDOW_SECONDS = 600  # 10분
+
+
+class ReportErrorRequest(BaseModel):
+    kind: str = Field(..., min_length=1, max_length=32)
+    message: str = Field(..., min_length=1, max_length=2000)
+    traceback: str | None = None
+    context: dict | None = None
+    occurred_at: datetime | None = None  # 생략 시 서버 시각
+
+
+class ReportErrorResponse(BaseModel):
+    ok: bool
+    deduped: bool = False  # True: 10분 내 중복으로 저장 스킵
+
+
+@router.post("/report-error", response_model=ReportErrorResponse)
+def report_error(
+    req: ReportErrorRequest,
+    worker: Worker = Depends(worker_auth),
+) -> ReportErrorResponse:
+    """워커가 발생시킨 에러/진단 리포트 저장.
+
+    dedupe: 같은 (worker_id, kind, message) 가 10분 내에 이미 있으면 저장 스킵.
+    """
+    kind = req.kind if req.kind in _ALLOWED_ERROR_KINDS else "other"
+    occurred_at = req.occurred_at or datetime.now(UTC)
+    # occurred_at 이 tz-naive 이면 UTC 로 간주
+    if occurred_at.tzinfo is None:
+        occurred_at = occurred_at.replace(tzinfo=UTC)
+
+    db = _db_session.SessionLocal()
+    try:
+        from datetime import timedelta
+        cutoff = datetime.now(UTC) - timedelta(seconds=_DEDUPE_WINDOW_SECONDS)
+        dup = (
+            db.query(WorkerError)
+            .filter(
+                WorkerError.worker_id == worker.id,
+                WorkerError.kind == kind,
+                WorkerError.message == req.message,
+                WorkerError.received_at >= cutoff,
+            )
+            .first()
+        )
+        if dup is not None:
+            return ReportErrorResponse(ok=True, deduped=True)
+
+        ctx_json = json.dumps(req.context, ensure_ascii=False) if req.context else None
+        err = WorkerError(
+            worker_id=worker.id,
+            kind=kind,
+            message=req.message,
+            traceback=req.traceback,
+            context=ctx_json,
+            occurred_at=occurred_at,
+            received_at=datetime.now(UTC),
+        )
+        db.add(err)
+        db.commit()
+        return ReportErrorResponse(ok=True, deduped=False)
+    finally:
+        db.close()
 
 
 @router.post("/heartbeat/v2", response_model=HeartbeatResponse)

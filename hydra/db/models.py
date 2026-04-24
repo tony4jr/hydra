@@ -674,6 +674,30 @@ class ExecutionLog(Base):
     )
 
 
+class WorkerError(Base):
+    """워커가 서버로 리포트한 에러/진단 로그.
+
+    원격 디버깅 목적 — 워커 PC 에 직접 접속 안 해도 어드민 UI 에서 확인 가능.
+    rolling window: 같은 (worker_id, kind, message) 10분 내 중복은 drop (서버 측).
+    retention: 7일 (별도 cleanup job 또는 수동 vacuum).
+    """
+    __tablename__ = "worker_errors"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    worker_id = Column(Integer, ForeignKey("workers.id"), nullable=False)
+    kind = Column(String(32), nullable=False)           # heartbeat_fail, task_fail, diagnostic, update_fail, other
+    message = Column(Text, nullable=False)              # 한 줄 요약
+    traceback = Column(Text, nullable=True)             # full traceback (있으면)
+    context = Column(Text, nullable=True)               # JSON — task_id, url, etc
+    occurred_at = Column(DateTime, nullable=False)      # 워커가 기록한 시각
+    received_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+
+    __table_args__ = (
+        Index("idx_werr_worker_time", "worker_id", "received_at"),
+        Index("idx_werr_kind_time", "kind", "received_at"),
+    )
+
+
 class AuditLog(Base):
     """관리자 액션 감사 로그 — 누가/언제/무엇을 기록.
 

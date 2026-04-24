@@ -182,3 +182,63 @@ def update_worker(
         return _worker_to_out(w, running)
     finally:
         db.close()
+
+
+# ───────────── worker errors listing ─────────────
+class WorkerErrorOut(BaseModel):
+    id: int
+    worker_id: int
+    worker_name: str
+    kind: str
+    message: str
+    traceback: Optional[str] = None
+    context: Optional[dict] = None
+    occurred_at: str
+    received_at: str
+
+
+@router.get("/errors")
+def list_worker_errors(
+    _session: dict = Depends(admin_session),
+    worker_id: Optional[int] = None,
+    kind: Optional[str] = None,
+    limit: int = 200,
+) -> list[WorkerErrorOut]:
+    """워커 에러 로그 조회 (최신순).
+
+    필터: worker_id, kind. limit 최대 1000.
+    """
+    from hydra.db.models import WorkerError
+    limit = max(1, min(limit, 1000))
+
+    db = _db_session.SessionLocal()
+    try:
+        q = db.query(WorkerError, Worker).join(Worker, WorkerError.worker_id == Worker.id)
+        if worker_id is not None:
+            q = q.filter(WorkerError.worker_id == worker_id)
+        if kind:
+            q = q.filter(WorkerError.kind == kind)
+        q = q.order_by(WorkerError.received_at.desc()).limit(limit)
+
+        out = []
+        for err, worker in q.all():
+            ctx = None
+            if err.context:
+                try:
+                    ctx = json.loads(err.context)
+                except Exception:
+                    ctx = {"_raw": err.context}
+            out.append(WorkerErrorOut(
+                id=err.id,
+                worker_id=err.worker_id,
+                worker_name=worker.name,
+                kind=err.kind,
+                message=err.message,
+                traceback=err.traceback,
+                context=ctx,
+                occurred_at=err.occurred_at.isoformat(),
+                received_at=err.received_at.isoformat(),
+            ))
+        return out
+    finally:
+        db.close()
