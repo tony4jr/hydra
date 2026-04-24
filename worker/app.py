@@ -74,6 +74,18 @@ class WorkerApp:
             srv_key = hb.get("adspower_api_key")
             if srv_key and _os.environ.get("ADSPOWER_API_KEY") != srv_key:
                 _os.environ["ADSPOWER_API_KEY"] = srv_key
+
+            # 어드민이 발행한 원격 명령 처리 (heartbeat 응답에 같이 옴)
+            pending = hb.get("pending_commands") or []
+            if pending:
+                from worker.commands import execute_command
+                for cmd in pending:
+                    try:
+                        await execute_command(self.client, cmd)
+                    except SystemExit:
+                        raise  # restart/update_now 는 그대로 빠짐
+                    except Exception as e:
+                        print(f"[Worker] command {cmd.get('id')} crash: {e}")
         except Exception as e:
             # sleep 없이 return 하면 while 루프가 즉시 재진입 → 초당 수십 번 spam.
             # 네트워크 일시 장애 시 exponential backoff 대신 heartbeat_interval 대기.

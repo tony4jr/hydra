@@ -23,7 +23,7 @@ from hydra.core import server_config as scfg
 from hydra.core.auth import hash_password, verify_password
 from hydra.core.enrollment import verify_enrollment_token
 from hydra.db import session as _db_session
-from hydra.db.models import Worker, WorkerError
+from hydra.db.models import Worker, WorkerError, WorkerCommand
 
 router = APIRouter()
 
@@ -157,6 +157,12 @@ class HeartbeatRequest(BaseModel):
     time_offset_ms: int = 0
 
 
+class PendingCommand(BaseModel):
+    id: int
+    command: str
+    payload: dict | None = None
+
+
 class HeartbeatResponse(BaseModel):
     current_version: str
     paused: bool
@@ -165,6 +171,8 @@ class HeartbeatResponse(BaseModel):
     worker_config: dict
     # 워커 전용 비밀 — null 이면 미설정 / 있으면 평문. 워커는 이걸 os.environ 에 주입.
     adspower_api_key: str | None = None
+    # 어드민이 발행한 대기 중 명령들 (최대 10개, FIFO)
+    pending_commands: list[PendingCommand] = []
 
 
 # ───────────── error report ─────────────
@@ -332,6 +340,39 @@ async def report_error_with_screenshot(
         db.close()
 
 
+# ───────────── 명령 ack ─────────────
+class CommandAckRequest(BaseModel):
+    status: str = Field(..., min_length=1, max_length=16)  # done | failed
+    result: str | None = None
+    error_message: str | None = None
+
+
+@router.post("/command/{cmd_id}/ack")
+def ack_command(
+    cmd_id: int,
+    req: CommandAckRequest,
+    worker: Worker = Depends(worker_auth),
+) -> dict:
+    """워커가 명령 실행 결과 보고."""
+    if req.status not in ("done", "failed"):
+        raise HTTPException(400, f"invalid status: {req.status}")
+    db = _db_session.SessionLocal()
+    try:
+        cmd = db.get(WorkerCommand, cmd_id)
+        if cmd is None:
+            raise HTTPException(404, "command not found")
+        if cmd.worker_id != worker.id:
+            raise HTTPException(403, "command not owned by this worker")
+        cmd.status = req.status
+        cmd.completed_at = datetime.now(UTC)
+        cmd.result = req.result
+        cmd.error_message = req.error_message
+        db.commit()
+        return {"ok": True}
+    finally:
+        db.close()
+
+
 @router.post("/heartbeat/v2", response_model=HeartbeatResponse)
 def heartbeat_v2(
     req: HeartbeatRequest,
@@ -353,6 +394,33 @@ def heartbeat_v2(
                 ads_key = crypto.decrypt(w.adspower_api_key_enc)
             except Exception:
                 ads_key = None
+
+        # 대기 중 명령 픽업 (status=pending → delivered)
+        pending_rows = (
+            db.query(WorkerCommand)
+            .filter(
+                WorkerCommand.worker_id == w.id,
+                WorkerCommand.status == "pending",
+            )
+            .order_by(WorkerCommand.issued_at)
+            .limit(10)
+            .all()
+        )
+        pending: list[PendingCommand] = []
+        now = datetime.now(UTC)
+        for c in pending_rows:
+            c.status = "delivered"
+            c.delivered_at = now
+            payload_dict = None
+            if c.payload:
+                try:
+                    payload_dict = json.loads(c.payload)
+                except Exception:
+                    payload_dict = None
+            pending.append(PendingCommand(id=c.id, command=c.command, payload=payload_dict))
+        if pending_rows:
+            db.commit()
+
         return HeartbeatResponse(
             current_version=scfg.get_current_version(session=db) or "",
             paused=scfg.is_paused(session=db),
@@ -363,6 +431,7 @@ def heartbeat_v2(
                 "drain_timeout_minutes": 15,
             },
             adspower_api_key=ads_key,
+            pending_commands=pending,
         )
     finally:
         db.close()

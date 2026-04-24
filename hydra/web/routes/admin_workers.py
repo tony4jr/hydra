@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -273,3 +273,101 @@ def get_error_screenshot(path: str, _session: dict = Depends(admin_session)):
     if not abs_path.is_file():
         raise HTTPException(404, "screenshot not found")
     return FileResponse(abs_path)
+
+
+# ───────────── 원격 명령 시스템 ─────────────
+ALLOWED_COMMANDS = frozenset({
+    "restart", "update_now", "run_diag", "retry_task", "screenshot_now",
+    "stop_all_browsers", "refresh_fingerprint", "update_adspower_patch",
+})
+
+
+class CommandRequest(BaseModel):
+    command: str = Field(..., min_length=1, max_length=64)
+    payload: Optional[dict] = None
+
+
+class CommandOut(BaseModel):
+    id: int
+    worker_id: int
+    command: str
+    payload: Optional[dict] = None
+    status: str
+    issued_at: str
+    delivered_at: Optional[str] = None
+    completed_at: Optional[str] = None
+    result: Optional[str] = None
+    error_message: Optional[str] = None
+
+
+@router.post("/{worker_id}/command", response_model=CommandOut)
+def issue_command(
+    worker_id: int,
+    req: CommandRequest,
+    session: dict = Depends(admin_session),
+) -> CommandOut:
+    """어드민이 워커에 명령 발행 — heartbeat 응답으로 전달됨."""
+    if req.command not in ALLOWED_COMMANDS:
+        raise HTTPException(400, f"unknown command: {req.command}. allowed: {sorted(ALLOWED_COMMANDS)}")
+    from hydra.db.models import WorkerCommand
+    db = _db_session.SessionLocal()
+    try:
+        if db.get(Worker, worker_id) is None:
+            raise HTTPException(404, "worker not found")
+        cmd = WorkerCommand(
+            worker_id=worker_id,
+            command=req.command,
+            payload=json.dumps(req.payload, ensure_ascii=False) if req.payload else None,
+            status="pending",
+            issued_by=session.get("user_id"),
+            issued_at=datetime.now(UTC),
+        )
+        db.add(cmd)
+        db.commit()
+        db.refresh(cmd)
+        return CommandOut(
+            id=cmd.id, worker_id=cmd.worker_id, command=cmd.command,
+            payload=req.payload, status=cmd.status,
+            issued_at=cmd.issued_at.isoformat(),
+        )
+    finally:
+        db.close()
+
+
+@router.get("/{worker_id}/commands", response_model=list[CommandOut])
+def list_commands(
+    worker_id: int,
+    _session: dict = Depends(admin_session),
+    limit: int = 50,
+) -> list[CommandOut]:
+    """워커의 최근 명령 이력."""
+    from hydra.db.models import WorkerCommand
+    limit = max(1, min(limit, 500))
+    db = _db_session.SessionLocal()
+    try:
+        rows = (
+            db.query(WorkerCommand)
+            .filter(WorkerCommand.worker_id == worker_id)
+            .order_by(WorkerCommand.issued_at.desc())
+            .limit(limit)
+            .all()
+        )
+        out = []
+        for c in rows:
+            payload = None
+            if c.payload:
+                try:
+                    payload = json.loads(c.payload)
+                except Exception:
+                    payload = {"_raw": c.payload[:500]}
+            out.append(CommandOut(
+                id=c.id, worker_id=c.worker_id, command=c.command,
+                payload=payload, status=c.status,
+                issued_at=c.issued_at.isoformat(),
+                delivered_at=c.delivered_at.isoformat() if c.delivered_at else None,
+                completed_at=c.completed_at.isoformat() if c.completed_at else None,
+                result=c.result, error_message=c.error_message,
+            ))
+        return out
+    finally:
+        db.close()

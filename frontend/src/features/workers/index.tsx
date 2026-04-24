@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Plus, Pause, Play, Lock, Monitor, Pencil } from 'lucide-react'
+import { Plus, Pause, Play, Lock, Monitor, Pencil, MoreVertical } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel,
+} from '@/components/ui/dropdown-menu'
+import { toast } from 'sonner'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -88,6 +93,23 @@ export default function WorkersPage() {
       await fetchApi(`/api/workers/${id}/resume`, { method: 'POST' })
       loadWorkers()
     } catch { /* error */ }
+  }
+
+  const sendCommand = async (workerId: number, command: string) => {
+    try {
+      await fetchApi(`/api/admin/workers/${workerId}/command`, {
+        method: 'POST',
+        body: JSON.stringify({ command }),
+        headers: { 'Content-Type': 'application/json' },
+      })
+      toast.success(`명령 발행: ${command}`, {
+        description: '워커 다음 heartbeat 시 실행됩니다.',
+      })
+    } catch (e) {
+      toast.error('명령 발행 실패', {
+        description: e instanceof Error ? e.message : String(e),
+      })
+    }
   }
 
   return (
@@ -221,6 +243,25 @@ export default function WorkersPage() {
                           <Play className='mr-1 h-3 w-3' /> 재개
                         </Button>
                       )}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant='outline' size='sm' className='hydra-btn-press' aria-label='원격 명령'>
+                            <MoreVertical className='h-3 w-3' />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align='end'>
+                          <DropdownMenuLabel>원격 명령</DropdownMenuLabel>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => sendCommand(worker.id, 'restart')}>재시작</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => sendCommand(worker.id, 'update_now')}>최신 코드로 업데이트</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => sendCommand(worker.id, 'run_diag')}>진단 실행</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => sendCommand(worker.id, 'screenshot_now')}>스크린샷 캡처</DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => sendCommand(worker.id, 'stop_all_browsers')}>모든 브라우저 종료</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => sendCommand(worker.id, 'update_adspower_patch')}>AdsPower 패치 업데이트</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => sendCommand(worker.id, 'refresh_fingerprint')}>FP 재생성</DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                     {isOffline && (
                       <p className='text-muted-foreground text-[11px] mt-2'>오프라인 — PC 연결을 확인하세요</p>

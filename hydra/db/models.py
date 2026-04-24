@@ -682,6 +682,36 @@ class ExecutionLog(Base):
     )
 
 
+class WorkerCommand(Base):
+    """어드민이 워커에게 발행하는 원격 명령.
+
+    흐름: admin POST /command → DB insert (status=pending) →
+          워커 heartbeat 응답에 pending_commands 포함 →
+          워커 실행 후 POST /ack → status=done|failed.
+
+    timeout: pending 상태 10분 초과 시 별도 배치가 status=timeout 마킹 (옵션).
+    """
+    __tablename__ = "worker_commands"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    worker_id = Column(Integer, ForeignKey("workers.id"), nullable=False)
+    command = Column(String(64), nullable=False)  # restart / update_now / run_diag 등
+    payload = Column(Text, nullable=True)         # JSON 문자열 (선택)
+    status = Column(String(16), nullable=False, default="pending")
+    # pending → delivered → done | failed | timeout
+    issued_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    issued_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+    delivered_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    result = Column(Text, nullable=True)          # 워커가 보고한 결과 (JSON 또는 텍스트)
+    error_message = Column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("idx_wcmd_worker_status", "worker_id", "status"),
+        Index("idx_wcmd_issued", "issued_at"),
+    )
+
+
 class WorkerError(Base):
     """워커가 서버로 리포트한 에러/진단 로그.
 
