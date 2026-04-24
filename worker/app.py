@@ -64,6 +64,12 @@ class WorkerApp:
         try:
             hb = self.client.heartbeat() or {}
             self.last_heartbeat = now
+            # 서버가 푸시한 AdsPower API 키를 프로세스 env 에 반영 —
+            # 워커마다 키가 다를 수 있고 관리는 어드민 UI 에서 중앙집중.
+            import os as _os
+            srv_key = hb.get("adspower_api_key")
+            if srv_key and _os.environ.get("ADSPOWER_API_KEY") != srv_key:
+                _os.environ["ADSPOWER_API_KEY"] = srv_key
         except Exception as e:
             # sleep 없이 return 하면 while 루프가 즉시 재진입 → 초당 수십 번 spam.
             # 네트워크 일시 장애 시 exponential backoff 대신 heartbeat_interval 대기.

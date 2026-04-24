@@ -163,6 +163,8 @@ class HeartbeatResponse(BaseModel):
     canary_worker_ids: list[int]
     restart_requested: bool = False
     worker_config: dict
+    # 워커 전용 비밀 — null 이면 미설정 / 있으면 평문. 워커는 이걸 os.environ 에 주입.
+    adspower_api_key: str | None = None
 
 
 # ───────────── error report ─────────────
@@ -249,6 +251,13 @@ def heartbeat_v2(
         w.health_snapshot = json.dumps(req.model_dump(), ensure_ascii=False)
         db.commit()
 
+        ads_key: str | None = None
+        if w.adspower_api_key_enc:
+            try:
+                from hydra.core import crypto
+                ads_key = crypto.decrypt(w.adspower_api_key_enc)
+            except Exception:
+                ads_key = None
         return HeartbeatResponse(
             current_version=scfg.get_current_version(session=db) or "",
             paused=scfg.is_paused(session=db),
@@ -258,6 +267,7 @@ def heartbeat_v2(
                 "max_concurrent_tasks": 1,
                 "drain_timeout_minutes": 15,
             },
+            adspower_api_key=ads_key,
         )
     finally:
         db.close()

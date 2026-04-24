@@ -136,6 +136,8 @@ class WorkerPatch(BaseModel):
     allow_preparation: Optional[bool] = None
     allow_campaign: Optional[bool] = None
     status: Optional[str] = None  # online|offline|paused
+    adspower_api_key: Optional[str] = None  # 평문 입력, 서버에서 Fernet 암호화 저장
+                                            # 빈 문자열 "" 은 제거 의미
 
 
 @router.patch("/{worker_id}", response_model=WorkerOut)
@@ -171,6 +173,12 @@ def update_worker(
             if req.status not in ("online", "offline", "paused"):
                 raise HTTPException(400, f"invalid status: {req.status}")
             w.status = req.status
+        if req.adspower_api_key is not None:
+            from hydra.core import crypto
+            if req.adspower_api_key == "":
+                w.adspower_api_key_enc = None
+            else:
+                w.adspower_api_key_enc = crypto.encrypt(req.adspower_api_key)
 
         db.commit()
         db.refresh(w)

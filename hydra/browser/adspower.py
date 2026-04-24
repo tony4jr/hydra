@@ -4,6 +4,8 @@ Manages browser profiles — create, start (returns debug port), stop.
 Each YouTube account = 1 AdsPower profile = 1 fingerprint.
 """
 
+import os
+
 import httpx
 from hydra.core.config import settings
 from hydra.core.logger import get_logger
@@ -14,7 +16,9 @@ log = get_logger("adspower")
 class AdsPowerClient:
     def __init__(self, base_url: str | None = None, api_key: str | None = None):
         self.base_url = (base_url or settings.adspower_api_url).rstrip("/")
-        self.api_key = api_key or settings.adspower_api_key
+        # 우선순위: 명시 인자 > os.environ (heartbeat 로 서버가 푸시한 런타임 값) > settings(.env)
+        # 워커가 실행 중에 서버로부터 키를 받아 os.environ 에 주입하는 경로 지원.
+        self.api_key = api_key or os.environ.get("ADSPOWER_API_KEY") or settings.adspower_api_key
 
     def _headers(self) -> dict:
         if self.api_key:

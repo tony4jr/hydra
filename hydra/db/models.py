@@ -513,6 +513,9 @@ class Worker(Base):
     # [PRIMARY] SHA-256(raw_token) hex — UNIQUE 인덱스로 O(1) auth.
     # 워커 토큰은 256bit 랜덤이라 bcrypt 불필요 (brute force 불가).
     token_sha256 = Column(String(64), nullable=True, unique=True, index=True)
+    # 워커 전용 비밀 — 서버 Fernet 암호화 저장. heartbeat 응답으로 복호화 전달.
+    # AdsPower Local API 키는 머신마다 다를 수 있어 워커별 저장.
+    adspower_api_key_enc = Column(Text, nullable=True)
     status = Column(String, default="offline")
     allow_preparation = Column(Boolean, default=False)
     allow_campaign = Column(Boolean, default=True)
