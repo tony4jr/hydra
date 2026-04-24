@@ -10,7 +10,11 @@ class ServerClient:
         if not self.base_url.startswith("https") and "localhost" not in self.base_url and "127.0.0.1" not in self.base_url:
             print("[WARNING] Server URL is not HTTPS. Credentials may be exposed in transit.")
         self.headers = {"X-Worker-Token": config.worker_token}
-        self.http = httpx.Client(timeout=30)
+        # IPv4 강제 — 일부 ISP 의 NAT64/IPv6 경로가 TLS 중간 끊김 유발.
+        # local_address="0.0.0.0" 는 소켓을 IPv4 로 bind → getaddrinfo 결과에서
+        # IPv4 주소만 사용됨.
+        transport = httpx.HTTPTransport(local_address="0.0.0.0")
+        self.http = httpx.Client(timeout=30, transport=transport)
 
     def heartbeat(self) -> dict:
         """Heartbeat 전송 (M1-10: v2 엔드포인트)."""
