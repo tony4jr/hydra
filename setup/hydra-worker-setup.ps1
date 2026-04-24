@@ -14,6 +14,7 @@ param(
     [Parameter(Mandatory=$true)] [string]$ServerUrl,
     [string]$InstallPath = "C:\hydra",
     [string]$RepoUrl = "https://github.com/tony4jr/hydra.git",
+    [string]$AdsPowerApiKey = "",  # AdsPower Local API key (Settings → API)
     [switch]$DryRun  # 실 행동 없이 신호 루프만 (M2.1 검증)
 )
 
@@ -99,6 +100,7 @@ SERVER_URL=$ServerUrl
 WORKER_TOKEN=$workerToken
 WORKER_HOSTNAME=$hostname
 DB_CRYPTO_KEY=$($secrets.DB_CRYPTO_KEY)
+$(if ($AdsPowerApiKey) { "ADSPOWER_API_KEY=$AdsPowerApiKey" } else { "" })
 $(if ($DryRun) { "HYDRA_WORKER_DRY_RUN=1" } else { "" })
 "@
 Add-Type -AssemblyName System.Security

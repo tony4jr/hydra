@@ -48,4 +48,4 @@ export SERVER_URL="$SERVER_URL"
 export WORKER_TOKEN="$WT"
 export HYDRA_SERVER_URL="$SERVER_URL"
 export HYDRA_WORKER_TOKEN="$WT"
-.venv/bin/python -m worker
+PYTHONUNBUFFERED=1 .venv/bin/python -m worker

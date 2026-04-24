@@ -85,6 +85,14 @@ def load_secrets() -> Dict[str, str]:
             f"Expected: {source}. "
             "Windows → 재설치 시 setup.ps1 실행 / dev → .env 파일 확인."
         )
+
+    # 로드된 모든 키를 os.environ 에 주입 — pydantic settings / DRY-RUN 게이트 /
+    # AdsPower 키 등이 동일 프로세스 내에서 환경변수로 읽히도록.
+    # 이미 설정된 환경변수는 덮지 않음 (명시적 override 우선).
+    for k, v in result.items():
+        if v and not os.environ.get(k):
+            os.environ[k] = v
+
     return result
 
 
