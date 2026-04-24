@@ -33,6 +33,9 @@ import httpx
 MAX_ROUNDS = 6         # 최대 6회 재시도 라운드
 ROUND_INTERVAL_SEC = 60  # 각 라운드 사이 60초 대기 (AdsPower 다운로드 진행)
 START_TIMEOUT = 30
+# AdsPower 공식 rate limit: 0-200 프로필 티어에서 2 req/sec.
+# 안전 여유로 프로필당 600ms 간격 (1.66 req/sec).
+REQ_SPACING_SEC = 0.6
 
 VERSION_RE = re.compile(r"SunBrowser\s+(\d+)\s+is updating", re.IGNORECASE)
 
@@ -163,6 +166,7 @@ def main() -> int:
         print(f"\n--- round {round_num}/{MAX_ROUNDS} — {len(pending)} profiles to probe ---")
         for pid in pending:
             s = state[pid]
+            time.sleep(REQ_SPACING_SEC)  # rate limit 존중
             res = try_start(base_url, api_key, pid)
             if res["ok"]:
                 try_stop(base_url, api_key, pid)
