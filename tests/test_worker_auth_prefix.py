@@ -83,7 +83,8 @@ def test_auth_rejects_wrong_token_with_same_prefix(env):
 
 def test_auth_legacy_worker_without_sha256_still_works_and_backfills(env):
     """기존 워커가 token_sha256 null (legacy bcrypt 만) 인 상태여도
-    인증 통과 + sha256/prefix 자동 백필."""
+    인증 통과 + sha256/prefix 자동 백필. 최근 heartbeat 필수."""
+    from datetime import datetime, UTC
     client, Session = env
     db = Session()
     token = "legacy00-old-token-no-sha256-xxxxxxxxxx"
@@ -92,6 +93,7 @@ def test_auth_legacy_worker_without_sha256_still_works_and_backfills(env):
         token_hash=hash_password(token),
         token_prefix=None,
         token_sha256=None,
+        last_heartbeat=datetime.now(UTC),  # 최근 활동 워커여야 legacy fallback 적용
     )
     db.add(w); db.commit()
     worker_id = w.id

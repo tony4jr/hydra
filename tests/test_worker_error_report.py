@@ -28,10 +28,17 @@ def env(monkeypatch):
     monkeypatch.setenv("JWT_SECRET", "test-jwt-secret-123456789")
     monkeypatch.setenv("HYDRA_ENCRYPTION_KEY", "inH7FBGqG6Xdp/DZU7s1CXal+EreHfYZrnOn9xbM0C4=")
 
-    # 워커 하나 생성 + 토큰
+    # 워커 하나 생성 + 토큰 (sha256 포함 — 실제 enroll 경로 모방)
+    import hashlib
     db = TestSession()
     raw_token = "worker-raw-token-abc123"
-    w = Worker(name="test-worker", status="offline", token_hash=hash_password(raw_token))
+    w = Worker(
+        name="test-worker",
+        status="offline",
+        token_hash=hash_password(raw_token),
+        token_prefix=raw_token[:8],
+        token_sha256=hashlib.sha256(raw_token.encode()).hexdigest(),
+    )
     db.add(w)
     db.commit()
     db.refresh(w)

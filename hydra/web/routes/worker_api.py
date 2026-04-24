@@ -116,11 +116,17 @@ def worker_auth(x_worker_token: str = Header(default="")) -> Worker:
             db.expunge(w)
             return w
 
-        # [LEGACY] SHA-256 미백필 워커 — 과도기 경로
-        # token_sha256 이 있는 워커는 위에서 이미 판정됨 → 여기 오면 무조건 "sha256 없는" 워커뿐
+        # [LEGACY] SHA-256 미백필 워커 — 과도기 경로.
+        # 최근 7일 heartbeat 있는 워커만 대상. 죽은 테스트 워커가 bad token 마다
+        # bcrypt 당하는 것을 방지 (DoS-ish). 신규 워커는 enroll 시 sha256 세팅되므로
+        # 이 경로는 pre-migration 워커 전용.
+        from datetime import timedelta
+        recent_cutoff = datetime.now(UTC) - timedelta(days=7)
         legacy = db.query(Worker).filter(
             Worker.token_hash.isnot(None),
             Worker.token_sha256.is_(None),
+            Worker.last_heartbeat.isnot(None),
+            Worker.last_heartbeat > recent_cutoff,
         ).all()
         for lw in legacy:
             if verify_password(x_worker_token, lw.token_hash):
