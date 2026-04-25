@@ -25,12 +25,33 @@ log = get_logger("collection")
 _key_index = 0
 
 
+def _load_keys_from_db() -> list[str]:
+    """system_config 테이블에서 youtube_api_key 읽기 (어드민 UI 가 저장한 곳)."""
+    try:
+        from hydra.db.session import SessionLocal
+        from hydra.db.models import SystemConfig
+        db = SessionLocal()
+        try:
+            rows = db.query(SystemConfig).filter(
+                SystemConfig.key.in_([
+                    "youtube_api_key", "youtube_api_key_1", "youtube_api_key_2",
+                ])
+            ).all()
+            return [r.value for r in rows if r.value]
+        finally:
+            db.close()
+    except Exception:
+        return []
+
+
 def _get_youtube_service():
-    """Build YouTube service with key rotation."""
+    """Build YouTube service with key rotation.
+    우선순위: DB (어드민 UI 저장) > .env (settings).
+    """
     global _key_index
-    keys = settings.youtube_api_keys
+    keys = _load_keys_from_db() or settings.youtube_api_keys
     if not keys:
-        raise RuntimeError("No YouTube API keys configured")
+        raise RuntimeError("No YouTube API keys configured (DB system_config or .env)")
     key = keys[_key_index % len(keys)]
     return build("youtube", "v3", developerKey=key)
 
