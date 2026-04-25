@@ -192,6 +192,73 @@ else
     _fail "workers list current_task 필드 누락"
 fi
 
+# ── 10. T1 스크린샷 캡처 (Phase 2) ──
+_section "10. Phase 2 T1: 스크린샷 캡처"
+# 1x1 PNG
+python3 -c "open('/tmp/e2e_shot.png','wb').write(bytes.fromhex('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c63f80f000001010003fe8acbd80000000049454e44ae426082'))"
+
+SHOT_RESP=$(curl -s -X POST "$URL/api/workers/report-error-with-screenshot" \
+    -H "X-Worker-Token: $WT" \
+    -F "kind=diagnostic" \
+    -F "message=e2e probe" \
+    -F "screenshot=@/tmp/e2e_shot.png")
+SHOT_OK=$(echo "$SHOT_RESP" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("ok",False))' 2>/dev/null)
+if [[ "$SHOT_OK" == "True" ]]; then
+    _ok "스크린샷 multipart 업로드 → ok"
+else
+    _fail "스크린샷 업로드 실패: $SHOT_RESP"
+fi
+rm -f /tmp/e2e_shot.png
+
+# ── 11. T2 어드민 VPS 서빙 ──
+_section "11. Phase 2 T2: VPS 어드민 UI 서빙"
+ROOT_HTML=$(curl -s "$URL/")
+if echo "$ROOT_HTML" | head -c 100 | grep -q "<!doctype html"; then
+    _ok "/ → React HTML (placeholder 탈출)"
+else
+    _fail "/ 가 여전히 placeholder: $(echo "$ROOT_HTML" | head -c 80)"
+fi
+
+# ── 12. T3 원격 명령 시스템 ──
+_section "12. Phase 2 T3: 원격 명령 시스템"
+CMD_RESP=$(curl -s -X POST "$URL/api/admin/workers/$(echo "$WORKERS" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d[0]["id"] if d else 1)')/command" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H 'Content-Type: application/json' \
+    -d '{"command":"run_diag"}')
+CMD_ID=$(echo "$CMD_RESP" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("id",0))' 2>/dev/null)
+if [[ "$CMD_ID" -gt 0 ]]; then
+    _ok "어드민 명령 발행 → id=$CMD_ID"
+else
+    _fail "명령 발행 실패: $CMD_RESP"
+fi
+
+# 알 수 없는 명령은 거부
+BAD_CMD=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$URL/api/admin/workers/1/command" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H 'Content-Type: application/json' \
+    -d '{"command":"rm_rf"}')
+if [[ "$BAD_CMD" == "400" ]]; then
+    _ok "알 수 없는 명령 → 400 거부"
+else
+    _fail "알 수 없는 명령 → $BAD_CMD (expected 400)"
+fi
+
+# heartbeat 응답에 pending_commands 필드 존재
+HB_KEYS=$(echo "$HB" | python3 -c 'import json,sys;print(",".join(json.load(sys.stdin).keys()))')
+if echo "$HB_KEYS" | grep -q "pending_commands"; then
+    _ok "heartbeat 응답에 pending_commands 필드 포함"
+else
+    _fail "pending_commands 필드 없음 — keys: $HB_KEYS"
+fi
+
+# ── 13. T4 백업 (선택) ──
+_section "13. Phase 2 T4: B2 백업 (구성 시)"
+if [[ -n "${B2_KEY_ID:-}" ]] && [[ -n "${B2_APP_KEY:-}" ]]; then
+    _ok "B2 자격증명 환경변수 존재 (실 백업 검증은 별도 스크립트)"
+else
+    echo "  ⚠️  B2 미구성 — 스킵 (T4 미완료)"
+fi
+
 # ── 요약 ──
 _section "결과"
 echo "PASS: $PASS"
