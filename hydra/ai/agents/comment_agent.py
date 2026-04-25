@@ -24,6 +24,27 @@ ROLE_PROMPTS = {
 }
 
 
+# T19 — 퍼널 단계별 톤 가이드 (간접 언급 강화)
+FUNNEL_STAGE_GUIDES = {
+    "awareness": (
+        "[퍼널: 인지] 화두 던지기. 영상 주제에 대한 본인 경험/고민을 자연스럽게. "
+        "브랜드 직접 언급 금지. 성분/방법 키워드도 너무 일찍 X — 호기심만 유발."
+    ),
+    "consideration": (
+        "[퍼널: 고려] 비교/검토 단계. '뭐 드세요?', '효과 있어요?' 같은 질문 또는 "
+        "'저는 OO 성분 들어간 거 써봤는데' 같은 우회 멘션. 직접 광고 X."
+    ),
+    "conversion": (
+        "[퍼널: 전환] 결심 단계. 구체적 사용 경험 + 효과 짧게. 성분명/방법명 OK, "
+        "브랜드명은 mention_rules 따라. 강요 X, 자연스러운 추천 톤."
+    ),
+    "retention": (
+        "[퍼널: 리텐션] 재구매/재경험. '저도 1년째 써요', '계속 만족' 같은 장기 사용자 톤. "
+        "초보자에게 답하듯 정보 공유. 광고 의도 최소화."
+    ),
+}
+
+
 def generate_comment(
     persona: dict,
     role: AccountRole,
@@ -32,6 +53,7 @@ def generate_comment(
     context: str = "",
     is_reply: bool = False,
     parent_comment: str = "",
+    funnel_stage: str | None = None,  # T19: awareness|consideration|conversion|retention
     max_retries: int = 3,
 ) -> str:
     """Generate a promotional comment using Claude.
@@ -44,6 +66,8 @@ def generate_comment(
         context: Additional context (e.g., conversation so far).
         is_reply: Whether this is a reply to another comment.
         parent_comment: The comment being replied to.
+        funnel_stage: 퍼널 단계 (T19) — awareness/consideration/conversion/retention.
+            None 이면 단계별 톤 가이드 미적용 (기존 동작).
         max_retries: Number of retry attempts.
     """
     allowed = json.loads(brand.allowed_keywords or "[]")
@@ -79,6 +103,8 @@ def generate_comment(
     )
 
     user_msg = f"영상: {video.title}\n"
+    if funnel_stage and funnel_stage in FUNNEL_STAGE_GUIDES:
+        user_msg += f"\n{FUNNEL_STAGE_GUIDES[funnel_stage]}\n"
     if context:
         user_msg += f"\n대화 맥락:\n{context}\n"
     if is_reply and parent_comment:
