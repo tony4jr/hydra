@@ -28,6 +28,8 @@ interface Worker {
   allow_preparation?: boolean
   allow_campaign?: boolean
   allowed_task_types?: string[]
+  paused_reason?: string | null
+  consecutive_failures?: number
   current_task?: {
     id: number
     task_type: string
@@ -265,6 +267,16 @@ export default function WorkersPage() {
                     </div>
                     {isOffline && (
                       <p className='text-muted-foreground text-[11px] mt-2'>오프라인 — PC 연결을 확인하세요</p>
+                    )}
+                    {worker.status === 'paused' && worker.paused_reason && (
+                      <p className='text-yellow-600 dark:text-yellow-400 text-[11px] mt-2'>
+                        ⚠️ {worker.paused_reason}
+                      </p>
+                    )}
+                    {(worker.consecutive_failures || 0) > 0 && (
+                      <p className='text-orange-600 dark:text-orange-400 text-[11px] mt-1'>
+                        연속 실패 {worker.consecutive_failures}회
+                      </p>
                     )}
                   </div>
                 )

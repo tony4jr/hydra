@@ -267,20 +267,9 @@ else
     _fail "pending_commands 필드 없음 — keys: $HB_KEYS"
 fi
 
-# ── 13. T4 백업 (선택) ──
-_section "13. Phase 2a T4: B2 백업 (구성 시)"
-if [[ -n "${B2_KEY_ID:-}" ]] && [[ -n "${B2_APP_KEY:-}" ]]; then
-    _ok "B2 자격증명 환경변수 존재 (실 백업 검증은 별도 스크립트)"
-else
-    echo "  ⚠️  B2 미구성 — 스킵 (T4 미완료, Phase 2a gate 미통과)"
-    if [[ "$PHASE" == "2a" ]]; then
-        # Phase 2a gate 검증 모드 — B2 미구성은 FAIL
-        FAIL=$((FAIL + 1))
-        echo "  ❌ T4 미완료 — Phase 2a 게이트 미통과" >&2
-    fi
-fi
+# T4 B2 백업: 운영 정책상 제외 (사용자 결정)
 
-# Phase 2a 까지만 → 종료
+# Phase 2a 까지만 → 종료 (T1+T2+T3 만으로 통과)
 if [[ "$PHASE" == "2a" ]]; then
     _section "결과 (Phase 2a 까지)"
     echo "PASS: $PASS / FAIL: $FAIL"

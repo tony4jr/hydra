@@ -86,6 +86,8 @@ class WorkerOut(BaseModel):
     allowed_task_types: list[str] = []
     enrolled_at: Optional[datetime] = None
     current_task: Optional[CurrentTaskInfo] = None  # M2.1-5
+    paused_reason: Optional[str] = None  # T7 Circuit Breaker 정보
+    consecutive_failures: int = 0
 
 
 def _worker_to_out(w: Worker, current_task: Optional[Task] = None) -> WorkerOut:
@@ -110,6 +112,8 @@ def _worker_to_out(w: Worker, current_task: Optional[Task] = None) -> WorkerOut:
         allowed_task_types=[str(t) for t in types],
         enrolled_at=w.enrolled_at,
         current_task=ct,
+        paused_reason=w.paused_reason,
+        consecutive_failures=w.consecutive_failures or 0,
     )
 
 
