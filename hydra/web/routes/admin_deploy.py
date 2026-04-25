@@ -68,6 +68,40 @@ def unpause_all(_session: dict = Depends(admin_session)) -> dict:
     return {"paused": False}
 
 
+@router.post("/emergency-stop")
+def emergency_stop(_session: dict = Depends(admin_session)) -> dict:
+    """T9 비상정지 — server pause + 모든 워커에 stop_all_browsers 명령 fan-out.
+
+    현재 진행중인 브라우저까지 즉시 kill. 어드민 UI 빨간 버튼.
+    """
+    from hydra.db import session as _db_session
+    from hydra.db.models import Worker, WorkerCommand
+    from datetime import datetime as _dt, timezone as _tz
+
+    scfg.set_paused(True)
+
+    db = _db_session.SessionLocal()
+    try:
+        workers = db.query(Worker).filter(Worker.token_hash.isnot(None)).all()
+        count = 0
+        for w in workers:
+            db.add(WorkerCommand(
+                worker_id=w.id,
+                command="stop_all_browsers",
+                payload=None,
+                status="pending",
+                issued_at=_dt.now(_tz.utc),
+            ))
+            # 워커 자체도 paused 마킹
+            w.status = "paused"
+            w.paused_reason = "emergency-stop"
+            count += 1
+        db.commit()
+        return {"paused": True, "emergency": True, "workers_notified": count}
+    finally:
+        db.close()
+
+
 class CanaryRequest(BaseModel):
     worker_ids: list[int] = Field(default_factory=list)
 

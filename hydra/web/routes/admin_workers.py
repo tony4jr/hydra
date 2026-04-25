@@ -371,3 +371,107 @@ def list_commands(
         return out
     finally:
         db.close()
+
+
+# ───────────── T8 Exit IP 감시 ─────────────
+class IpHistoryEntry(BaseModel):
+    account_id: int
+    account_gmail: str
+    ip_address: str
+    device_id: Optional[str] = None
+    started_at: str
+    ended_at: Optional[str] = None
+    duration_sec: Optional[int] = None
+
+
+class IpConflictEntry(BaseModel):
+    ip_address: str
+    accounts: list[dict]  # [{account_id, gmail, started_at}]
+    conflict_at: str
+
+
+@router.get("/ip-history")
+def ip_history(
+    _session: dict = Depends(admin_session),
+    hours: int = 24,
+    limit: int = 500,
+) -> list[IpHistoryEntry]:
+    """최근 N시간 (기본 24h) 의 exit IP 사용 이력. 시간 내림차순."""
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+    from hydra.db.models import Account, IpLog
+
+    limit = max(1, min(limit, 5000))
+    cutoff = _dt.now(_tz.utc) - _td(hours=max(1, min(hours, 168)))
+
+    db = _db_session.SessionLocal()
+    try:
+        rows = (
+            db.query(IpLog, Account)
+            .join(Account, IpLog.account_id == Account.id)
+            .filter(IpLog.started_at >= cutoff)
+            .order_by(IpLog.started_at.desc())
+            .limit(limit)
+            .all()
+        )
+        out = []
+        for log, acc in rows:
+            duration = None
+            if log.ended_at and log.started_at:
+                duration = int((log.ended_at - log.started_at).total_seconds())
+            out.append(IpHistoryEntry(
+                account_id=acc.id,
+                account_gmail=acc.gmail,
+                ip_address=log.ip_address,
+                device_id=log.device_id,
+                started_at=log.started_at.isoformat(),
+                ended_at=log.ended_at.isoformat() if log.ended_at else None,
+                duration_sec=duration,
+            ))
+        return out
+    finally:
+        db.close()
+
+
+@router.get("/ip-conflicts")
+def ip_conflicts(
+    _session: dict = Depends(admin_session),
+    hours: int = 24,
+) -> list[IpConflictEntry]:
+    """같은 IP 가 짧은 시간 내 여러 계정에서 사용된 케이스 (안티디텍션 위험).
+
+    윈도우 내 동일 IP × 2+ 계정 → conflict.
+    """
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+    from hydra.db.models import Account, IpLog
+    from collections import defaultdict
+
+    cutoff = _dt.now(_tz.utc) - _td(hours=max(1, min(hours, 168)))
+
+    db = _db_session.SessionLocal()
+    try:
+        rows = (
+            db.query(IpLog, Account)
+            .join(Account, IpLog.account_id == Account.id)
+            .filter(IpLog.started_at >= cutoff)
+            .order_by(IpLog.started_at.desc())
+            .all()
+        )
+        by_ip: dict[str, list] = defaultdict(list)
+        for log, acc in rows:
+            by_ip[log.ip_address].append({
+                "account_id": acc.id, "gmail": acc.gmail,
+                "started_at": log.started_at.isoformat(),
+            })
+
+        conflicts = []
+        for ip, uses in by_ip.items():
+            unique_accounts = {u["account_id"] for u in uses}
+            if len(unique_accounts) > 1:
+                conflicts.append(IpConflictEntry(
+                    ip_address=ip,
+                    accounts=uses,
+                    conflict_at=uses[0]["started_at"],
+                ))
+        return conflicts
+    finally:
+        db.close()

@@ -23,6 +23,11 @@ async function postPause() {
 async function postUnpause() {
   return fetchApi<{ paused: boolean }>('/api/admin/unpause', { method: 'POST' })
 }
+async function postEmergencyStop() {
+  return fetchApi<{ paused: boolean; emergency: boolean; workers_notified: number }>(
+    '/api/admin/emergency-stop', { method: 'POST' },
+  )
+}
 async function postDeploy() {
   return fetchApi<{ started: boolean; unit: string }>('/api/admin/deploy', {
     method: 'POST',
@@ -53,6 +58,17 @@ export function ServerStatusBar() {
       qc.invalidateQueries({ queryKey: ['server-config'] })
     },
     onError: () => toast.error('재개 실패'),
+  })
+
+  const emergency = useMutation({
+    mutationFn: postEmergencyStop,
+    onSuccess: (res) => {
+      toast.warning(`🚨 비상정지 — ${res.workers_notified}대 워커 정지`, {
+        description: '모든 브라우저 즉시 종료. 재개 시 수동 명령 필요.',
+      })
+      qc.invalidateQueries({ queryKey: ['server-config'] })
+    },
+    onError: () => toast.error('비상정지 실패'),
   })
 
   const deploy = useMutation({
@@ -112,16 +128,32 @@ export function ServerStatusBar() {
             재개
           </Button>
         ) : (
-          <Button
-            size='sm'
-            variant='destructive'
-            onClick={() => pause.mutate()}
-            disabled={pause.isPending}
-            className='min-h-[40px]'
-          >
-            <AlertTriangle className='h-4 w-4' />
-            긴급 정지
-          </Button>
+          <>
+            <Button
+              size='sm'
+              variant='outline'
+              onClick={() => pause.mutate()}
+              disabled={pause.isPending}
+              className='min-h-[40px]'
+            >
+              <AlertTriangle className='h-4 w-4' />
+              일시정지
+            </Button>
+            <Button
+              size='sm'
+              variant='destructive'
+              onClick={() => {
+                if (window.confirm('🚨 비상정지: 모든 워커 + 브라우저 즉시 종료. 정말 진행?')) {
+                  emergency.mutate()
+                }
+              }}
+              disabled={emergency.isPending}
+              className='min-h-[40px]'
+            >
+              <AlertTriangle className='h-4 w-4' />
+              비상정지
+            </Button>
+          </>
         )}
 
         <Button

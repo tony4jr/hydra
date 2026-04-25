@@ -530,6 +530,10 @@ class Worker(Base):
     allowed_task_types = Column(Text, nullable=False, default='["*"]', server_default='["*"]')
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     notes = Column(Text)
+    # T7 Circuit Breaker — 연속 실패 카운터
+    consecutive_failures = Column(Integer, nullable=False, default=0, server_default='0')
+    last_failure_at = Column(DateTime, nullable=True)
+    paused_reason = Column(String(255), nullable=True)  # circuit-breaker / manual / emergency-stop
 
     tasks = relationship("Task", back_populates="worker")
 

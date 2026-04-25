@@ -28,6 +28,7 @@ import { Route as AuthenticatedAvatarsIndexRouteImport } from './routes/_authent
 import { Route as AuthenticatedAuditIndexRouteImport } from './routes/_authenticated/audit/index'
 import { Route as AuthenticatedAnalyticsIndexRouteImport } from './routes/_authenticated/analytics/index'
 import { Route as AuthenticatedAccountsIndexRouteImport } from './routes/_authenticated/accounts/index'
+import { Route as AuthenticatedWorkersIpMonitorRouteImport } from './routes/_authenticated/workers/ip-monitor'
 import { Route as AuthenticatedWorkersErrorsRouteImport } from './routes/_authenticated/workers/errors'
 import { Route as AuthenticatedSettingsPresetsRouteImport } from './routes/_authenticated/settings/presets'
 import { Route as AuthenticatedSettingsNotificationsRouteImport } from './routes/_authenticated/settings/notifications'
@@ -141,6 +142,12 @@ const AuthenticatedAccountsIndexRoute =
     path: '/accounts/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedWorkersIpMonitorRoute =
+  AuthenticatedWorkersIpMonitorRouteImport.update({
+    id: '/workers/ip-monitor',
+    path: '/workers/ip-monitor',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedWorkersErrorsRoute =
   AuthenticatedWorkersErrorsRouteImport.update({
     id: '/workers/errors',
@@ -214,6 +221,7 @@ export interface FileRoutesByFullPath {
   '/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/settings/presets': typeof AuthenticatedSettingsPresetsRoute
   '/workers/errors': typeof AuthenticatedWorkersErrorsRoute
+  '/workers/ip-monitor': typeof AuthenticatedWorkersIpMonitorRoute
   '/accounts/': typeof AuthenticatedAccountsIndexRoute
   '/analytics/': typeof AuthenticatedAnalyticsIndexRoute
   '/audit/': typeof AuthenticatedAuditIndexRoute
@@ -242,6 +250,7 @@ export interface FileRoutesByTo {
   '/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/settings/presets': typeof AuthenticatedSettingsPresetsRoute
   '/workers/errors': typeof AuthenticatedWorkersErrorsRoute
+  '/workers/ip-monitor': typeof AuthenticatedWorkersIpMonitorRoute
   '/accounts': typeof AuthenticatedAccountsIndexRoute
   '/analytics': typeof AuthenticatedAnalyticsIndexRoute
   '/audit': typeof AuthenticatedAuditIndexRoute
@@ -273,6 +282,7 @@ export interface FileRoutesById {
   '/_authenticated/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/_authenticated/settings/presets': typeof AuthenticatedSettingsPresetsRoute
   '/_authenticated/workers/errors': typeof AuthenticatedWorkersErrorsRoute
+  '/_authenticated/workers/ip-monitor': typeof AuthenticatedWorkersIpMonitorRoute
   '/_authenticated/accounts/': typeof AuthenticatedAccountsIndexRoute
   '/_authenticated/analytics/': typeof AuthenticatedAnalyticsIndexRoute
   '/_authenticated/audit/': typeof AuthenticatedAuditIndexRoute
@@ -304,6 +314,7 @@ export interface FileRouteTypes {
     | '/settings/notifications'
     | '/settings/presets'
     | '/workers/errors'
+    | '/workers/ip-monitor'
     | '/accounts/'
     | '/analytics/'
     | '/audit/'
@@ -332,6 +343,7 @@ export interface FileRouteTypes {
     | '/settings/notifications'
     | '/settings/presets'
     | '/workers/errors'
+    | '/workers/ip-monitor'
     | '/accounts'
     | '/analytics'
     | '/audit'
@@ -362,6 +374,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/notifications'
     | '/_authenticated/settings/presets'
     | '/_authenticated/workers/errors'
+    | '/_authenticated/workers/ip-monitor'
     | '/_authenticated/accounts/'
     | '/_authenticated/analytics/'
     | '/_authenticated/audit/'
@@ -519,6 +532,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAccountsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/workers/ip-monitor': {
+      id: '/_authenticated/workers/ip-monitor'
+      path: '/workers/ip-monitor'
+      fullPath: '/workers/ip-monitor'
+      preLoaderRoute: typeof AuthenticatedWorkersIpMonitorRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/workers/errors': {
       id: '/_authenticated/workers/errors'
       path: '/workers/errors'
@@ -619,6 +639,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
   AuthenticatedWorkersErrorsRoute: typeof AuthenticatedWorkersErrorsRoute
+  AuthenticatedWorkersIpMonitorRoute: typeof AuthenticatedWorkersIpMonitorRoute
   AuthenticatedAccountsIndexRoute: typeof AuthenticatedAccountsIndexRoute
   AuthenticatedAnalyticsIndexRoute: typeof AuthenticatedAnalyticsIndexRoute
   AuthenticatedAuditIndexRoute: typeof AuthenticatedAuditIndexRoute
@@ -635,6 +656,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
   AuthenticatedWorkersErrorsRoute: AuthenticatedWorkersErrorsRoute,
+  AuthenticatedWorkersIpMonitorRoute: AuthenticatedWorkersIpMonitorRoute,
   AuthenticatedAccountsIndexRoute: AuthenticatedAccountsIndexRoute,
   AuthenticatedAnalyticsIndexRoute: AuthenticatedAnalyticsIndexRoute,
   AuthenticatedAuditIndexRoute: AuthenticatedAuditIndexRoute,

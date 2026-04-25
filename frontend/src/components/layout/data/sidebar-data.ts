@@ -81,6 +81,7 @@ export const sidebarData: SidebarData = {
           items: [
             { title: '목록', url: '/workers' },
             { title: '에러 로그', url: '/workers/errors' },
+            { title: 'IP 감시', url: '/workers/ip-monitor' },
           ],
         },
         {
