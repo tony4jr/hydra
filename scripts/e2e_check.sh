@@ -14,6 +14,14 @@ URL="${HYDRA_URL:?HYDRA_URL required}"
 EMAIL="${ADMIN_EMAIL:?ADMIN_EMAIL required}"
 PW="${ADMIN_PASSWORD:?ADMIN_PASSWORD required}"
 
+# --phase=N 인자: 해당 phase 까지의 게이트만 검증 (작업 진행 단계 제어)
+PHASE="all"
+for arg in "$@"; do
+    case "$arg" in
+        --phase=*) PHASE="${arg#--phase=}" ;;
+    esac
+done
+
 PASS=0
 FAIL=0
 
@@ -192,8 +200,16 @@ else
     _fail "workers list current_task 필드 누락"
 fi
 
+# Phase 1 까지만 → 종료
+if [[ "$PHASE" == "1" ]]; then
+    _section "결과 (Phase 1 까지)"
+    echo "PASS: $PASS / FAIL: $FAIL"
+    exit "$FAIL"
+fi
+
+# ── Phase 2a: T1-T4 안전장치 ──
 # ── 10. T1 스크린샷 캡처 (Phase 2) ──
-_section "10. Phase 2 T1: 스크린샷 캡처"
+_section "10. Phase 2a T1: 스크린샷 캡처"
 # 1x1 PNG
 python3 -c "open('/tmp/e2e_shot.png','wb').write(bytes.fromhex('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c63f80f000001010003fe8acbd80000000049454e44ae426082'))"
 
@@ -252,15 +268,37 @@ else
 fi
 
 # ── 13. T4 백업 (선택) ──
-_section "13. Phase 2 T4: B2 백업 (구성 시)"
+_section "13. Phase 2a T4: B2 백업 (구성 시)"
 if [[ -n "${B2_KEY_ID:-}" ]] && [[ -n "${B2_APP_KEY:-}" ]]; then
     _ok "B2 자격증명 환경변수 존재 (실 백업 검증은 별도 스크립트)"
 else
-    echo "  ⚠️  B2 미구성 — 스킵 (T4 미완료)"
+    echo "  ⚠️  B2 미구성 — 스킵 (T4 미완료, Phase 2a gate 미통과)"
+    if [[ "$PHASE" == "2a" ]]; then
+        # Phase 2a gate 검증 모드 — B2 미구성은 FAIL
+        FAIL=$((FAIL + 1))
+        echo "  ❌ T4 미완료 — Phase 2a 게이트 미통과" >&2
+    fi
 fi
 
+# Phase 2a 까지만 → 종료
+if [[ "$PHASE" == "2a" ]]; then
+    _section "결과 (Phase 2a 까지)"
+    echo "PASS: $PASS / FAIL: $FAIL"
+    if [[ "$FAIL" -gt 0 ]]; then
+        echo "❌ Phase 2a 게이트 미통과 — 다음 phase 진입 차단" >&2
+    else
+        echo "✅ Phase 2a 게이트 통과 — Phase 2b 진입 가능" >&2
+    fi
+    exit "$FAIL"
+fi
+
+# ── Phase 2b/2c/3+ 는 향후 추가 ──
+# §14-18: Phase 3a (T7-T11) Circuit Breaker / IP 감시 / 비상정지 / 재시도 / UA
+# §19-22: Phase 3b (T12-T15) 모니터링 / staging / tags / FP 회전
+# §23-27: Phase 4 (T16-T20) 캠페인 데이터 / 생성 / 실행
+
 # ── 요약 ──
-_section "결과"
+_section "결과 (전체)"
 echo "PASS: $PASS"
 echo "FAIL: $FAIL"
 exit "$FAIL"
