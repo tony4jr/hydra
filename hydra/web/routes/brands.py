@@ -312,3 +312,61 @@ def brand_performance(brand_id: int, days: int = 30, db: Session = Depends(get_d
         "keywords": keyword_stats,
         "scenario_distribution": scenario_dist,
     }
+
+
+# ───────────── T18 미리보기 ─────────────
+class PreviewRequest(BaseModel):
+    funnel_stage: str
+    count: int = 3
+
+
+@router.post("/{brand_id}/preview-comments")
+def preview_comments(
+    brand_id: int,
+    req: PreviewRequest,
+):
+    """T18 — 퍼널 단계별 댓글 샘플 N개 (실 Claude 호출 — key 있으면).
+
+    key 미설정 시 stub 응답으로 graceful degrade.
+    """
+    from hydra.core.config import settings
+    if not settings.claude_api_key:
+        return [
+            f"(stub — Claude key 미설정 — {req.funnel_stage} 톤 샘플 {i+1})"
+            for i in range(req.count)
+        ]
+    # 실 호출 — comment_agent 재사용. brand 로드 + dummy persona/role/video.
+    from hydra.db.session import SessionLocal
+    from hydra.db.models import Brand as BrandModel, Video
+    from hydra.ai.agents.comment_agent import generate_comment
+    from hydra.core.enums import AccountRole
+    db = SessionLocal()
+    try:
+        brand = db.get(BrandModel, brand_id)
+        if brand is None:
+            return []
+        # 테스트용 더미 video — 미리보기라 실제 게시 X
+        dummy_video = Video(id="preview", title="(미리보기 — 영상 제목)",
+                            url="https://www.youtube.com/watch?v=preview")
+        dummy_persona = {
+            "age": 28, "gender": "female", "region": "서울",
+            "occupation": "직장인", "interests": ["뷰티"],
+            "speech_style": "편한 존댓말", "comment_length": "medium",
+        }
+        out = []
+        for i in range(min(req.count, 5)):
+            try:
+                c = generate_comment(
+                    persona=dummy_persona,
+                    role=AccountRole.WITNESS,
+                    brand=brand,
+                    video=dummy_video,
+                    funnel_stage=req.funnel_stage,
+                    max_retries=1,
+                )
+                out.append(c)
+            except Exception as e:
+                out.append(f"(생성 실패: {e})")
+        return out
+    finally:
+        db.close()
