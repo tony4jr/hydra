@@ -73,19 +73,20 @@ def get_disk_pct(path: str = "/") -> float:
 
 
 def get_cert_days_remaining(domain: str = "hydra-prod.duckdns.org") -> int | None:
-    """Let's Encrypt 인증서 만료까지 남은 일."""
-    cert_path = Path(f"/etc/letsencrypt/live/{domain}/cert.pem")
-    if not cert_path.is_file():
-        return None
+    """Let's Encrypt 인증서 만료까지 남은 일.
+
+    /etc/letsencrypt 는 root 만 읽기 가능 → openssl s_client 로 외부에서 조회
+    (deployer 도 권한 충분).
+    """
     try:
         result = subprocess.run(
-            ["openssl", "x509", "-enddate", "-noout", "-in", str(cert_path)],
+            ["bash", "-c",
+             f"echo | openssl s_client -servername {domain} -connect {domain}:443 2>/dev/null "
+             "| openssl x509 -enddate -noout"],
             capture_output=True, text=True, timeout=10,
         )
-        # notAfter=Jul 22 12:34:56 2026 GMT
         line = result.stdout.strip()
         if line.startswith("notAfter="):
-            from email.utils import parsedate_to_datetime
             end_str = line.split("=", 1)[1]
             end = datetime.strptime(end_str, "%b %d %H:%M:%S %Y %Z")
             delta = end - datetime.utcnow()
