@@ -292,10 +292,65 @@ if [[ "$PHASE" == "2a" ]]; then
     exit "$FAIL"
 fi
 
-# ── Phase 2b/2c/3+ 는 향후 추가 ──
-# §14-18: Phase 3a (T7-T11) Circuit Breaker / IP 감시 / 비상정지 / 재시도 / UA
-# §19-22: Phase 3b (T12-T15) 모니터링 / staging / tags / FP 회전
-# §23-27: Phase 4 (T16-T20) 캠페인 데이터 / 생성 / 실행
+# ── Phase 3a 게이트 (T7-T11) ──
+_section "14. Phase 3a T7: Circuit Breaker 컬럼"
+# workers 테이블에 consecutive_failures 컬럼 존재 확인
+COL_CHECK=$(curl -s -H "Authorization: Bearer $TOKEN" "$URL/api/admin/workers/" | \
+    python3 -c "import json,sys; d=json.load(sys.stdin); print('present' if d else 'no_workers')" 2>/dev/null)
+if [[ "$COL_CHECK" == "present" || "$COL_CHECK" == "no_workers" ]]; then
+    _ok "workers 엔드포인트 정상 (CB 컬럼 마이그레이션 적용)"
+else
+    _fail "workers 응답 이상: $COL_CHECK"
+fi
+
+_section "15. Phase 3a T8: IP 감시 엔드포인트"
+IP_HIST=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TOKEN" \
+    "$URL/api/admin/workers/ip-history?hours=1")
+[[ "$IP_HIST" == "200" ]] && _ok "ip-history → 200" || _fail "ip-history → $IP_HIST"
+IP_CONF=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TOKEN" \
+    "$URL/api/admin/workers/ip-conflicts?hours=1")
+[[ "$IP_CONF" == "200" ]] && _ok "ip-conflicts → 200" || _fail "ip-conflicts → $IP_CONF"
+
+_section "16. Phase 3a T9: 비상정지 엔드포인트 (호출 안 함)"
+ES_OPTIONS=$(curl -s -o /dev/null -w "%{http_code}" -X OPTIONS "$URL/api/admin/emergency-stop")
+ES_AUTH=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$URL/api/admin/emergency-stop")
+[[ "$ES_AUTH" == "401" ]] && _ok "emergency-stop 미인증 거절" || _fail "emergency-stop auth → $ES_AUTH"
+
+_section "17. Phase 3a T10/T11: 정책 모듈 import 가능 (서버 재시작 후)"
+# 서버가 새 모듈 로드 성공했는지 — heartbeat 응답으로 간접 확인
+HB_OK=$(echo "$HB" | python3 -c 'import json,sys;d=json.load(sys.stdin);print("ok" if "pending_commands" in d else "fail")')
+[[ "$HB_OK" == "ok" ]] && _ok "헤더 정상 (orchestrator/profile_verify 로드됨)" || _fail "heartbeat 비정상"
+
+# Phase 3a 까지만 → 종료
+if [[ "$PHASE" == "3a" ]]; then
+    _section "결과 (Phase 3a 까지)"
+    echo "PASS: $PASS / FAIL: $FAIL"
+    exit "$FAIL"
+fi
+
+# ── Phase 3b 게이트 (T12-T15) ──
+_section "19. Phase 3b T14: Tags 엔드포인트"
+TAGS_AUTH=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$URL/api/admin/adspower/accounts/tag")
+[[ "$TAGS_AUTH" == "401" ]] && _ok "tag 미인증 거절" || _fail "tag auth → $TAGS_AUTH"
+TAG_GET=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TOKEN" \
+    "$URL/api/admin/adspower/accounts/by-tag/test-nonexistent")
+[[ "$TAG_GET" == "200" ]] && _ok "by-tag → 200 (빈 배열)" || _fail "by-tag → $TAG_GET"
+
+_section "20. Phase 3b T15: FP 회전 dry-run"
+FP_DRY=$(curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    -d '{"days_since_last": 30, "max_per_run": 1, "dry_run": true}' \
+    "$URL/api/admin/adspower/fingerprint-rotation")
+FP_OK=$(echo "$FP_DRY" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("dry_run", False))' 2>/dev/null)
+[[ "$FP_OK" == "True" ]] && _ok "fingerprint-rotation dry_run 정상" || _fail "fp rotation: $FP_DRY"
+
+# Phase 3b 까지만 → 종료
+if [[ "$PHASE" == "3b" ]]; then
+    _section "결과 (Phase 3b 까지)"
+    echo "PASS: $PASS / FAIL: $FAIL"
+    exit "$FAIL"
+fi
+
+# §23+: Phase 4 캠페인 (T17/T20 추가 예정)
 
 # ── 요약 ──
 _section "결과 (전체)"

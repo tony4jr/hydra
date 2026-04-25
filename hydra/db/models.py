@@ -686,6 +686,35 @@ class ExecutionLog(Base):
     )
 
 
+class CampaignVideo(Base):
+    """T17 — 캠페인이 여러 영상을 타겟팅 (1:N).
+
+    기존 Campaign.video_id 는 단일 영상용 — 호환 유지.
+    캠페인이 다영상 모드면 campaign_videos 가 진실, video_id 는 NULL 가능.
+
+    각 row 는 캠페인이 그 영상에 대해 수행할 작업의 메타:
+    - target_count: 그 영상에 댓글 N개 (다계정 분배)
+    - completed_count: 진행 진척도
+    - funnel_stage: 인지/고려/전환/리텐션 (퍼널 단계)
+    """
+    __tablename__ = "campaign_videos"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    campaign_id = Column(Integer, ForeignKey("campaigns.id"), nullable=False)
+    video_id = Column(String, ForeignKey("videos.id"), nullable=False)
+    funnel_stage = Column(String(32), nullable=True)  # awareness|consideration|conversion|retention
+    target_count = Column(Integer, nullable=False, default=1)
+    completed_count = Column(Integer, nullable=False, default=0)
+    priority = Column(Integer, nullable=False, default=0)  # 정렬 우선순위
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+
+    __table_args__ = (
+        UniqueConstraint("campaign_id", "video_id", name="uq_campaign_video"),
+        Index("idx_cvideo_campaign", "campaign_id"),
+        Index("idx_cvideo_video", "video_id"),
+    )
+
+
 class WorkerCommand(Base):
     """어드민이 워커에게 발행하는 원격 명령.
 
