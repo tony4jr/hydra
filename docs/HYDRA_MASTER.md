@@ -11,11 +11,12 @@
 ```
 🎯 목표: YouTube 댓글 마케팅 자동화 (시장 출시 가능 수준)
 🏗 구성: VPS 서버 + Mac/Windows 워커 + USB 테더링 폰
-✅ 완료: Phase 0~1 (8가지 근본해결) + Phase 2 T1~T3
-🟡 진행: Phase 2 T4 (B2 백업) + T5/T6 (Windows 복귀 후 Stage B/C)
-⬜ 남은: Phase 3 하드닝 / Phase 4 캠페인 런처 / Phase 5 UI 재설계
-🔍 검증: 3계층 (pytest 453 / e2e 13섹션 / 육안)
-🚀 임박: "이번 실행" = Stage C 실 댓글 1건 + 24h 관찰 = 실서비스 투입 가능
+✅ 완료: Phase 0+1 + Phase 2a T1-T3 + Phase 3a 전체 + Phase 3b 일부 (T14/T15)
+🟡 진행: Phase 2a T4 (B2 코드 ✅, 자격증명 대기)
+⬜ 외부 자격증명 필요: T4 B2 / T12 UptimeRobot / T13 staging / T16 YouTube API / T19 Claude API
+⬜ Windows 필요: Phase 2b (T5) / Phase 2c (T6 + 24h) — '이번 실행' 종결
+🔍 검증: 3계층 (pytest 478 / e2e 13섹션 / 육안)
+🚀 임박: T4 자격증명 받으면 즉시 가동 → Phase 2a 게이트 통과 → Windows 복귀 시 Stage B/C
 ```
 
 ---
