@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import { ContentSection } from '../components/content-section'
 import { fetchApi } from '@/lib/api'
+import { toast } from 'sonner'
 
 interface ApiSettings {
   claude_api_key?: string
@@ -61,17 +62,34 @@ export function SettingsGeneral() {
   const handleSave = async () => {
     setSaving(true)
     try {
-      await fetchApi('/settings/api/save', { method: 'POST', body: JSON.stringify(settings) })
-    } catch { /* error */ }
-    finally { setSaving(false) }
+      const result = await fetchApi<{ ok: boolean; saved: number }>(
+        '/settings/api/save',
+        { method: 'POST', body: JSON.stringify(settings) },
+      )
+      toast.success('저장됨', {
+        description: `${result?.saved ?? Object.keys(settings).length}개 항목 저장됨`,
+      })
+    } catch (e) {
+      toast.error('저장 실패', {
+        description: e instanceof Error ? e.message : String(e),
+      })
+    } finally {
+      setSaving(false)
+    }
   }
 
   const handleTestTelegram = async () => {
     setTesting(true)
     try {
       await fetchApi('/settings/api/test-telegram', { method: 'POST' })
-    } catch { /* error */ }
-    finally { setTesting(false) }
+      toast.success('Telegram 테스트 메시지 전송')
+    } catch (e) {
+      toast.error('전송 실패', {
+        description: e instanceof Error ? e.message : String(e),
+      })
+    } finally {
+      setTesting(false)
+    }
   }
 
   return (
