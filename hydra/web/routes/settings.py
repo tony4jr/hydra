@@ -19,9 +19,10 @@ router = APIRouter()
 
 @router.get("/api/all")
 def get_all_settings(db: Session = Depends(get_db)):
-    """Return all settings as flat dict."""
+    """Return all settings wrapped (frontend 기대 형식 + flat 호환)."""
     rows = db.query(SystemConfig).all()
-    return {r.key: r.value for r in rows}
+    flat = {r.key: r.value for r in rows}
+    return {"settings": flat, **flat}  # frontend 신/구 코드 모두 동작
 
 
 @router.post("/api/save")
