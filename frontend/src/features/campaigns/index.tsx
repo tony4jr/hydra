@@ -44,9 +44,9 @@ const statusTag: Record<string, string> = {
 function CampaignStatCard({ label, value }: { label: string; value: number }) {
   const animated = useCountUp(value)
   return (
-    <div className='bg-card rounded-xl border border-border p-4'>
-      <span className='text-muted-foreground text-[12px]'>{label}</span>
-      <div className='text-[28px] font-bold'>{animated}</div>
+    <div className='hydra-stat-card hydra-card-hover'>
+      <span className='hydra-stat-label'>{label}</span>
+      <div className='hydra-stat-value hydra-num-anim'>{animated}</div>
     </div>
   )
 }
@@ -86,7 +86,7 @@ export default function CampaignsPage() {
         <div >
           <div className='mb-5 flex flex-wrap items-center justify-between gap-2'>
             <div>
-              <h2 className='text-[22px] font-bold'>캠페인</h2>
+              <h2 className='text-[22px] font-bold hydra-page-h'>캠페인</h2>
               <p className='text-muted-foreground text-[13px]'>
                 어디에, 어떻게, 얼마나 작업할지 관리하세요
               </p>
@@ -115,12 +115,20 @@ export default function CampaignsPage() {
               ))}
             </div>
           ) : campaigns.length === 0 ? (
-            <div className='bg-card border border-border rounded-xl py-16 text-center'>
-              <p className='text-muted-foreground text-[14px] mb-1'>아직 캠페인이 없어요</p>
-              <p className='text-muted-foreground/60 text-[12px] mb-4'>브랜드를 등록하고 캠페인을 만들어보세요</p>
-              <Button onClick={() => setCreateOpen(true)} variant='outline' className='hydra-btn-press'>
-                <Plus className='mr-2 h-4 w-4' /> 첫 캠페인 만들기
-              </Button>
+            <div className='hydra-empty'>
+              <div className='hydra-empty-icon'>📋</div>
+              <div className='hydra-empty-title'>아직 캠페인이 없어요</div>
+              <div className='hydra-empty-desc'>
+                브랜드를 등록하고 첫 캠페인을 만들어보세요. 다이렉트로 빠르게 만들 수도 있어요.
+              </div>
+              <div className='flex gap-2 mt-2'>
+                <Button onClick={() => setDirectOpen(true)} variant='outline' className='hydra-btn-press'>
+                  <Zap className='mr-2 h-4 w-4' /> 다이렉트
+                </Button>
+                <Button onClick={() => setCreateOpen(true)} className='hydra-btn-press'>
+                  <Plus className='mr-2 h-4 w-4' /> 캠페인 만들기
+                </Button>
+              </div>
             </div>
           ) : (
             <div className='space-y-3'>

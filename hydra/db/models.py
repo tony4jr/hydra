@@ -770,6 +770,45 @@ class WorkerError(Base):
     )
 
 
+class CommentSnapshot(Base):
+    """Periodic snapshot of one of our comments — used to track ranking / hold / ghost over time.
+
+    Background scheduler (or worker like_boost task) opens the video page from a
+    different (rotation) viewer account, finds our comment by youtube_comment_id,
+    and records:
+      - rank: position in default 'top comments' (None if not in first N)
+      - like_count: how many likes the comment has accumulated
+      - reply_count: how many replies under it
+      - visible_to_third_party: True if seen from a different (clean) profile
+      - is_held: True if comment shows 'pending review' badge
+    """
+    __tablename__ = "comment_snapshots"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False)
+    video_id = Column(String, ForeignKey("videos.id"), nullable=False)
+    youtube_comment_id = Column(String, nullable=False)  # Ugxxx
+    posted_at = Column(DateTime, nullable=True)          # original post time
+    captured_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+
+    rank = Column(Integer, nullable=True)                # 1=top, None=not in top N scanned
+    rank_scope = Column(Integer, default=20)             # how many top threads we scanned
+    like_count = Column(Integer, default=0)
+    reply_count = Column(Integer, default=0)
+
+    visible_to_third_party = Column(Boolean, default=True)
+    is_held = Column(Boolean, default=False)             # 'held for review' badge present
+    is_deleted = Column(Boolean, default=False)          # comment vanished entirely
+
+    captured_by_account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True)  # 누가 봤는지
+
+    __table_args__ = (
+        Index("idx_snap_yt_id", "youtube_comment_id", "captured_at"),
+        Index("idx_snap_video_time", "video_id", "captured_at"),
+        Index("idx_snap_account", "account_id", "captured_at"),
+    )
+
+
 class AuditLog(Base):
     """관리자 액션 감사 로그 — 누가/언제/무엇을 기록.
 

@@ -106,12 +106,43 @@ def can_execute_task(db: Session, account_id: int, task_type: str) -> tuple[bool
 
 # === 계정 상태별 한도 비율 ===
 
-STATUS_RATIOS = {
-    "warmup": 0.3,      # 워밍업: 기본값의 30%
-    "active": 1.0,      # 활성: 100%
-    "cooldown": 0.5,    # 쿨다운 복귀: 50%
-    "registered": 0.0,  # 등록만: 작업 안 함
+# Hard-coded fallback (used if DB system_config entry missing or malformed).
+# Live values are read from system_config['status_ratios'] (JSON) — see
+# get_status_ratios() below. Admin UI edits go to that key.
+STATUS_RATIOS_DEFAULTS = {
+    "warmup": 0.3,
+    "active": 1.0,
+    "cooldown": 0.5,
+    "registered": 0.0,
 }
+
+# Backwards-compat — anywhere still importing STATUS_RATIOS gets defaults.
+# New callers should use get_status_ratios(db).
+STATUS_RATIOS = dict(STATUS_RATIOS_DEFAULTS)
+
+
+def get_status_ratios(db: Session | None = None) -> dict[str, float]:
+    """Read live STATUS_RATIOS from DB system_config. Fallback to defaults."""
+    import json as _json
+    from hydra.db.models import SystemConfig
+    own_db = False
+    if db is None:
+        from hydra.db.session import SessionLocal as _SL
+        db = _SL()
+        own_db = True
+    try:
+        row = db.query(SystemConfig).filter(SystemConfig.key == "status_ratios").first()
+        if row and row.value:
+            try:
+                parsed = _json.loads(row.value)
+                if isinstance(parsed, dict):
+                    return {**STATUS_RATIOS_DEFAULTS, **{k: float(v) for k, v in parsed.items()}}
+            except Exception:
+                pass
+    finally:
+        if own_db:
+            db.close()
+    return dict(STATUS_RATIOS_DEFAULTS)
 
 
 _LIMIT_DEFAULTS = {
@@ -127,7 +158,8 @@ def get_effective_limit(account: Account, limit_field: str) -> int:
     base = getattr(account, limit_field, None)
     if base is None:
         base = _LIMIT_DEFAULTS.get(limit_field, 15)
-    ratio = STATUS_RATIOS.get(account.status, 1.0)
+    # Live ratio from DB; falls back to defaults if entry missing
+    ratio = get_status_ratios().get(account.status, 1.0)
     return max(1, int(base * ratio))
 
 

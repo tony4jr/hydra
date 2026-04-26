@@ -2,6 +2,7 @@
 @import 'tw-animate-css';
 @import './theme.css';
 @import './hydra.css';
+@import './toss-polish.css';
 
 @custom-variant dark (&:is(.dark *));
 

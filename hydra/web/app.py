@@ -21,6 +21,7 @@ from hydra.web.routes import (
     admin_auth, admin_workers, admin_avatars, admin_deploy, admin_audit,
     admin_accounts, admin_tasks, admin_adspower,
     avatar_serving, worker_api, tasks_api,
+    analytics,
 )
 from hydra.api.workers import router as workers_router
 from hydra.api.tasks import router as tasks_router
@@ -122,6 +123,7 @@ app.include_router(avatar_serving.router, prefix="/api/avatars",      tags=["ava
 app.include_router(worker_api.router,    prefix="/api/workers",       tags=["worker-v2"])
 # Task 21: 신규 태스크 큐 (/api/tasks/v2/*) — SKIP LOCKED + ProfileLock.
 app.include_router(tasks_api.router,     prefix="/api/tasks/v2",      tags=["tasks-v2"])
+app.include_router(analytics.router,                                  tags=["analytics"], dependencies=_ADMIN_DEPS)
 
 
 @app.get("/", response_class=HTMLResponse)

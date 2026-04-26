@@ -1,0 +1,17 @@
+[Unit]
+Description=HYDRA FastAPI Server (staging)
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=deployer
+Environment=PYTHONUNBUFFERED=1
+Environment=HYDRA_ENV=staging
+WorkingDirectory=/opt/hydra-staging
+EnvironmentFile=/opt/hydra-staging/.env
+ExecStart=/opt/hydra-staging/.venv/bin/uvicorn hydra.web.app:app --host 127.0.0.1 --port 8001
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

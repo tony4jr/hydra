@@ -31,18 +31,15 @@ function StatCard({ label, value, icon: Icon, sub, danger }: {
 }) {
   const animated = useCountUp(value)
   return (
-    <div
-      className={`rounded-xl p-5 transition-colors ${danger ? 'border border-destructive/40' : 'border border-white/10'}`}
-      style={{ background: 'rgba(255,255,255,0.03)' }}
-    >
-      <div className='flex items-center justify-between mb-3'>
-        <span className='text-muted-foreground text-xs tracking-wide'>{label}</span>
-        <Icon className='h-4 w-4 text-muted-foreground/50' />
+    <div className={`hydra-stat-card hydra-card-hover ${danger ? 'border-destructive/40' : ''}`}>
+      <div className='flex items-center justify-between'>
+        <span className='hydra-stat-label'>{label}</span>
+        <Icon className={`h-4 w-4 ${danger ? 'text-destructive/70' : 'text-muted-foreground/50'}`} />
       </div>
-      <div className={`text-3xl font-bold tracking-tight ${danger ? 'text-destructive' : 'text-foreground'}`}>
+      <div className={`hydra-stat-value hydra-num-anim ${danger ? 'text-destructive' : ''}`}>
         {animated}
       </div>
-      {sub && <div className={`text-xs mt-2 ${danger ? 'text-destructive/80' : 'text-muted-foreground/70'}`}>{sub}</div>}
+      {sub && <div className={`text-xs ${danger ? 'text-destructive/80' : 'text-muted-foreground/70'}`}>{sub}</div>}
     </div>
   )
 }
@@ -121,7 +118,15 @@ export function Dashboard() {
       </Header>
 
       <Main>
-        <div className='space-y-5'>
+        <div className='space-y-5 hydra-page'>
+
+          {/* === Page Title === */}
+          <div className='flex items-end justify-between flex-wrap gap-3'>
+            <div>
+              <h1 className='hydra-page-h'>대시보드</h1>
+              <p className='hydra-page-sub'>시스템 상태와 오늘의 활동을 한눈에 확인하세요.</p>
+            </div>
+          </div>
 
           {/* === Task 28: 서버 상태 바 (배포 + 긴급정지) === */}
           <ServerStatusBar />

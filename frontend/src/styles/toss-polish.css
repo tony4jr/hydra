@@ -1,0 +1,271 @@
+/* ============================================
+   HYDRA Toss-level Polish
+   - Korean-optimized typography (Pretendard)
+   - Refined spacing + shadows
+   - Subtle motion + state transitions
+   - Brand-aligned color usage
+   ============================================ */
+
+/* === Pretendard Variable (Korean-first) === */
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.css");
+
+:root {
+  --font-display: 'Pretendard Variable', 'Pretendard', -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'JetBrains Mono', Consolas, monospace;
+
+  /* Spacing scale (Toss-aligned: generous, predictable) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Shadow scale — soft, subtle */
+  --shadow-xs: 0 1px 2px 0 rgb(15 23 42 / 0.04);
+  --shadow-sm: 0 1px 3px 0 rgb(15 23 42 / 0.06), 0 1px 2px -1px rgb(15 23 42 / 0.06);
+  --shadow-md: 0 4px 6px -1px rgb(15 23 42 / 0.08), 0 2px 4px -2px rgb(15 23 42 / 0.06);
+  --shadow-lg: 0 10px 15px -3px rgb(15 23 42 / 0.1), 0 4px 6px -4px rgb(15 23 42 / 0.06);
+  --shadow-xl: 0 20px 25px -5px rgb(15 23 42 / 0.12), 0 8px 10px -6px rgb(15 23 42 / 0.06);
+
+  /* Brand blue (Toss-inspired) — keep as accent on light primary */
+  --hydra-blue: oklch(0.66 0.19 254);
+  --hydra-blue-soft: oklch(0.96 0.04 254);
+  --hydra-blue-fg: oklch(0.36 0.18 254);
+
+  --hydra-success: oklch(0.7 0.18 152);
+  --hydra-warning: oklch(0.78 0.16 76);
+  --hydra-danger: oklch(0.65 0.24 27);
+
+  /* Motion */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-cubic: cubic-bezier(0.33, 1, 0.68, 1);
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
+}
+
+/* Apply Pretendard globally — better Korean rendering */
+html, body, button, input, select, textarea {
+  font-family: var(--font-display);
+  font-feature-settings: 'ss01' on, 'cv01' on, 'tnum' on;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.01em;
+}
+
+/* === Refined Card === */
+.hydra-card {
+  background: var(--card);
+  color: var(--card-foreground);
+  border: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
+  transition:
+    transform var(--duration-base) var(--ease-out-cubic),
+    box-shadow var(--duration-base) var(--ease-out-cubic),
+    border-color var(--duration-base) var(--ease-out-cubic);
+}
+
+.hydra-card-hover:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+  border-color: color-mix(in oklab, var(--border) 100%, transparent);
+}
+
+/* === Stat KPI Card (Toss-style) === */
+.hydra-stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-6);
+  background: var(--card);
+  border: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
+  transition: all var(--duration-base) var(--ease-out-cubic);
+  position: relative;
+  overflow: hidden;
+}
+
+.hydra-stat-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent, color-mix(in oklab, var(--accent) 8%, transparent));
+  opacity: 0;
+  transition: opacity var(--duration-base) var(--ease-out-cubic);
+  pointer-events: none;
+}
+
+.hydra-stat-card:hover::before { opacity: 1; }
+
+.hydra-stat-label {
+  color: var(--muted-foreground);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+}
+
+.hydra-stat-value {
+  color: var(--foreground);
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  font-feature-settings: 'tnum' on;
+}
+
+.hydra-stat-delta {
+  font-size: 12px;
+  font-weight: 600;
+  font-feature-settings: 'tnum' on;
+}
+
+.hydra-stat-delta.up   { color: var(--hydra-success); }
+.hydra-stat-delta.down { color: var(--hydra-danger); }
+.hydra-stat-delta.flat { color: var(--muted-foreground); }
+
+/* === Refined Button — soft press === */
+.hydra-btn-press {
+  transition:
+    transform var(--duration-fast) var(--ease-out-cubic),
+    box-shadow var(--duration-fast) var(--ease-out-cubic),
+    background-color var(--duration-fast) var(--ease-out-cubic);
+}
+
+.hydra-btn-press:active:not(:disabled) {
+  transform: translateY(1px) scale(0.99);
+}
+
+/* === Section Header (typography emphasis) === */
+.hydra-section-h {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  margin-bottom: var(--space-3);
+}
+
+.hydra-page-h {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  color: var(--foreground);
+  line-height: 1.15;
+}
+
+.hydra-page-sub {
+  font-size: 14px;
+  color: var(--muted-foreground);
+  margin-top: var(--space-2);
+}
+
+/* === Skeleton (content-aware) === */
+@keyframes hydra-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.hydra-skeleton {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--muted) 60%, transparent) 0%,
+    color-mix(in oklab, var(--muted) 100%, transparent) 50%,
+    color-mix(in oklab, var(--muted) 60%, transparent) 100%
+  );
+  background-size: 200% 100%;
+  animation: hydra-shimmer 1.6s ease-in-out infinite;
+  border-radius: var(--radius-md);
+}
+
+/* === Empty state === */
+.hydra-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-12) var(--space-6);
+  gap: var(--space-3);
+  border: 1px dashed color-mix(in oklab, var(--border) 80%, transparent);
+  border-radius: var(--radius-lg);
+  text-align: center;
+}
+
+.hydra-empty-icon {
+  font-size: 32px;
+  opacity: 0.6;
+  margin-bottom: var(--space-1);
+}
+
+.hydra-empty-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.hydra-empty-desc {
+  font-size: 13px;
+  color: var(--muted-foreground);
+  max-width: 360px;
+  line-height: 1.5;
+}
+
+/* === Tag refinements === */
+.hydra-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 999px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.hydra-tag-success { background: color-mix(in oklab, var(--hydra-success) 15%, transparent); color: var(--hydra-success); }
+.hydra-tag-warning { background: color-mix(in oklab, var(--hydra-warning) 18%, transparent); color: oklch(0.5 0.16 76); }
+.hydra-tag-danger  { background: color-mix(in oklab, var(--hydra-danger) 12%, transparent); color: var(--hydra-danger); }
+.hydra-tag-blue    { background: var(--hydra-blue-soft); color: var(--hydra-blue-fg); }
+.hydra-tag-muted   { background: color-mix(in oklab, var(--muted) 100%, transparent); color: var(--muted-foreground); }
+
+/* === Number Animation === */
+.hydra-num-anim {
+  font-feature-settings: 'tnum' on;
+  animation: countUp var(--duration-slow) var(--ease-out-expo);
+}
+
+/* === Focus ring (accessible + on-brand) === */
+*:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+button:focus-visible, a:focus-visible {
+  outline-offset: 3px;
+}
+
+/* === Smooth all interactive elements (default) === */
+button, a, input, select, textarea, [role="button"], [role="tab"] {
+  transition:
+    background-color var(--duration-fast) var(--ease-out-cubic),
+    border-color var(--duration-fast) var(--ease-out-cubic),
+    color var(--duration-fast) var(--ease-out-cubic),
+    opacity var(--duration-fast) var(--ease-out-cubic);
+}
+
+/* === Page transition (TanStack Router compatibility) === */
+@keyframes hydra-page-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.hydra-page {
+  animation: hydra-page-in var(--duration-slow) var(--ease-out-expo);
+}

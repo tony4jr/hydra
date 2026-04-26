@@ -54,6 +54,20 @@ export function SettingsBehavior() {
         setConfig(prev => ({ ...prev, ...parsed }))
       })
       .catch(() => {})
+
+    // Load live status_ratios — overrides whatever was in flat keys
+    fetchApi<{ ratios: Record<string, number> }>('/settings/api/status-ratios')
+      .then(data => {
+        if (data?.ratios) {
+          setConfig(prev => ({
+            ...prev,
+            ratio_warmup: Math.round((data.ratios.warmup ?? 0.3) * 100),
+            ratio_active: Math.round((data.ratios.active ?? 1.0) * 100),
+            ratio_cooldown_return: Math.round((data.ratios.cooldown ?? 0.5) * 100),
+          }))
+        }
+      })
+      .catch(() => {})
   }, [])
 
   const update = (key: keyof BehaviorConfig, value: string) => {
@@ -66,9 +80,25 @@ export function SettingsBehavior() {
   const handleSave = async () => {
     setSaving(true)
     try {
+      // Save flat key-value pairs (legacy format)
       await fetchApi('/settings/api/save', { method: 'POST', body: JSON.stringify(config) })
-    } catch { /* error */ }
-    finally { setSaving(false) }
+      // Also save to live status_ratios endpoint (used by account_limits.py)
+      const ratios = {
+        warmup: config.ratio_warmup / 100,
+        active: config.ratio_active / 100,
+        cooldown: config.ratio_cooldown_return / 100,
+        registered: 0.0,
+      }
+      await fetchApi('/settings/api/status-ratios', {
+        method: 'POST',
+        body: JSON.stringify({ ratios }),
+      })
+      const { toast } = await import('sonner')
+      toast.success('저장됨', { description: '한도 비율 즉시 적용' })
+    } catch (e) {
+      const { toast } = await import('sonner')
+      toast.error('저장 실패', { description: e instanceof Error ? e.message : String(e) })
+    } finally { setSaving(false) }
   }
 
   return (

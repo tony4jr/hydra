@@ -61,7 +61,7 @@ export default function BrandsPage() {
         <div >
           <div className='mb-5 flex flex-wrap items-center justify-between gap-2'>
             <div>
-              <h2 className='text-[22px] font-bold'>브랜드</h2>
+              <h2 className='text-[22px] font-bold hydra-page-h'>브랜드</h2>
               <p className='text-muted-foreground text-[13px]'>
                 AI가 제품을 이해하기 위한 브랜드 정보를 관리하세요
               </p>

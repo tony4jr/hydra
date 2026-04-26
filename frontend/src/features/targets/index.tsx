@@ -107,7 +107,7 @@ export default function TargetsPage() {
         <div >
           <div className='mb-5 flex flex-wrap items-center justify-between gap-2'>
             <div>
-              <h2 className='text-[22px] font-bold'>타겟</h2>
+              <h2 className='text-[22px] font-bold hydra-page-h'>타겟</h2>
               <p className='text-muted-foreground text-[13px]'>수집된 영상 목록 확인 및 관리</p>
             </div>
             <div className='flex gap-2'>

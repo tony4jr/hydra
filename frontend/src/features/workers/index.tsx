@@ -126,7 +126,7 @@ export default function WorkersPage() {
         <div >
           <div className='mb-5 flex flex-wrap items-center justify-between gap-2'>
             <div>
-              <h2 className='text-[22px] font-bold'>워커</h2>
+              <h2 className='text-[22px] font-bold hydra-page-h'>워커</h2>
               <p className='text-muted-foreground text-[13px]'>Worker PC 상태 관제 및 관리</p>
             </div>
             <Button onClick={() => setAddDialogOpen(true)} className='hydra-btn-press'>

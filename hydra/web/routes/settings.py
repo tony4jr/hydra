@@ -290,6 +290,35 @@ def trigger_daily_report():
         return {"ok": False, "error": str(e)}
 
 
+@router.get("/api/status-ratios")
+def get_status_ratios_api(db: Session = Depends(get_db)):
+    """현재 status_ratios 반환. (defaults + DB override)"""
+    from hydra.services.account_limits import get_status_ratios, STATUS_RATIOS_DEFAULTS
+    return {
+        "ratios": get_status_ratios(db),
+        "defaults": STATUS_RATIOS_DEFAULTS,
+    }
+
+
+class StatusRatiosInput(BaseModel):
+    ratios: dict[str, float]
+
+
+@router.post("/api/status-ratios")
+def set_status_ratios_api(data: StatusRatiosInput, db: Session = Depends(get_db)):
+    """status_ratios 저장. 0.0~1.0 범위로 클램프."""
+    clamped = {k: max(0.0, min(1.0, float(v))) for k, v in data.ratios.items()}
+    value = json.dumps(clamped, ensure_ascii=False)
+    row = db.query(SystemConfig).filter(SystemConfig.key == "status_ratios").first()
+    if row:
+        row.value = value
+        row.updated_at = datetime.now(timezone.utc)
+    else:
+        db.add(SystemConfig(key="status_ratios", value=value))
+    db.commit()
+    return {"ok": True, "ratios": clamped}
+
+
 @router.get("/api/daily-report-preview")
 def preview_daily_report():
     """리포트 텍스트 미리보기 — 어드민 UI 에서 보낼 내용 확인용."""
