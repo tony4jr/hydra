@@ -1,5 +1,6 @@
 """자동 로그인 + 2FA (TOTP + 복구 이메일 경유 6자리 코드) + 포스트로그인 프롬프트 스킵."""
 import asyncio
+import random
 
 import pyotp
 
@@ -112,13 +113,22 @@ async def auto_login(
         await page.keyboard.press("Enter")
         await random_delay(2.0, 4.0)
 
-        # Step 2: password (Google 의 "실패한 시도 횟수가 너무 많음" 경고에도 입력 필드 존재)
-        password_input = page.locator("input[type='password'][name='Passwd']")
-        await password_input.wait_for(timeout=10_000)
-        await type_human(
-            page, "input[type='password'][name='Passwd']", password,
-            typing_style="typist",
-        )
+        # Step 2: password
+        # Google 이 input name 을 'Passwd' 에서 자주 바꾸므로 (Identifier UI v3 등)
+        # type=password 만으로 매칭하고, 보이는(=visible) 첫 번째만 사용 — pwd 페이지엔
+        # 보통 1개뿐 (recovery 입력같은 추가 input 은 다른 페이지).
+        pw_selector = "input[type='password']:visible"
+        password_input = page.locator(pw_selector)
+        await password_input.first.wait_for(state="visible", timeout=15_000)
+        await random_delay(0.5, 1.5)
+        # type_human 은 selector 를 받아서 page.click(selector) 후 type. visible-only
+        # filter 가 type_human 의 default selector 와 호환 안 되므로 직접 fill.
+        await password_input.first.click()
+        await random_delay(0.3, 0.8)
+        # 글자 단위 타이핑 (anti-detection)
+        for char in password:
+            await page.keyboard.type(char)
+            await asyncio.sleep(random.uniform(0.04, 0.15))
         await random_delay(0.5, 1.5)
         await page.keyboard.press("Enter")
         await random_delay(3.0, 6.0)

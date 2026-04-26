@@ -58,7 +58,37 @@ def should_update(server_version: str, local_version: str) -> bool:
     return server_version != local_version
 
 
-def perform_update(repo_dir: str = r"C:\hydra") -> None:
+def _default_repo_dir() -> str:
+    """Detect repo root for the running worker.
+
+    Priority:
+      1. Env override `HYDRA_REPO_DIR` — explicit deploy paths
+      2. /opt/hydra (Linux/VPS deploy convention)
+      3. ~/Documents/hydra (typical Mac dev/worker)
+      4. C:\\hydra (Windows worker convention) — original default
+      5. cwd as last resort
+    """
+    import os, platform
+    env = os.environ.get("HYDRA_REPO_DIR")
+    if env and Path(env, ".git").exists():
+        return env
+    candidates = [
+        "/opt/hydra",
+        str(Path.home() / "Documents" / "hydra"),
+    ]
+    if platform.system() == "Windows":
+        candidates.insert(0, r"C:\hydra")
+    else:
+        candidates.append(r"C:\hydra")  # last-resort
+    for c in candidates:
+        if Path(c, ".git").exists():
+            return c
+    return os.getcwd()
+
+
+def perform_update(repo_dir: str | None = None) -> None:
+    if repo_dir is None:
+        repo_dir = _default_repo_dir()
     """git fetch+reset → pip install -e . → sys.exit. 실패 시 rollback 후 exit(1).
 
     성공 exit(0) 시 Task Scheduler 가 워커를 재시작한다.
@@ -122,9 +152,11 @@ def perform_update(repo_dir: str = r"C:\hydra") -> None:
 def maybe_update(
     server_version: str,
     local_version: str,
-    repo_dir: str = r"C:\hydra",
+    repo_dir: str | None = None,
     is_idle: bool = True,
 ) -> bool:
+    if repo_dir is None:
+        repo_dir = _default_repo_dir()
     """버전 불일치 + idle 시에만 perform_update 호출.
 
     Returns:

@@ -277,3 +277,24 @@ async def test_telegram(db: Session = Depends(get_db)):
                 return {"ok": False, "error": f"전송 실패: {resp.text}"}
     except Exception as e:
         return {"ok": False, "error": f"연결 실패: {str(e)}"}
+
+
+@router.post("/api/send-daily-report")
+def trigger_daily_report():
+    """관리자가 즉시 일일 리포트 전송. 크론 외에 수동 트리거용."""
+    from hydra.services.telegram_report import send_daily_report
+    try:
+        ok = send_daily_report()
+        return {"ok": ok}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@router.get("/api/daily-report-preview")
+def preview_daily_report():
+    """리포트 텍스트 미리보기 — 어드민 UI 에서 보낼 내용 확인용."""
+    from hydra.services.telegram_report import build_report
+    try:
+        return {"text": build_report()}
+    except Exception as e:
+        return {"error": str(e)}
