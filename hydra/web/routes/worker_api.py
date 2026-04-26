@@ -435,3 +435,42 @@ def heartbeat_v2(
         )
     finally:
         db.close()
+
+
+# ───────────── sync (account + worker rows) ─────────────
+
+@router.get("/sync")
+def sync_data(worker: Worker = Depends(worker_auth)) -> dict:
+    """Return all Account + Worker rows for local DB sync.
+
+    Worker pulls this on startup so ensure_safe_ip can find rows in its local
+    SQLite. Sensitive credential columns (password, totp_secret) are still
+    Fernet-encrypted as stored in the DB — worker has the same encryption key.
+    """
+    db = _db_session.SessionLocal()
+    try:
+        from hydra.db.models import Account
+        accs = []
+        for a in db.query(Account).all():
+            accs.append({c.name: getattr(a, c.name) for c in a.__table__.columns})
+        wkrs = []
+        for w in db.query(Worker).all():
+            wkrs.append({c.name: getattr(w, c.name) for c in w.__table__.columns})
+
+        # Coerce datetimes to ISO strings (FastAPI default JSON encoder handles this,
+        # but being explicit avoids surprises with naive datetimes from SQLite)
+        def _ser(rows):
+            out = []
+            for r in rows:
+                d = {}
+                for k, v in r.items():
+                    if isinstance(v, datetime):
+                        d[k] = v.isoformat()
+                    else:
+                        d[k] = v
+                out.append(d)
+            return out
+
+        return {"accounts": _ser(accs), "workers": _ser(wkrs)}
+    finally:
+        db.close()

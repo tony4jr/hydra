@@ -94,6 +94,16 @@ class ServerClient:
         resp.raise_for_status()
         return resp.json()
 
+    def sync_data(self) -> dict:
+        """Pull accounts + workers from server for local DB sync.
+
+        Used at worker startup so ensure_safe_ip can find the account/worker
+        rows it needs to enforce the 1-account-1-IP invariant.
+        """
+        resp = self._request("GET", "/api/workers/sync", headers=self.headers)
+        resp.raise_for_status()
+        return resp.json()
+
     def fetch_tasks(self) -> list[dict]:
         """서버에서 태스크 가져오기 (M1-10: v2 엔드포인트).
 

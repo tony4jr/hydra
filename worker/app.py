@@ -31,6 +31,72 @@ class WorkerApp:
         """메인 루프 — 단일 async 이벤트 루프로 실행."""
         asyncio.run(self._async_run())
 
+    def _sync_local_db(self):
+        """Sync accounts + workers from server to local SQLite.
+
+        Runs at worker startup. Required because:
+          - WorkerSession.start() calls ensure_safe_ip(db, account, worker),
+            which queries the LOCAL db for those rows.
+          - Without sync, queries return None → ensure_safe_ip is silently
+            skipped → 1-account-1-IP invariant is violated.
+
+        Uses upsert (insert-or-update by id) so this is safe to call repeatedly
+        and won't trip foreign-key constraints from existing related rows
+        (ProfileLock, IpLog, Task).
+        """
+        from datetime import datetime as _dt
+        from sqlalchemy import DateTime, Boolean
+        from hydra.db.session import SessionLocal as _SL
+        from hydra.db.models import Account, Worker
+
+        try:
+            data = self.client.sync_data()
+        except Exception as e:
+            print(f"[Worker] sync_data fetch failed: {e}")
+            return
+        accs = data.get("accounts", [])
+        wkrs = data.get("workers", [])
+
+        def _coerce(model_cls, k, v):
+            if v is None:
+                return None
+            col = model_cls.__table__.columns.get(k)
+            if col is None:
+                return v
+            if isinstance(col.type, DateTime) and isinstance(v, str):
+                try:
+                    return _dt.fromisoformat(v)
+                except Exception:
+                    return None
+            if isinstance(col.type, Boolean) and isinstance(v, (int, str)):
+                return bool(v) if not isinstance(v, str) else v.lower() in ("true", "1")
+            return v
+
+        db = _SL()
+        try:
+            acc_cols = {c.name for c in Account.__table__.columns}
+            wkr_cols = {c.name for c in Worker.__table__.columns}
+            for a in accs:
+                fields = {k: _coerce(Account, k, v) for k, v in a.items() if k in acc_cols}
+                existing = db.get(Account, fields["id"]) if fields.get("id") else None
+                if existing:
+                    for k, v in fields.items():
+                        setattr(existing, k, v)
+                else:
+                    db.add(Account(**fields))
+            for w in wkrs:
+                fields = {k: _coerce(Worker, k, v) for k, v in w.items() if k in wkr_cols}
+                existing = db.get(Worker, fields["id"]) if fields.get("id") else None
+                if existing:
+                    for k, v in fields.items():
+                        setattr(existing, k, v)
+                else:
+                    db.add(Worker(**fields))
+            db.commit()
+            print(f"[Worker] synced local DB: {len(accs)} accounts, {len(wkrs)} workers")
+        finally:
+            db.close()
+
     async def _async_run(self):
         """Persistent async event loop for Playwright compatibility."""
         print(f"[Worker] Starting v{config.worker_version}")
@@ -46,6 +112,13 @@ class WorkerApp:
         except Exception as e:
             print(f"[Worker] Failed to connect: {e}")
             sys.exit(1)
+
+        # Account/Worker 로컬 DB 동기화 — ensure_safe_ip 가 정상 동작하려면
+        # 로컬 DB 에 account + worker rows 가 있어야 함 (없으면 IP rotation skip).
+        try:
+            self._sync_local_db()
+        except Exception as e:
+            print(f"[Worker] WARNING: local DB sync failed: {e}")
 
         while self.running:
             try:
