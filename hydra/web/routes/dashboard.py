@@ -83,6 +83,62 @@ def get_stats(db: Session = Depends(get_db)):
     }
 
 
+# --- Hero stats: 24h comment series ---
+
+@router.get("/api/stats/comments-24h")
+def comments_24h(db: Session = Depends(get_db)):
+    """Hourly comment counts for last 24h (for hero sparkline) + yesterday total.
+
+    Buckets last 24 hours into 24 1-hour bins; counts ActionLog rows of
+    type 'comment' or 'reply' that succeeded in each bin.
+    """
+    from datetime import datetime, timedelta, timezone
+    from hydra.db.models import ActionLog
+    from sqlalchemy import and_
+
+    now = datetime.now(timezone.utc)
+    start = now - timedelta(hours=24)
+    yesterday_start = now - timedelta(hours=48)
+
+    # Today (last 24h) by hour
+    actions = (
+        db.query(ActionLog)
+        .filter(
+            ActionLog.created_at >= start,
+            ActionLog.action_type.in_(("comment", "reply")),
+        )
+        .all()
+    )
+    hours = [0] * 24
+    for a in actions:
+        if not a.created_at:
+            continue
+        # Hour offset from start
+        delta_sec = (a.created_at - start).total_seconds()
+        hour_idx = int(delta_sec // 3600)
+        if 0 <= hour_idx < 24:
+            hours[hour_idx] += 1
+
+    # Yesterday total (24h-48h window)
+    yesterday_count = (
+        db.query(ActionLog)
+        .filter(
+            and_(
+                ActionLog.created_at >= yesterday_start,
+                ActionLog.created_at < start,
+                ActionLog.action_type.in_(("comment", "reply")),
+            )
+        )
+        .count()
+    )
+
+    return {
+        "hours": hours,
+        "total": sum(hours),
+        "yesterday": yesterday_count,
+    }
+
+
 # --- #2: Calendar View ---
 
 @router.get("/api/calendar")

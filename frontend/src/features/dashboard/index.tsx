@@ -8,6 +8,8 @@ import { ThemeSwitch } from '@/components/theme-switch'
 import { fetchApi } from '@/lib/api'
 import { useCountUp } from '@/hooks/use-count-up'
 import { ServerStatusBar } from '@/features/ops/server-status-bar'
+import { DashboardHero } from './components/hero-row'
+import { ActivityStream } from './components/activity-stream'
 import type { DashboardStats, WorkerInfo } from './types'
 
 interface ActiveCampaign {
@@ -128,6 +130,9 @@ export function Dashboard() {
             </div>
           </div>
 
+          {/* === Hero Big Number === */}
+          <DashboardHero />
+
           {/* === Task 28: 서버 상태 바 (배포 + 긴급정지) === */}
           <ServerStatusBar />
 
@@ -238,6 +243,9 @@ export function Dashboard() {
 
             {/* Right column */}
             <div className='space-y-4'>
+
+              {/* Activity stream — 실시간 활동 */}
+              <ActivityStream />
 
               {/* Workers */}
               <div className='rounded-xl border border-white/10 overflow-hidden'>

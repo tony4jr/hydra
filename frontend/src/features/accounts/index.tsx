@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { FleetView } from './components/fleet-view'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -338,11 +339,16 @@ export default function AccountsPage() {
           <Tabs defaultValue='all'>
             <TabsList>
               <TabsTrigger value='all'>전체 계정</TabsTrigger>
+              <TabsTrigger value='fleet'>함대 보기</TabsTrigger>
               <TabsTrigger value='warmup'>워밍업</TabsTrigger>
               <TabsTrigger value='identity'>본인 인증 {stats.identity_challenge > 0 && <span className='ml-1 text-rose-500'>{stats.identity_challenge}</span>}</TabsTrigger>
               <TabsTrigger value='problem'>문제 계정</TabsTrigger>
               <TabsTrigger value='monitoring'>모니터링</TabsTrigger>
             </TabsList>
+
+            <TabsContent value='fleet' className='mt-4'>
+              <FleetView accounts={pagedAccounts as never[]} />
+            </TabsContent>
 
             <TabsContent value='all' className='mt-4'>
               {loading ? (

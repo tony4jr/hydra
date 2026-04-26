@@ -260,12 +260,414 @@ button, a, input, select, textarea, [role="button"], [role="tab"] {
     opacity var(--duration-fast) var(--ease-out-cubic);
 }
 
+/* === Hero Big Number (Linear/Vercel inspired) === */
+.hydra-hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  background: var(--card);
+  border: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+  border-radius: calc(var(--radius-lg) + 4px);
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: hidden;
+}
+
+.hydra-hero::before {
+  content: '';
+  position: absolute;
+  top: -40%;
+  right: -10%;
+  width: 50%;
+  height: 200%;
+  background: radial-gradient(closest-side, color-mix(in oklab, var(--hydra-blue) 8%, transparent), transparent);
+  pointer-events: none;
+}
+
+.hydra-hero-label {
+  color: var(--muted-foreground);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.hydra-hero-flex {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  flex-wrap: wrap;
+}
+
+.hydra-hero-num {
+  font-size: 64px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: var(--foreground);
+  font-feature-settings: 'tnum' on;
+  text-shadow: 0 0 60px color-mix(in oklab, var(--hydra-blue) 20%, transparent);
+}
+
+.hydra-hero-spark {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--hydra-blue);
+}
+
+.hydra-hero-period {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
+.hydra-hero-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-left: auto;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+.hydra-hero-delta.up   { color: var(--hydra-success); background: color-mix(in oklab, var(--hydra-success) 10%, transparent); }
+.hydra-hero-delta.down { color: var(--hydra-danger); background: color-mix(in oklab, var(--hydra-danger) 10%, transparent); }
+.hydra-hero-delta.flat { color: var(--muted-foreground); background: color-mix(in oklab, var(--muted) 100%, transparent); }
+
+.hydra-spark { display: block; }
+
+/* === Activity Stream (live event log) === */
+.hydra-activity {
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.hydra-activity-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 50%, transparent);
+}
+
+.hydra-activity-title {
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+}
+
+.hydra-activity-list {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+.hydra-activity-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 16px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  border-bottom: 1px dashed color-mix(in oklab, var(--border) 30%, transparent);
+}
+
+.hydra-activity-item:last-child { border-bottom: none; }
+
+.hydra-activity-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  margin-top: 8px;
+}
+
+.hydra-activity-dot.ok   { background: var(--hydra-success); }
+.hydra-activity-dot.warn { background: var(--hydra-warning); }
+.hydra-activity-dot.fail { background: var(--hydra-danger); }
+.hydra-activity-dot.info { background: var(--hydra-blue); }
+
+.hydra-activity-body { flex: 1; min-width: 0; }
+
+.hydra-activity-msg {
+  color: var(--foreground);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hydra-activity-meta {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+/* === Live Status Bar (top operator panel) === */
+.hydra-livebar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: color-mix(in oklab, var(--background) 92%, transparent);
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 40%, transparent);
+}
+
+.hydra-livebar-inner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 8px 16px;
+  font-size: 12px;
+  height: 40px;
+  max-width: 100vw;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.hydra-livebar-inner::-webkit-scrollbar { display: none; }
+
+.hydra-livebar-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.hydra-livebar-label {
+  color: var(--muted-foreground);
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  font-feature-settings: 'tnum' on;
+}
+
+.hydra-livebar-num {
+  color: var(--foreground);
+  font-weight: 700;
+  font-feature-settings: 'tnum' on;
+  margin-left: 2px;
+}
+
+.hydra-livebar-divider {
+  width: 1px;
+  height: 14px;
+  background: color-mix(in oklab, var(--border) 80%, transparent);
+  flex-shrink: 0;
+}
+
+.hydra-livebar-spacer { flex: 1; min-width: 8px; }
+
+.hydra-livebar-time {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
 /* === Page transition (TanStack Router compatibility) === */
 @keyframes hydra-page-in {
-  from { opacity: 0; transform: translateY(4px); }
+  from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
 .hydra-page {
-  animation: hydra-page-in var(--duration-slow) var(--ease-out-expo);
+  animation: hydra-page-in 280ms var(--ease-out-expo);
+}
+
+/* === Sidebar active accent (electric blue) === */
+[data-sidebar="menu-button"][data-active="true"],
+[data-slot="sidebar-menu-button"][data-active="true"] {
+  background: color-mix(in oklab, var(--hydra-blue) 12%, transparent) !important;
+  color: var(--foreground) !important;
+  font-weight: 600;
+  position: relative;
+}
+
+[data-sidebar="menu-button"][data-active="true"]::before,
+[data-slot="sidebar-menu-button"][data-active="true"]::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 25%;
+  bottom: 25%;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--hydra-blue);
+  box-shadow: 0 0 8px color-mix(in oklab, var(--hydra-blue) 60%, transparent);
+}
+
+/* === Toast (sonner) brand polish === */
+[data-sonner-toaster] [data-sonner-toast] {
+  background: var(--popover) !important;
+  color: var(--popover-foreground) !important;
+  border: 1px solid color-mix(in oklab, var(--border) 70%, transparent) !important;
+  box-shadow: var(--shadow-lg) !important;
+  border-radius: var(--radius-lg) !important;
+  font-family: var(--font-display) !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast][data-type="success"] {
+  border-left: 3px solid var(--hydra-success) !important;
+}
+[data-sonner-toaster] [data-sonner-toast][data-type="error"] {
+  border-left: 3px solid var(--hydra-danger) !important;
+}
+[data-sonner-toaster] [data-sonner-toast][data-type="warning"] {
+  border-left: 3px solid var(--hydra-warning) !important;
+}
+[data-sonner-toaster] [data-sonner-toast][data-type="info"] {
+  border-left: 3px solid var(--hydra-blue) !important;
+}
+
+/* === Brand-aligned scrollbar === */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--muted) 100%, transparent);
+  border-radius: 999px;
+  border: 2px solid var(--background);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklab, var(--muted-foreground) 50%, transparent);
+}
+
+/* === Dark mode refinement === */
+.dark {
+  --hydra-blue: oklch(0.7 0.18 254);
+  --hydra-blue-soft: oklch(0.28 0.07 254);
+  --hydra-blue-fg: oklch(0.86 0.13 254);
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.35), 0 1px 2px -1px rgb(0 0 0 / 0.35);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.3);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.5), 0 4px 6px -4px rgb(0 0 0 / 0.3);
+}
+
+/* Card subtle gradient for depth in dark mode */
+.dark .hydra-card,
+.dark .hydra-stat-card,
+.dark .hydra-hero,
+.dark .hydra-activity {
+  background: linear-gradient(180deg,
+    color-mix(in oklab, var(--card) 100%, white 1%),
+    var(--card)
+  );
+}
+
+.dark .hydra-stat-card::before {
+  background: linear-gradient(180deg,
+    transparent,
+    color-mix(in oklab, var(--hydra-blue) 6%, transparent)
+  );
+}
+
+/* Hero glow more pronounced in dark mode */
+.dark .hydra-hero-num {
+  text-shadow: 0 0 80px color-mix(in oklab, var(--hydra-blue) 30%, transparent);
+}
+
+/* === Floating Action Button === */
+.hydra-fab {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 52px;
+  height: 52px;
+  border-radius: 999px;
+  background: var(--hydra-blue);
+  color: white;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 20px color-mix(in oklab, var(--hydra-blue) 40%, transparent),
+              0 4px 8px rgb(0 0 0 / 0.1);
+  transition: all var(--duration-base) var(--ease-out-cubic);
+  z-index: 30;
+  cursor: pointer;
+  border: none;
+}
+
+.hydra-fab:hover {
+  transform: scale(1.06) translateY(-2px);
+  box-shadow: 0 12px 28px color-mix(in oklab, var(--hydra-blue) 60%, transparent),
+              0 6px 12px rgb(0 0 0 / 0.15);
+}
+
+.hydra-fab:active { transform: scale(0.98); }
+
+/* === Account fleet card (alive) === */
+.hydra-fleet-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  background: var(--card);
+  border: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+  border-radius: var(--radius-lg);
+  transition: all var(--duration-base) var(--ease-out-cubic);
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.hydra-fleet-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in oklab, var(--hydra-blue) 40%, var(--border));
+  box-shadow: var(--shadow-md);
+}
+
+.hydra-fleet-card[data-status="active"]   { border-left: 3px solid var(--hydra-success); }
+.hydra-fleet-card[data-status="warmup"]   { border-left: 3px solid var(--hydra-warning); }
+.hydra-fleet-card[data-status="cooldown"] { border-left: 3px solid var(--hydra-blue); }
+.hydra-fleet-card[data-status="suspended"], .hydra-fleet-card[data-status="identity_challenge"] {
+  border-left: 3px solid var(--hydra-danger);
+  opacity: 0.8;
+}
+.hydra-fleet-card[data-status="registered"] {
+  border-left: 3px solid color-mix(in oklab, var(--muted-foreground) 40%, transparent);
+}
+
+.hydra-fleet-name {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--foreground);
+  font-feature-settings: 'tnum' on;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hydra-fleet-meta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  font-feature-settings: 'tnum' on;
+}
+
+.hydra-fleet-pulse {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--hydra-success);
+  box-shadow: 0 0 0 0 color-mix(in oklab, var(--hydra-success) 60%, transparent);
+  animation: hydra-fleet-pulse 2s var(--ease-out-cubic) infinite;
+}
+
+@keyframes hydra-fleet-pulse {
+  0%   { box-shadow: 0 0 0 0 color-mix(in oklab, var(--hydra-success) 60%, transparent); }
+  70%  { box-shadow: 0 0 0 8px color-mix(in oklab, var(--hydra-success) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--hydra-success) 0%, transparent); }
 }
