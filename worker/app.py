@@ -169,8 +169,30 @@ class WorkerApp:
         db = SessionLocal()
         try:
             account = db.get(Account, account_id) if account_id else None
-            token_hash = hashlib.sha256(config.worker_token.encode()).hexdigest()
-            worker = db.query(Worker).filter(Worker.token_hash == token_hash).first()
+            token_sha256 = hashlib.sha256(config.worker_token.encode()).hexdigest()
+            worker = (
+                db.query(Worker).filter(Worker.token_sha256 == token_sha256).first()
+                or db.query(Worker).filter(Worker.token_hash == token_sha256).first()
+            )
+            if worker is None:
+                # Fail-secure: refuse task execution rather than silent IP-rotation skip
+                # (anti-detection rule: 1 account = 1 IP, never run without rotation guard)
+                print(f"[Worker] FATAL: worker row not found in local DB (token mismatch). "
+                      f"Refusing tasks to preserve IP rotation invariant.")
+                for task in tasks:
+                    try:
+                        self.client.fail_task(task["id"], "local_worker_row_missing")
+                    except Exception:
+                        pass
+                return
+            if account is None and account_id:
+                print(f"[Worker] FATAL: account_id={account_id} not in local DB. Refusing task.")
+                for task in tasks:
+                    try:
+                        self.client.fail_task(task["id"], "local_account_row_missing")
+                    except Exception:
+                        pass
+                return
 
             session = WorkerSession(
                 profile_id, account_id,

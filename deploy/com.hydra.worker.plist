@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+HYDRA Mac worker — launchd plist.
+
+Install:
+  cp deploy/com.hydra.worker.plist ~/Library/LaunchAgents/
+  launchctl load ~/Library/LaunchAgents/com.hydra.worker.plist
+
+Status:
+  launchctl list | grep com.hydra.worker
+
+Restart manually:
+  launchctl kickstart -k gui/$(id -u)/com.hydra.worker
+
+Logs:
+  /tmp/hydra-worker.log    (combined stdout+stderr, unbuffered)
+
+Auto-restart: KeepAlive=true means launchd respawns on crash and on Mac login.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.hydra.worker</string>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/seominjae/Documents/hydra</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/seominjae/Documents/hydra/.venv/bin/python</string>
+        <string>-m</string>
+        <string>worker</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/hydra-worker.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/hydra-worker.log</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

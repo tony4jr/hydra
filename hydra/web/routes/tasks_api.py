@@ -42,15 +42,62 @@ def _is_task_allowed(task_type: str, allowed: list[str]) -> bool:
 router = APIRouter()
 
 
+_AUTO_ASSIGN_TYPES = {"comment", "reply", "like", "like_boost", "subscribe"}
+
+
+def _auto_assign_account(db, task: "Task") -> bool:
+    """Assign an idle active Account to a pending task that has no account_id.
+
+    Returns True if assigned, False if no idle account available.
+
+    Picked account:
+      - status = 'active'
+      - not in any open ProfileLock
+      - not in identity_challenge cooldown
+    """
+    if task.account_id:
+        return True
+    if task.task_type not in _AUTO_ASSIGN_TYPES:
+        return True  # Other task types may legitimately have no account_id
+    now = datetime.now(UTC)
+    available = (
+        db.query(Account)
+        .filter(
+            Account.status == "active",
+            ~Account.id.in_(
+                db.query(ProfileLock.account_id)
+                .filter(ProfileLock.released_at.is_(None))
+            ),
+        )
+        .filter(
+            (Account.identity_challenge_until.is_(None))
+            | (Account.identity_challenge_until <= now)
+        )
+        .first()
+    )
+    if not available:
+        return False
+    task.account_id = available.id
+    return True
+
+
 _FETCH_SQL_PG = text("""
     SELECT t.id
       FROM tasks t
-      JOIN accounts a ON a.id = t.account_id
+      LEFT JOIN accounts a ON a.id = t.account_id
      WHERE t.status = 'pending'
        AND (t.scheduled_at IS NULL OR t.scheduled_at <= NOW())
-       AND a.adspower_profile_id IS NOT NULL
-       AND t.account_id NOT IN (
-           SELECT account_id FROM profile_locks WHERE released_at IS NULL
+       AND (
+         -- already-assigned: account exists and has a profile and isn't locked
+         (
+           t.account_id IS NOT NULL
+           AND a.adspower_profile_id IS NOT NULL
+           AND t.account_id NOT IN (
+             SELECT account_id FROM profile_locks WHERE released_at IS NULL
+           )
+         )
+         -- unassigned: scenario/campaign tasks pending account auto-assignment
+         OR t.account_id IS NULL
        )
      ORDER BY
        CASE t.priority
@@ -68,12 +115,18 @@ _FETCH_SQL_PG = text("""
 _FETCH_SQL_SQLITE = text("""
     SELECT t.id
       FROM tasks t
-      JOIN accounts a ON a.id = t.account_id
+      LEFT JOIN accounts a ON a.id = t.account_id
      WHERE t.status = 'pending'
        AND (t.scheduled_at IS NULL OR t.scheduled_at <= datetime('now'))
-       AND a.adspower_profile_id IS NOT NULL
-       AND t.account_id NOT IN (
-           SELECT account_id FROM profile_locks WHERE released_at IS NULL
+       AND (
+         (
+           t.account_id IS NOT NULL
+           AND a.adspower_profile_id IS NOT NULL
+           AND t.account_id NOT IN (
+             SELECT account_id FROM profile_locks WHERE released_at IS NULL
+           )
+         )
+         OR t.account_id IS NULL
        )
      ORDER BY
        CASE t.priority
@@ -108,6 +161,11 @@ def fetch_tasks(worker: Worker = Depends(worker_auth)) -> dict:
                 continue
             if not _is_task_allowed(candidate.task_type, allowed):
                 continue
+            # Auto-assign account_id for unassigned campaign/scenario tasks.
+            # Skips candidate if no idle active account is available right now —
+            # next fetch round will retry once a worker frees an account.
+            if not _auto_assign_account(db, candidate):
+                continue
             task = candidate
             break
 
@@ -115,6 +173,9 @@ def fetch_tasks(worker: Worker = Depends(worker_auth)) -> dict:
             return {"tasks": []}
 
         account = db.get(Account, task.account_id)
+        if account is None or not account.adspower_profile_id:
+            # Defensive: race against another worker assigning + freeing
+            return {"tasks": []}
         task.status = "running"
         task.worker_id = worker.id
         task.started_at = datetime.now(UTC)

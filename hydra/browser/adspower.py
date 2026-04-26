@@ -122,8 +122,21 @@ class AdsPowerClient:
         log.info(f"Started browser for profile {profile_id}, port={result['debug_port']}")
         return result
 
-    def stop_browser(self, profile_id: str):
-        """Stop browser for profile."""
+    def stop_browser(self, profile_id: str, *, cookie_sync_grace_sec: float = 4.0):
+        """Stop browser for profile.
+
+        AdsPower writes the profile's cookie/session state to disk *during* the
+        stop call, but freshly authenticated cookies (esp. Google sign-in tokens)
+        sometimes don't persist if the stop call fires immediately after login.
+        We give a small grace period so the renderer has a chance to flush.
+
+        Mid-session calls (after navigation, scrolling, posting comments) don't
+        need this — that's why the parameter is overrideable. But every login-
+        adjacent close MUST keep the default grace.
+        """
+        if cookie_sync_grace_sec > 0:
+            import time
+            time.sleep(cookie_sync_grace_sec)
         self._get("/api/v1/browser/stop", {"user_id": profile_id})
         log.info(f"Stopped browser for profile {profile_id}")
 

@@ -65,13 +65,41 @@ async def auto_login(
             log.info("auto_login: already logged in (redirected to myaccount/youtube)")
             await _skip_post_login_prompts(page, max_attempts=6)
             return True
-        # signin 에 머물러 있으면 email input 짧게 선확인. 없으면 이미 로그인된 것.
+        # signin 에 머물러 있으면 email input 짧게 선확인. 없으면 다음 두 가지 케이스:
+        #   (a) 이미 로그인된 채로 acccountchooser/myaccount 등에 도달 → skip 처리
+        #   (b) "본인 인증" (confirmidentifier) 페이지 — 5일+ 휴면 / 새 IP 후 재로그인 시
+        #       email 없이 "다음" 만 보임. 다음 클릭 → /pwd 로 진행
         try:
             await page.wait_for_selector("input[type='email']", timeout=3_000)
         except Exception:
-            log.info("auto_login: no email input on signin, treating as logged-in")
-            await _skip_post_login_prompts(page, max_attempts=6)
-            return True
+            cur = page.url
+            # case (b): confirmidentifier or signin/identifier with email pre-filled
+            if "confirmidentifier" in cur or "signin/identifier" in cur:
+                log.info("auto_login: identity-challenge (confirmidentifier) — clicking 다음/Next")
+                try:
+                    next_btn = page.locator(
+                        "#identifierNext button, button:has-text('다음'), button:has-text('Next')"
+                    )
+                    await next_btn.first.click(timeout=5_000)
+                    await random_delay(2.0, 4.0)
+                except Exception as e:
+                    log.warning(f"identity-challenge 다음 click failed: {e}")
+                # fall through to password step below
+            # case: accountchooser - click the saved account
+            elif "accountchooser" in cur:
+                log.info("auto_login: accountchooser — clicking saved account")
+                try:
+                    chooser = page.locator(f"div[data-email='{email}'], li[data-email='{email}']")
+                    if await chooser.count() == 0:
+                        chooser = page.locator(f"div:has-text('{email}')")
+                    await chooser.first.click(timeout=5_000)
+                    await random_delay(2.0, 4.0)
+                except Exception as e:
+                    log.warning(f"accountchooser click failed: {e}")
+            else:
+                log.info(f"auto_login: no email input at {cur[:80]}, treating as logged-in")
+                await _skip_post_login_prompts(page, max_attempts=6)
+                return True
 
         # Step 1: email
         # ⚠ typing_style="typist" 강제 — paster (clipboard paste) 는 일부 브라우저

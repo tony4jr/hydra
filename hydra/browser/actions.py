@@ -7,6 +7,7 @@ All delays use random ranges to mimic real behavior.
 import asyncio
 import contextvars
 import random
+import re
 from playwright.async_api import Page
 
 from hydra.core.config import settings
@@ -245,15 +246,23 @@ async def post_comment(page: Page, text: str) -> str | None:
 
     Spec 7.5: click box → think → paste/type → re-read → submit → confirm.
     Returns youtube_comment_id if captured, empty string if posted but ID unknown, None on failure.
+
+    All selectors are scoped INSIDE ytd-comment-simplebox-renderer (the top-level
+    comment input) to avoid colliding with reply-box selectors that share IDs.
     """
     try:
-        # Click comment input placeholder
-        placeholder = page.locator("#simplebox-placeholder, #placeholder-area")
+        # Scope all interactions to the simplebox (NOT reply boxes which reuse same IDs)
+        simplebox = page.locator("ytd-comment-simplebox-renderer").first
+        await simplebox.scroll_into_view_if_needed()
+        await random_delay(0.5, 1.5)
+
+        # Click placeholder to expand the input
+        placeholder = simplebox.locator("#simplebox-placeholder, #placeholder-area")
         await placeholder.first.click()
         await random_delay(1.0, 3.0)
 
-        # Type into active input
-        input_box = page.locator("#contenteditable-root")
+        # Type into active input (scoped)
+        input_box = simplebox.locator("#contenteditable-root")
         await input_box.first.click()
 
         # 80% paste, 20% type
@@ -268,13 +277,21 @@ async def post_comment(page: Page, text: str) -> str | None:
 
         await random_delay(1.0, 3.0)  # re-read
 
-        # Submit
-        submit = page.locator("#submit-button, tp-yt-paper-button#submit-button")
+        # Submit — scope to simplebox AND filter for the "댓글" / "Comment" submit button
+        # (NOT 취소 / Cancel). The button is `#submit-button` but there are two with that ID
+        # (action button + dialog confirm). Use text filter for safety.
+        submit = simplebox.locator(
+            "ytd-button-renderer#submit-button button, "
+            "#submit-button button:not([aria-disabled='true'])"
+        )
+        # Fallback to the first non-disabled '댓글'/'Comment' button inside simplebox
+        if await submit.count() == 0:
+            submit = simplebox.get_by_role("button", name=re.compile(r"댓글|Comment", re.I))
         await submit.first.click()
         await random_delay(2.0, 4.0)  # confirm
 
         # Try to capture youtube_comment_id from DOM
-        comment_id = await _extract_new_comment_id(page)
+        comment_id = await _extract_new_comment_id(page, text=text)
 
         log.info(f"Comment posted ({len(text)} chars, id={comment_id or 'unknown'})")
         return comment_id if comment_id else ""
@@ -284,22 +301,47 @@ async def post_comment(page: Page, text: str) -> str | None:
         return None
 
 
-async def post_reply(page: Page, comment_selector: str, text: str) -> str | None:
+async def post_reply(page: Page, target: str, text: str) -> str | None:
     """Reply to an existing comment.
+
+    `target` can be:
+      - A YouTube comment ID (`Ugxxx...`) → resolved to the matching thread
+      - A CSS selector (anything starting with `ytd-` or containing `[`) → used directly
+      - A literal text snippet → used as `:has-text()` filter on threads
 
     Returns youtube_comment_id if captured, empty string if posted but ID unknown, None on failure.
     """
     try:
-        comment = page.locator(comment_selector)
+        # Resolve target to a Locator
+        if target.startswith("Ug") and not target.startswith("ytd-"):
+            # Looks like a comment ID — find the thread
+            comment = page.locator(
+                f"ytd-comment-thread-renderer:has([data-cid='{target}']), "
+                f"ytd-comment-thread-renderer a[href*='lc={target}']"
+            ).locator("xpath=ancestor::ytd-comment-thread-renderer[1]")
+            if await comment.count() == 0:
+                # Fallback: locator by data-cid alone
+                comment = page.locator(f"ytd-comment-thread-renderer:has([data-cid='{target}'])")
+        elif target.startswith("ytd-") or "[" in target or "#" in target:
+            comment = page.locator(target)
+        else:
+            # Treat as text snippet
+            comment = page.locator("ytd-comment-thread-renderer").filter(has_text=target)
 
-        # Click reply button
-        reply_btn = comment.locator("#reply-button-end button, button.yt-spec-button-shape-next")
+        comment = comment.first
+        await comment.scroll_into_view_if_needed()
+        await random_delay(0.5, 1.2)
+
+        # Click reply button (text-based for reliability across YouTube updates)
+        reply_btn = comment.get_by_role("button", name=re.compile(r"^답글$|^Reply$", re.I))
+        if await reply_btn.count() == 0:
+            reply_btn = comment.locator("#reply-button-end button, button.yt-spec-button-shape-next")
         await reply_btn.first.click()
         await random_delay(1.0, 2.0)
 
-        # Type reply
-        reply_box = comment.locator("#contenteditable-root")
-        await reply_box.first.click()
+        # Reply box (scoped to the comment thread)
+        reply_box = comment.locator("#contenteditable-root").last  # reply input is the LAST one in thread
+        await reply_box.click()
 
         use_paste = random.random() < 0.80
         if use_paste:
@@ -312,13 +354,14 @@ async def post_reply(page: Page, comment_selector: str, text: str) -> str | None
 
         await random_delay(1.0, 3.0)
 
-        # Submit reply
-        submit = comment.locator("#submit-button")
-        await submit.first.click()
+        # Submit — text-based to avoid clicking 취소/Cancel
+        submit = comment.get_by_role("button", name=re.compile(r"^답글$|^Reply$", re.I))
+        # The reply submit button appears last (after Cancel). Use last.
+        await submit.last.click()
         await random_delay(2.0, 4.0)
 
         # Try to capture reply ID
-        comment_id = await _extract_new_comment_id(page)
+        comment_id = await _extract_new_comment_id(page, text=text)
 
         log.info(f"Reply posted ({len(text)} chars, id={comment_id or 'unknown'})")
         return comment_id if comment_id else ""
@@ -364,16 +407,47 @@ async def handle_ad(page: Page):
         pass  # No ad or ad already gone
 
 
-async def _extract_new_comment_id(page: Page) -> str | None:
+async def _extract_new_comment_id(page: Page, text: str = "") -> str | None:
     """Try to extract the youtube_comment_id of the most recently posted comment.
 
-    YouTube renders new comments at the top of the list after posting.
+    Strategy (multi-angle):
+    1. Find a comment thread whose content matches the text we just posted
+    2. Read the comment ID from `#author-text` href (`?lc=Ugxxx`) or
+       `data-cid` attribute on the wrapper
+    3. Fallback: first/newest comment in default sort
+
+    Returns the YouTube comment ID like `UgxxxComment...` (used for replies).
     """
+    if not text:
+        return None
     try:
-        newest = page.locator("ytd-comment-renderer").first
-        comment_id = await newest.get_attribute("data-comment-id")
+        # Wait briefly for YouTube to render the new comment
+        await asyncio.sleep(1.5)
+        # Search for our text in any thread (logged-in users see their own comments at top)
+        comment_id = await page.evaluate(
+            """(needle) => {
+                const threads = [...document.querySelectorAll('ytd-comment-thread-renderer, ytd-comment-view-model, ytd-comment-renderer')];
+                for (const t of threads) {
+                    const txt = t.querySelector('#content-text')?.innerText?.trim() || '';
+                    if (needle && txt.includes(needle)) {
+                        // Look for ID on common attributes
+                        const cid = t.getAttribute('data-cid')
+                            || t.querySelector('[data-cid]')?.getAttribute('data-cid')
+                            || t.getAttribute('data-comment-id');
+                        if (cid) return cid;
+                        // Look for 'lc=' in any time/author link
+                        const link = t.querySelector('a[href*="lc="]')?.href || '';
+                        const m = link.match(/[?&]lc=([^&]+)/);
+                        if (m) return decodeURIComponent(m[1]);
+                    }
+                }
+                return null;
+            }""",
+            text,
+        )
         return comment_id
-    except Exception:
+    except Exception as e:
+        log.warning(f"comment_id extract failed: {e}")
         return None
 
 
