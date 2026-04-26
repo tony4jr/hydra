@@ -144,23 +144,29 @@ export function CampaignCreateDialog({
           <DialogTitle>캠페인 만들기</DialogTitle>
         </DialogHeader>
 
-        {/* Step indicator */}
-        <div className='flex items-center gap-2 mb-2'>
+        {/* Step indicator (Toss-style with gradient bars) */}
+        <div className='hydra-wizard-steps'>
           {[1, 2, 3, 4].map(s => (
-            <div key={s} className='flex items-center gap-2'>
-              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-semibold ${
-                s === step ? 'bg-primary text-primary-foreground' :
-                s < step ? 'bg-primary/20 text-primary' :
-                'bg-muted text-muted-foreground'
-              }`}>{s}</div>
-              {s < 4 && <div className={`w-6 h-0.5 ${s < step ? 'bg-primary/40' : 'bg-border'}`} />}
+            <div key={s} className='hydra-wizard-step'>
+              <div
+                className='hydra-wizard-step-dot'
+                data-state={s === step ? 'active' : s < step ? 'done' : 'pending'}
+              >
+                <span className='step-num'>{s}</span>
+              </div>
+              {s < 4 && (
+                <div
+                  className='hydra-wizard-step-bar'
+                  data-passed={s < step ? 'true' : 'false'}
+                />
+              )}
             </div>
           ))}
         </div>
 
-        <p className='text-foreground font-medium text-[15px] mb-3'>{stepTitles[step - 1]}</p>
+        <p className='hydra-wizard-title'>{stepTitles[step - 1]}</p>
 
-        <div className='min-h-[200px]'>
+        <div className='min-h-[200px] hydra-wizard-content' key={step}>
           {/* Step 1: Brand */}
           {step === 1 && (
             <div className='mb-5'>

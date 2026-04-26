@@ -4,8 +4,8 @@ import { DisplayForm } from './display-form'
 export function SettingsDisplay() {
   return (
     <ContentSection
-      title='Display'
-      desc="Turn items on or off to control what's displayed in the app."
+      title='화면'
+      desc='어드민 패널에 표시할 항목을 켜고 끕니다.'
     >
       <DisplayForm />
     </ContentSection>

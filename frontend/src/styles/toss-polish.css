@@ -605,6 +605,113 @@ button, a, input, select, textarea, [role="button"], [role="tab"] {
 
 .hydra-fab:active { transform: scale(0.98); }
 
+/* === Wizard / Stepper === */
+.hydra-wizard-steps {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin: var(--space-2) 0 var(--space-5);
+}
+
+.hydra-wizard-step {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+
+.hydra-wizard-step-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  font-feature-settings: 'tnum' on;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  border: 2px solid color-mix(in oklab, var(--border) 50%, transparent);
+  transition: all var(--duration-base) var(--ease-out-cubic);
+  flex-shrink: 0;
+  position: relative;
+}
+
+.hydra-wizard-step-dot[data-state="active"] {
+  background: var(--hydra-blue);
+  color: white;
+  border-color: var(--hydra-blue);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--hydra-blue) 18%, transparent),
+              0 4px 12px color-mix(in oklab, var(--hydra-blue) 30%, transparent);
+  transform: scale(1.06);
+}
+
+.hydra-wizard-step-dot[data-state="done"] {
+  background: color-mix(in oklab, var(--hydra-blue) 14%, transparent);
+  color: var(--hydra-blue-fg);
+  border-color: color-mix(in oklab, var(--hydra-blue) 40%, transparent);
+}
+
+.hydra-wizard-step-dot[data-state="done"]::after {
+  content: '✓';
+  font-size: 13px;
+}
+
+.hydra-wizard-step-dot[data-state="done"] > .step-num { display: none; }
+
+.hydra-wizard-step-bar {
+  flex: 1;
+  height: 2px;
+  background: var(--border);
+  position: relative;
+  overflow: hidden;
+}
+
+.hydra-wizard-step-bar[data-passed="true"]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, var(--hydra-blue), color-mix(in oklab, var(--hydra-blue) 60%, transparent));
+  animation: hydra-wizard-fill var(--duration-slow) var(--ease-out-expo) forwards;
+}
+
+@keyframes hydra-wizard-fill {
+  from { transform: scaleX(0); transform-origin: left; }
+  to   { transform: scaleX(1); transform-origin: left; }
+}
+
+.hydra-wizard-content {
+  animation: hydra-step-in var(--duration-slow) var(--ease-out-expo);
+}
+
+@keyframes hydra-step-in {
+  from { opacity: 0; transform: translateX(8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.hydra-wizard-title {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--foreground);
+  margin-bottom: var(--space-1);
+}
+
+.hydra-wizard-help {
+  font-size: 12.5px;
+  color: var(--muted-foreground);
+  margin-bottom: var(--space-3);
+  line-height: 1.5;
+}
+
+/* === Dialog soft (refined shadcn) === */
+.hydra-dialog [data-slot="dialog-content"],
+[data-slot="dialog-content"] {
+  border-radius: calc(var(--radius-lg) + 4px) !important;
+  box-shadow: var(--shadow-xl) !important;
+  border: 1px solid color-mix(in oklab, var(--border) 70%, transparent) !important;
+}
+
 /* === Login Page (cinematic) === */
 .hydra-login-shell {
   display: flex;
