@@ -605,6 +605,203 @@ button, a, input, select, textarea, [role="button"], [role="tab"] {
 
 .hydra-fab:active { transform: scale(0.98); }
 
+/* === Login Page (cinematic) === */
+.hydra-login-shell {
+  display: flex;
+  min-height: 100vh;
+  background: var(--background);
+  overflow: hidden;
+}
+
+.hydra-login-brand {
+  flex: 1;
+  position: relative;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 64px;
+  background: linear-gradient(135deg,
+    oklch(0.18 0.05 264) 0%,
+    oklch(0.12 0.06 254) 50%,
+    oklch(0.08 0.04 244) 100%
+  );
+  color: white;
+  overflow: hidden;
+}
+
+@media (min-width: 900px) {
+  .hydra-login-brand { display: flex; }
+}
+
+.hydra-login-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.5;
+  pointer-events: none;
+  animation: hydra-orb-drift 16s ease-in-out infinite alternate;
+}
+
+.hydra-login-orb-1 {
+  width: 480px; height: 480px;
+  top: -100px; left: -100px;
+  background: oklch(0.7 0.22 254);
+  animation-delay: 0s;
+}
+
+.hydra-login-orb-2 {
+  width: 360px; height: 360px;
+  bottom: -80px; right: 20%;
+  background: oklch(0.65 0.24 290);
+  animation-delay: -5s;
+}
+
+.hydra-login-orb-3 {
+  width: 280px; height: 280px;
+  top: 40%; right: 10%;
+  background: oklch(0.75 0.18 200);
+  animation-delay: -10s;
+}
+
+@keyframes hydra-orb-drift {
+  0%   { transform: translate(0,   0) scale(1); }
+  50%  { transform: translate(30px, -20px) scale(1.06); }
+  100% { transform: translate(-20px, 25px) scale(0.96); }
+}
+
+.hydra-login-logo {
+  font-size: 56px;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  margin-bottom: 16px;
+  background: linear-gradient(135deg, #fff, #93c5fd);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.hydra-login-tag {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  margin-bottom: 32px;
+  color: rgba(255, 255, 255, 0.92);
+  max-width: 480px;
+  line-height: 1.4;
+}
+
+.hydra-login-bullets {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.65);
+  margin-bottom: 64px;
+}
+
+.hydra-login-clock {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.4);
+  letter-spacing: 0.04em;
+}
+
+.hydra-login-form-side {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--background);
+}
+
+.hydra-login-card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--card);
+  border: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+  border-radius: calc(var(--radius-lg) + 4px);
+  padding: 40px 32px;
+  box-shadow: var(--shadow-lg);
+}
+
+.hydra-login-card-head {
+  margin-bottom: 28px;
+}
+
+.hydra-login-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  background: color-mix(in oklab, var(--hydra-blue) 12%, transparent);
+  color: var(--hydra-blue-fg);
+  border-radius: 999px;
+  margin-bottom: 16px;
+}
+
+.hydra-login-pulse {
+  width: 6px; height: 6px;
+  border-radius: 999px;
+  background: var(--hydra-blue);
+  box-shadow: 0 0 0 0 color-mix(in oklab, var(--hydra-blue) 60%, transparent);
+  animation: hydra-fleet-pulse 2s var(--ease-out-cubic) infinite;
+}
+
+.hydra-login-pulse-mini {
+  display: inline-block;
+  width: 5px; height: 5px;
+  border-radius: 999px;
+  background: var(--hydra-success);
+  margin-right: 6px;
+  animation: hydra-fleet-pulse 2s var(--ease-out-cubic) infinite;
+}
+
+.hydra-login-title {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--foreground);
+  margin-bottom: 4px;
+}
+
+.hydra-login-sub {
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+
+.hydra-login-error {
+  font-size: 13px;
+  color: var(--hydra-danger);
+  background: color-mix(in oklab, var(--hydra-danger) 8%, transparent);
+  border: 1px solid color-mix(in oklab, var(--hydra-danger) 25%, transparent);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+}
+
+.hydra-login-submit {
+  height: 44px !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+}
+
+.hydra-login-footer {
+  margin-top: 28px;
+  padding-top: 16px;
+  border-top: 1px dashed color-mix(in oklab, var(--border) 50%, transparent);
+  font-size: 11px;
+  color: var(--muted-foreground);
+  letter-spacing: 0.02em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* === Account fleet card (alive) === */
 .hydra-fleet-card {
   display: flex;
