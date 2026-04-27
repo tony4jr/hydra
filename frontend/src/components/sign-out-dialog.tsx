@@ -11,28 +11,29 @@ interface SignOutDialogProps {
 export function SignOutDialog({ open, onOpenChange }: SignOutDialogProps) {
   const navigate = useNavigate()
 
-  const handleSignOut = async () => {
-    // 1. Server-side logout (best-effort — stateless JWT, server just no-ops)
+  const handleSignOut = () => {
+    // 1. Clear client-side credentials FIRST (so guard kicks in immediately)
+    localStorage.removeItem('hydra_token')
+    sessionStorage.clear()
+    // 2. Server-side logout (fire-and-forget, 3s timeout — never blocks redirect)
     try {
       const base = import.meta.env.VITE_API_BASE_URL || ''
       const token = localStorage.getItem('hydra_token')
-      await axios.post(
+      axios.post(
         `${base}/api/admin/auth/logout`,
         {},
-        token ? { headers: { Authorization: `Bearer ${token}` } } : undefined,
-      )
+        {
+          timeout: 3000,
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        },
+      ).catch(() => { /* ignore */ })
     } catch {
-      /* server may be down or token expired — proceed anyway */
+      /* ignore */
     }
-    // 2. Clear client-side credentials
-    localStorage.removeItem('hydra_token')
-    sessionStorage.clear()
-    // 3. Close dialog + redirect
+    // 3. Close dialog + toast + hard redirect (full reload resets all queries)
     onOpenChange(false)
     toast.success('로그아웃됨')
-    // Use full-page navigation so any in-flight queries also reset
-    window.location.assign('/login')
-    // (fallback if window.location is intercepted)
+    window.location.href = '/login'
     setTimeout(() => navigate({ to: '/login' }), 100)
   }
 

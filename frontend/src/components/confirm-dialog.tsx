@@ -54,7 +54,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
         {children}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={isLoading}>
-            {cancelBtnText ?? 'Cancel'}
+            {cancelBtnText ?? '취소'}
           </AlertDialogCancel>
           <Button
             type={form ? 'submit' : 'button'}
@@ -63,7 +63,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
             variant={destructive ? 'destructive' : 'default'}
             disabled={disabled || isLoading}
           >
-            {confirmText ?? 'Continue'}
+            {confirmText ?? '확인'}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
