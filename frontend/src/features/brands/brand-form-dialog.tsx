@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { toast } from 'sonner'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -99,9 +100,7 @@ export function BrandFormDialog({
       })
       onOpenChange(false)
       onSuccess()
-    } catch {
-      // error
-    } finally {
+    } catch (e) { toast.error("오류", { description: e instanceof Error ? e.message : String(e) }) } finally {
       setLoading(false)
     }
   }
@@ -120,9 +119,7 @@ export function BrandFormDialog({
       })
       onOpenChange(false)
       onSuccess()
-    } catch {
-      // error
-    } finally {
+    } catch (e) { toast.error("오류", { description: e instanceof Error ? e.message : String(e) }) } finally {
       setLoading(false)
       setDeleteConfirm(false)
     }
