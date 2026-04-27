@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import { Plus, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -91,7 +92,7 @@ export default function TargetsPage() {
       setUrlInput('')
       setAddOpen(false)
       loadVideos()
-    } catch { /* error */ }
+    } catch (e) { toast.error("오류", { description: e instanceof Error ? e.message : String(e) }) }
     finally { setAdding(false) }
   }
 

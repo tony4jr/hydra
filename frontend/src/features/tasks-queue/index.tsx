@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -96,7 +97,7 @@ export default function TasksQueuePage() {
         body: JSON.stringify({ task_id: taskId }),
       })
       loadTasks()
-    } catch { /* error */ }
+    } catch (e) { toast.error("오류", { description: e instanceof Error ? e.message : String(e) }) }
   }
 
   const filtered = campaignFilter === 'all' ? tasks : tasks.filter(t => String(t.campaign_id) === campaignFilter)

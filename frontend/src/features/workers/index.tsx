@@ -87,14 +87,14 @@ export default function WorkersPage() {
     try {
       await fetchApi(`/api/workers/${id}/pause`, { method: 'POST' })
       loadWorkers()
-    } catch { /* error */ }
+    } catch (e) { toast.error("오류", { description: e instanceof Error ? e.message : String(e) }) }
   }
 
   const handleResume = async (id: number) => {
     try {
       await fetchApi(`/api/workers/${id}/resume`, { method: 'POST' })
       loadWorkers()
-    } catch { /* error */ }
+    } catch (e) { toast.error("오류", { description: e instanceof Error ? e.message : String(e) }) }
   }
 
   const sendCommand = async (workerId: number, command: string) => {

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -97,7 +98,7 @@ export function SettingsPresets() {
         body: JSON.stringify({ name: selected.name, description: selected.description, steps }),
       })
       loadPresets()
-    } catch { /* error */ }
+    } catch (e) { toast.error("오류", { description: e instanceof Error ? e.message : String(e) }) }
     finally { setSaving(false) }
   }
 
@@ -134,7 +135,7 @@ export function SettingsPresets() {
       setNewName('')
       setNewDesc('')
       loadPresets()
-    } catch { /* error */ }
+    } catch (e) { toast.error("오류", { description: e instanceof Error ? e.message : String(e) }) }
     finally { setSaving(false) }
   }
 
@@ -144,7 +145,7 @@ export function SettingsPresets() {
       await fetchApi(`/api/presets/${preset.id}`, { method: 'DELETE' })
       if (selectedId === preset.id) setSelectedId(null)
       loadPresets()
-    } catch { /* error */ }
+    } catch (e) { toast.error("오류", { description: e instanceof Error ? e.message : String(e) }) }
   }
 
   return (
