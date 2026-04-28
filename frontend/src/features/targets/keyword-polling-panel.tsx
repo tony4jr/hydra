@@ -6,11 +6,10 @@
  */
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Zap, ZapOff, Plus, X, Search } from 'lucide-react'
+import { Zap, Plus, X, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Switch } from '@/components/ui/switch'
 import { fetchApi } from '@/lib/api'
 
 interface Keyword {
