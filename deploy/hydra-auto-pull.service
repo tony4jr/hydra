@@ -1,0 +1,23 @@
+[Unit]
+Description=HYDRA auto-pull — pull origin/main and trigger deploy if VPS is behind
+# 외부 의존: hydra-deploy.service, network
+After=network-online.target hydra-deploy.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=deployer
+WorkingDirectory=/opt/hydra
+# 외부에서 들어오는 git 변경 감지 → 새 SHA 면 deploy.sh 실행.
+# 원자적: 두 명령 모두 race-safe (git fetch 는 idempotent, systemctl start 도).
+ExecStart=/bin/bash -c '\
+    cd /opt/hydra && \
+    git fetch origin main --quiet && \
+    LOCAL=$(git rev-parse HEAD) && \
+    REMOTE=$(git rev-parse origin/main) && \
+    if [ "$LOCAL" != "$REMOTE" ]; then \
+        echo "[$(date +%H:%M:%S)] auto-pull: $LOCAL -> $REMOTE — triggering deploy"; \
+        systemctl start --no-block hydra-deploy.service; \
+    fi'
+StandardOutput=append:/var/log/hydra/auto-pull.log
+StandardError=append:/var/log/hydra/auto-pull.log

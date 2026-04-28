@@ -1,0 +1,15 @@
+[Unit]
+Description=HYDRA auto-pull every 60s — keeps VPS in sync with origin/main
+Requires=hydra-auto-pull.service
+
+[Timer]
+# 부팅 30초 후 첫 실행 (서비스 안정화 대기).
+OnBootSec=30s
+# 그 후 60초마다.
+OnUnitActiveSec=60s
+# 시계 점프(시간 변경 등)에도 영향 적게.
+AccuracySec=5s
+Persistent=true
+
+[Install]
+WantedBy=timers.target
