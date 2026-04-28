@@ -737,63 +737,61 @@ button, a, input, select, textarea, [role="button"], [role="tab"] {
   isolation: isolate;
 }
 
-/* Aurora — primary ribbon (slow rotate + breathe) */
+/* Aurora — primary ribbon (눈에 보이게 빠르게 회전 + 숨쉬기) */
 .hydra-login-brand::before {
   content: '';
   position: absolute;
-  inset: -25%;
+  inset: -40%;
   background: conic-gradient(from 0deg at 50% 50%,
     transparent 0deg,
-    oklch(0.65 0.22 220 / 0.55) 60deg,
-    oklch(0.7 0.25 280 / 0.45) 130deg,
-    transparent 200deg,
-    oklch(0.6 0.2 180 / 0.35) 280deg,
+    oklch(0.7 0.28 220 / 0.7) 50deg,
+    oklch(0.75 0.3 280 / 0.65) 120deg,
+    transparent 190deg,
+    oklch(0.65 0.25 180 / 0.55) 270deg,
     transparent 360deg
   );
-  filter: blur(60px);
-  animation: hydra-aurora-rotate 40s linear infinite, hydra-aurora-breathe 12s ease-in-out infinite alternate;
+  filter: blur(70px);
+  animation: hydra-aurora-rotate 18s linear infinite, hydra-aurora-breathe 8s ease-in-out infinite alternate;
   z-index: 0;
   pointer-events: none;
   mix-blend-mode: screen;
+  will-change: transform, opacity;
 }
 
-/* Aurora — secondary veil (counter-rotates for depth) */
+/* Aurora — secondary veil (반대 방향, 더 빠른 베일) */
 .hydra-login-brand::after {
   content: '';
   position: absolute;
-  inset: -20%;
+  inset: -35%;
   background: conic-gradient(from 180deg at 60% 40%,
     transparent 0deg,
-    oklch(0.7 0.18 160 / 0.4) 90deg,
-    transparent 180deg,
-    oklch(0.55 0.22 320 / 0.3) 270deg,
+    oklch(0.75 0.22 160 / 0.55) 80deg,
+    transparent 170deg,
+    oklch(0.6 0.28 320 / 0.5) 260deg,
     transparent 360deg
   );
-  filter: blur(80px);
-  animation: hydra-aurora-rotate-rev 60s linear infinite;
+  filter: blur(90px);
+  animation: hydra-aurora-rotate-rev 28s linear infinite;
   z-index: 0;
   pointer-events: none;
   mix-blend-mode: screen;
-  opacity: 0.85;
+  opacity: 0.95;
+  will-change: transform;
 }
 
 @keyframes hydra-aurora-rotate {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
+  from { transform: rotate(0deg)   scale(1.1); }
+  to   { transform: rotate(360deg) scale(1.1); }
 }
 @keyframes hydra-aurora-rotate-rev {
-  from { transform: rotate(360deg); }
-  to   { transform: rotate(0deg); }
+  from { transform: rotate(360deg) scale(1.15); }
+  to   { transform: rotate(0deg)   scale(1.15); }
 }
+/* breathe = opacity only — transform 충돌 방지 (rotate 와 같은 속성). */
 @keyframes hydra-aurora-breathe {
-  0%   { opacity: 0.7; }
-  50%  { opacity: 1;   }
-  100% { opacity: 0.75;}
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .hydra-login-brand::before,
-  .hydra-login-brand::after { animation: none; }
+  0%   { opacity: 0.55; }
+  50%  { opacity: 1;    }
+  100% { opacity: 0.7;  }
 }
 
 @media (min-width: 900px) {
