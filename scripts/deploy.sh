@@ -1,148 +1,97 @@
 #!/usr/bin/env bash
-# HYDRA VPS 배포 스크립트 — /opt/hydra 에서 deployer 유저로 실행.
-# Task 25 의 /api/admin/deploy 엔드포인트가 이 파일을 호출한다.
+# HYDRA VPS deploy — 단순화. 매번 풀+빌드+재시작. 가드 없음.
 #
-# 설계 원칙:
-#   1. 모든 단계는 시작/끝 + 결과 로그를 남긴다 (silence-by-default 금지).
-#   2. 실패하면 명확한 메시지 + 종료 코드. systemd가 failed 로 표시.
-#   3. 외부 명령(npm/pip)은 stdbuf 로 line-buffer 강제 — 죽어도 출력 안 잃음.
-#   4. cd 는 subshell 대신 in-place — set -e propagation 보장.
-#   5. 매번 환경 dump (df/free/git HEAD) — 사후 디버그 용.
+# Flow:
+#   git pull → pip install → alembic → pnpm install → pnpm build → rsync → restart
+#
+# 모든 단계 verbose, 어느 한 줄 실패하면 즉시 abort with 명확한 메시지.
 
 set -euo pipefail
-
-# 모든 stdout/stderr 를 line-buffer 로. systemd append: 모드와 결합해도 안 잃음.
 export PYTHONUNBUFFERED=1
-exec > >(stdbuf -oL -eL cat) 2>&1 || true
 
 ts() { date '+%H:%M:%S'; }
 log() { echo "[$(ts)] $*"; }
 fail() { log "❌ FAIL — $*"; exit 1; }
-run() {
-    # 외부 명령을 line-buffered 로 실행 — 죽어도 stdout 보존.
-    log "▶ $*"
-    stdbuf -oL -eL "$@"
-}
 
 cd /opt/hydra
 
-# ── 0. 환경 스냅샷 (사후 디버그용)
 log "── ENV ──"
-log "user=$(whoami)  cwd=$(pwd)  shell=$BASH_VERSION"
-log "node=$(command -v node && node -v 2>&1 || echo 'NOT INSTALLED')"
-log "npm=$(command -v npm  && npm -v  2>&1 || echo 'NOT INSTALLED')"
-log "git HEAD=$(git rev-parse --short HEAD 2>&1)"
-log "disk: $(df -h / 2>/dev/null | tail -1)"
-log "mem:  $(free -h 2>/dev/null | grep Mem)"
-log "─────────"
+log "git HEAD=$(git rev-parse --short HEAD)"
+log "node=$(command -v node && node -v 2>&1 || echo MISSING)"
+log "npm=$(command -v npm && npm -v 2>&1 || echo MISSING)"
+log "disk: $(df -h / | tail -1)"
+log "mem:  $(free -h | grep Mem)"
 
-# ── 1. main 브랜치 가드
-CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-[[ "$CURRENT_BRANCH" == "main" ]] || fail "not on main (current=$CURRENT_BRANCH)"
-
-PREV_REV=$(git rev-parse --short HEAD)
-log "starting — prev=$PREV_REV"
+# ── 1. main 가드
+[[ "$(git rev-parse --abbrev-ref HEAD)" == "main" ]] || fail "not on main"
 
 # ── 2. git pull
-log "git fetch + reset…"
-run git fetch origin main
-run git reset --hard origin/main
+log "── GIT PULL ──"
+git fetch origin main
+git reset --hard origin/main
 NEW_REV=$(git rev-parse --short HEAD)
-log "git HEAD → $NEW_REV"
+log "HEAD → $NEW_REV"
 
-CODE_CHANGED=true
-if [[ "$NEW_REV" == "$PREV_REV" ]]; then
-    CODE_CHANGED=false
-    log "no new commits — backend skip, frontend will rebuild only if dist missing"
-fi
+# ── 3. backend
+log "── BACKEND ──"
+.venv/bin/pip install -e . || fail "pip install failed"
+set -a; . ./.env; set +a
+.venv/bin/alembic upgrade head || fail "alembic failed"
 
-# ── 3. Backend (코드 변경 시에만)
-if [[ "$CODE_CHANGED" == "true" ]]; then
-    log "── BACKEND ──"
-    run .venv/bin/pip install -e .
-    set -a; . ./.env; set +a
-    run .venv/bin/alembic upgrade head
-fi
-
-# ── 4. Frontend — fail-fast, no silent skip
-log "── FRONTEND ──"
-[[ -f frontend/package.json ]] || fail "frontend/package.json missing"
-command -v node >/dev/null 2>&1 || fail "node not installed (run: sudo apt install nodejs)"
-
-# 이 프로젝트는 pnpm 사용 (frontend/pnpm-lock.yaml). corepack 으로 매번 동일 버전 보장.
-# Node 20+ 에는 corepack 포함. enable 은 idempotent — 매번 호출해도 안전.
+# ── 4. pnpm 보장 (없으면 글로벌 설치, idempotent)
+log "── PNPM ──"
+command -v node >/dev/null || fail "node not installed"
 if ! command -v pnpm >/dev/null 2>&1; then
-    log "frontend: corepack enable (installing pnpm)…"
-    sudo corepack enable >/dev/null 2>&1 || fail "corepack enable failed — Node 20+ 인지 확인"
-    sudo corepack prepare pnpm@latest --activate >/dev/null 2>&1 || fail "corepack pnpm prepare failed"
+    log "pnpm 없음 — sudo npm install -g pnpm…"
+    sudo npm install -g pnpm 2>&1 || fail "pnpm 설치 실패"
 fi
-log "frontend: node=$(node -v) pnpm=$(pnpm -v)"
+log "node=$(node -v)  pnpm=$(pnpm -v)"
 
-NEED_BUILD=false
-if [[ "$CODE_CHANGED" == "true" ]]; then
-    NEED_BUILD=true
-    log "frontend: code changed → rebuild"
-elif [[ ! -f /var/www/hydra/index.html ]]; then
-    NEED_BUILD=true
-    log "frontend: dist missing → rebuild"
-else
-    log "frontend: skip (code unchanged + dist present)"
-fi
+# ── 5. frontend build
+log "── FRONTEND ──"
+[[ -f frontend/package.json ]] || fail "frontend/package.json 없음"
+[[ -f frontend/pnpm-lock.yaml ]] || fail "frontend/pnpm-lock.yaml 없음"
 
-if [[ "$NEED_BUILD" == "true" ]]; then
-    pushd frontend > /dev/null
-    log "frontend: pnpm install --frozen-lockfile (timeout=300s)…"
-    if ! timeout 300 stdbuf -oL -eL pnpm install --frozen-lockfile 2>&1; then
-        rc=$?
-        popd > /dev/null
-        fail "pnpm install failed (rc=$rc)"
-    fi
-    log "frontend: pnpm install ✅"
+cd frontend
+log "pnpm install --frozen-lockfile…"
+timeout 300 pnpm install --frozen-lockfile 2>&1 || fail "pnpm install 실패"
 
-    log "frontend: pnpm run build (timeout=180s)…"
-    if ! timeout 180 stdbuf -oL -eL pnpm run build 2>&1; then
-        rc=$?
-        popd > /dev/null
-        fail "pnpm run build failed (rc=$rc)"
-    fi
-    log "frontend: build ✅"
-    popd > /dev/null
+log "pnpm run build…"
+timeout 180 pnpm run build 2>&1 || fail "pnpm build 실패"
+cd ..
 
-    [[ -f frontend/dist/index.html ]] || fail "frontend/dist/index.html missing after build"
+[[ -f frontend/dist/index.html ]] || fail "dist/index.html 없음 (빌드 결과 누락)"
 
-    log "frontend: rsync → /var/www/hydra…"
-    run sudo mkdir -p /var/www/hydra
-    run sudo rsync -a --delete frontend/dist/ /var/www/hydra/
-    run sudo chown -R www-data:www-data /var/www/hydra
-    log "frontend: deployed ✅"
-fi
+log "rsync → /var/www/hydra/…"
+sudo mkdir -p /var/www/hydra
+sudo rsync -a --delete frontend/dist/ /var/www/hydra/
+sudo chown -R www-data:www-data /var/www/hydra
+log "frontend ✅"
 
-# ── 5. nginx config (변경 시에만)
+# ── 6. nginx (변경 시에만)
 if [[ -f deploy/nginx-hydra.conf ]] && command -v nginx >/dev/null 2>&1; then
-    NGINX_TARGET="/etc/nginx/sites-available/hydra"
-    if ! sudo cmp -s deploy/nginx-hydra.conf "$NGINX_TARGET" 2>/dev/null; then
-        log "nginx config changed — applying…"
-        run sudo cp deploy/nginx-hydra.conf "$NGINX_TARGET"
-        run sudo ln -sf "$NGINX_TARGET" /etc/nginx/sites-enabled/hydra
-        run sudo nginx -t || fail "nginx -t failed — config NOT applied"
-        run sudo systemctl reload nginx
+    if ! sudo cmp -s deploy/nginx-hydra.conf /etc/nginx/sites-available/hydra 2>/dev/null; then
+        log "nginx 설정 변경 감지 — 적용…"
+        sudo cp deploy/nginx-hydra.conf /etc/nginx/sites-available/hydra
+        sudo ln -sf /etc/nginx/sites-available/hydra /etc/nginx/sites-enabled/hydra
+        sudo nginx -t || fail "nginx -t 실패"
+        sudo systemctl reload nginx
     fi
 fi
 
-# ── 6. backend restart + version bump
-if [[ "$CODE_CHANGED" == "true" ]]; then
-    log "── RESTART ──"
-    run sudo systemctl restart hydra-server
-    run .venv/bin/python scripts/bump_version.py "$NEW_REV"
-fi
+# ── 7. backend restart
+log "── RESTART ──"
+sudo systemctl restart hydra-server || fail "hydra-server restart 실패"
+.venv/bin/python scripts/bump_version.py "$NEW_REV" || log "⚠️  version bump 실패 (non-fatal)"
 
-# ── 7. self-verification
+# ── 8. verify
 log "── VERIFY ──"
 sleep 2
-if curl -sf -o /dev/null https://hydra-prod.duckdns.org/ ; then
-    log "site reachable ✅"
+HTTP=$(curl -sf -o /dev/null -w "%{http_code}" https://hydra-prod.duckdns.org/ || echo "000")
+if [[ "$HTTP" == "200" ]]; then
+    log "site HTTP 200 ✅"
 else
-    log "⚠️  site not reachable (may be transient)"
+    log "⚠️  site HTTP=$HTTP"
 fi
 
-log "✅ done — was=$PREV_REV now=$NEW_REV  code_changed=$CODE_CHANGED"
+log "✅ deploy 완료 — HEAD=$NEW_REV"
