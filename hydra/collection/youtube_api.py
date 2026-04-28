@@ -72,25 +72,41 @@ def _parse_duration(iso_duration: str) -> int:
     return h * 3600 + m * 60 + s
 
 
-def search_videos(keyword_text: str, max_results: int = 50, order: str = "relevance") -> list[dict]:
+def search_videos(
+    keyword_text: str,
+    max_results: int = 50,
+    order: str = "relevance",
+    published_after: str | None = None,
+    published_before: str | None = None,
+) -> list[dict]:
     """Search YouTube for videos matching keyword. Returns raw items.
 
     Args:
         order: "relevance" | "date" | "viewCount" — YouTube search order.
+        published_after: ISO 8601 (예: "2020-01-01T00:00:00Z") — 이 시점 이후만.
+        published_before: ISO 8601 — 이 시점 이전만.
     """
     yt = _get_youtube_service()
     results = []
     next_page = None
 
+    base_params = {
+        "q": keyword_text,
+        "part": "id,snippet",
+        "type": "video",
+        "order": order,
+        "relevanceLanguage": "ko",
+        "regionCode": "KR",
+    }
+    if published_after:
+        base_params["publishedAfter"] = published_after
+    if published_before:
+        base_params["publishedBefore"] = published_before
+
     while len(results) < max_results:
         try:
             resp = yt.search().list(
-                q=keyword_text,
-                part="id,snippet",
-                type="video",
-                order=order,
-                relevanceLanguage="ko",
-                regionCode="KR",
+                **base_params,
                 maxResults=min(50, max_results - len(results)),
                 pageToken=next_page,
             ).execute()

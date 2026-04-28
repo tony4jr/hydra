@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Plus, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, ChevronLeft, ChevronRight, Download, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -16,6 +16,40 @@ import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { fetchApi } from '@/lib/api'
 import { useCountUp } from '@/hooks/use-count-up'
+
+interface BrandRow {
+  id: number
+  name: string
+}
+
+interface CollectionStatus {
+  brand_id: number
+  brand_name: string
+  collection_depth: string
+  longtail_count: number
+  preset_video_limit: number
+  stats: {
+    total: number
+    fresh: number
+    popular_backlog: number
+    worked: number
+    untouched: number
+    progress_pct: number
+  }
+  keywords: Array<{
+    keyword: string
+    videos_direct: number
+    variant_count: number
+    total_videos_found: number
+  }>
+  in_progress: {
+    running?: boolean
+    started_at?: string
+    finished_at?: string
+    result?: { keywords_processed: number; videos_added: number; variants_created: number }
+    error?: string
+  }
+}
 
 interface Video {
   id: string
@@ -60,6 +94,13 @@ export default function TargetsPage() {
   const [campaignFilter, setCampaignFilter] = useState('all')
   const perPage = 20
 
+  // Brand 선택 + 수집 상태
+  const [brands, setBrands] = useState<BrandRow[]>([])
+  const [selectedBrand, setSelectedBrand] = useState<number | null>(null)
+  const [status, setStatus] = useState<CollectionStatus | null>(null)
+  const [collectStarting, setCollectStarting] = useState(false)
+  const [dailyTriggerLoading, setDailyTriggerLoading] = useState(false)
+
   const loadVideos = () => {
     setLoading(true)
     fetchApi<{ items: Video[]; total: number }>('/videos/api/list')
@@ -69,6 +110,56 @@ export default function TargetsPage() {
   }
 
   useEffect(() => { loadVideos() }, [])
+
+  // Brand 목록 로드
+  useEffect(() => {
+    fetchApi<{ items: BrandRow[] }>('/brands/api/list')
+      .then(d => {
+        const items = d.items || []
+        setBrands(items)
+        if (items.length > 0) setSelectedBrand(items[0].id)
+      })
+      .catch(() => {})
+  }, [])
+
+  // 선택된 brand 의 수집 상태 폴링
+  useEffect(() => {
+    if (!selectedBrand) return
+    const load = () => {
+      fetchApi<CollectionStatus>(`/api/admin/collection/status/${selectedBrand}`)
+        .then(setStatus)
+        .catch(() => setStatus(null))
+    }
+    load()
+    const id = setInterval(load, 5000)
+    return () => clearInterval(id)
+  }, [selectedBrand])
+
+  const handleStartCollection = async () => {
+    if (!selectedBrand) return
+    setCollectStarting(true)
+    try {
+      await fetchApi(`/api/admin/collection/start/${selectedBrand}`, { method: 'POST' })
+      toast.success('수집 시작', { description: '백그라운드에서 진행. 풀이 채워지는 중.' })
+    } catch (e) {
+      toast.error('수집 시작 실패', { description: e instanceof Error ? e.message : String(e) })
+    } finally {
+      setCollectStarting(false)
+    }
+  }
+
+  const handleDailyTrigger = async () => {
+    if (!selectedBrand) return
+    setDailyTriggerLoading(true)
+    try {
+      const r = await fetchApi<{ videos_added: number }>(`/api/admin/collection/daily-new/${selectedBrand}`, { method: 'POST' })
+      toast.success(`신규 ${r.videos_added}개 추가됨`)
+    } catch (e) {
+      toast.error('실패', { description: e instanceof Error ? e.message : String(e) })
+    } finally {
+      setDailyTriggerLoading(false)
+    }
+  }
 
   const completed = videos.filter(v => v.status === 'completed').length
   const pending = videos.filter(v => v.status === 'available').length
@@ -128,6 +219,130 @@ export default function TargetsPage() {
               </Button>
             </div>
           </div>
+
+          {/* Brand 선택 + 수집 상태 패널 */}
+          {brands.length > 0 && (
+            <div className='mb-5 rounded-xl border border-border bg-card p-5'>
+              <div className='flex items-center justify-between mb-4 flex-wrap gap-2'>
+                <div className='flex items-center gap-3'>
+                  <span className='text-foreground text-[14px] font-medium'>브랜드</span>
+                  <Select
+                    value={selectedBrand?.toString() || ''}
+                    onValueChange={(v) => setSelectedBrand(parseInt(v))}
+                  >
+                    <SelectTrigger className='w-48'>
+                      <SelectValue placeholder='브랜드 선택' />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {brands.map(b => (
+                        <SelectItem key={b.id} value={b.id.toString()}>{b.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {status && (
+                    <span className='text-muted-foreground text-[12px]'>
+                      깊이: <b className='text-foreground'>{status.collection_depth}</b> ·
+                      변형: <b className='text-foreground'>{status.longtail_count}</b> ·
+                      프리셋한도: <b className='text-foreground'>{status.preset_video_limit}</b>
+                    </span>
+                  )}
+                </div>
+                <div className='flex gap-2'>
+                  <Button
+                    size='sm' variant='outline' className='hydra-btn-press'
+                    onClick={handleDailyTrigger}
+                    disabled={dailyTriggerLoading || !selectedBrand}
+                  >
+                    <RefreshCw className='mr-1.5 h-3.5 w-3.5' />
+                    {dailyTriggerLoading ? '...' : '매일 신규 갱신'}
+                  </Button>
+                  <Button
+                    size='sm' className='hydra-btn-press'
+                    onClick={handleStartCollection}
+                    disabled={collectStarting || !selectedBrand || status?.in_progress?.running}
+                  >
+                    <Download className='mr-1.5 h-3.5 w-3.5' />
+                    {status?.in_progress?.running ? '수집 중…' :
+                     collectStarting ? '시작 중…' : '깊은 수집 시작'}
+                  </Button>
+                </div>
+              </div>
+
+              {status && (
+                <>
+                  <div className='grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4'>
+                    <div>
+                      <div className='text-muted-foreground text-[11px]'>전체 풀</div>
+                      <div className='text-[22px] font-bold'>{status.stats.total.toLocaleString()}</div>
+                    </div>
+                    <div>
+                      <div className='text-muted-foreground text-[11px]'>신규 (7일내)</div>
+                      <div className='text-[22px] font-bold text-blue-500'>{status.stats.fresh.toLocaleString()}</div>
+                    </div>
+                    <div>
+                      <div className='text-muted-foreground text-[11px]'>인기 백로그</div>
+                      <div className='text-[22px] font-bold text-orange-500'>{status.stats.popular_backlog.toLocaleString()}</div>
+                    </div>
+                    <div>
+                      <div className='text-muted-foreground text-[11px]'>작업 완료</div>
+                      <div className='text-[22px] font-bold text-emerald-500'>{status.stats.worked.toLocaleString()}</div>
+                    </div>
+                    <div>
+                      <div className='text-muted-foreground text-[11px]'>진행률</div>
+                      <div className='text-[22px] font-bold'>{status.stats.progress_pct}%</div>
+                    </div>
+                  </div>
+
+                  {/* 진행 바 */}
+                  <div className='h-1.5 bg-muted rounded-full overflow-hidden mb-4'>
+                    <div
+                      className='h-full bg-gradient-to-r from-emerald-400 to-emerald-600 transition-all'
+                      style={{ width: `${status.stats.progress_pct}%` }}
+                    />
+                  </div>
+
+                  {/* 키워드 breakdown */}
+                  {status.keywords.length > 0 && (
+                    <div className='space-y-1'>
+                      <div className='text-muted-foreground text-[11px] font-medium'>키워드별 풀</div>
+                      <div className='grid grid-cols-2 lg:grid-cols-3 gap-1.5'>
+                        {status.keywords.map(k => (
+                          <div key={k.keyword} className='text-[12px] flex justify-between rounded-md bg-muted/30 px-2 py-1'>
+                            <span className='font-medium truncate mr-2'>{k.keyword}</span>
+                            <span className='text-muted-foreground whitespace-nowrap'>
+                              {k.total_videos_found}개 · 변형 {k.variant_count}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* in-progress 세부 */}
+                  {status.in_progress?.running && (
+                    <div className='mt-3 rounded-md bg-blue-500/10 border border-blue-500/30 p-2.5 text-[12px]'>
+                      <span className='font-medium text-blue-600 dark:text-blue-400'>⏳ 깊은 수집 진행 중</span>
+                      <span className='text-muted-foreground ml-2'>
+                        시작: {status.in_progress.started_at && new Date(status.in_progress.started_at).toLocaleString('ko')}
+                      </span>
+                    </div>
+                  )}
+                  {status.in_progress?.error && (
+                    <div className='mt-3 rounded-md bg-red-500/10 border border-red-500/30 p-2.5 text-[12px]'>
+                      <span className='text-red-600 dark:text-red-400'>❌ 에러: {status.in_progress.error}</span>
+                    </div>
+                  )}
+                  {status.in_progress?.result && !status.in_progress.running && (
+                    <div className='mt-3 rounded-md bg-emerald-500/10 border border-emerald-500/30 p-2.5 text-[12px]'>
+                      <span className='text-emerald-600 dark:text-emerald-400'>
+                        ✅ 마지막 수집: 키워드 {status.in_progress.result.keywords_processed}개 처리, 영상 {status.in_progress.result.videos_added}개 추가, 변형 {status.in_progress.result.variants_created}개 생성
+                      </span>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
 
           {/* Stat cards */}
           {loading ? (

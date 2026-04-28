@@ -20,6 +20,9 @@ interface Brand {
   core_message: string | null
   promo_keywords: string[] | null
   status: string
+  collection_depth?: string
+  longtail_count?: number
+  preset_video_limit?: number
 }
 
 interface BrandFormDialogProps {
@@ -42,6 +45,9 @@ export function BrandFormDialog({
   const [coreMessage, setCoreMessage] = useState('')
   const [promoKeywords, setPromoKeywords] = useState<string[]>([])
   const [keywordInput, setKeywordInput] = useState('')
+  const [collectionDepth, setCollectionDepth] = useState<'quick'|'standard'|'deep'|'max'>('standard')
+  const [longtailCount, setLongtailCount] = useState(5)
+  const [presetVideoLimit, setPresetVideoLimit] = useState(1)
   const [loading, setLoading] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
 
@@ -52,11 +58,17 @@ export function BrandFormDialog({
         setCategory(brand.product_category || '')
         setCoreMessage(brand.core_message || '')
         setPromoKeywords(brand.promo_keywords || [])
+        setCollectionDepth((brand.collection_depth as any) || 'standard')
+        setLongtailCount(brand.longtail_count ?? 5)
+        setPresetVideoLimit(brand.preset_video_limit ?? 1)
       } else {
         setName('')
         setCategory('')
         setCoreMessage('')
         setPromoKeywords([])
+        setCollectionDepth('standard')
+        setLongtailCount(5)
+        setPresetVideoLimit(1)
       }
       setKeywordInput('')
       setDeleteConfirm(false)
@@ -89,7 +101,7 @@ export function BrandFormDialog({
       const url = mode === 'edit' && brand
         ? `/brands/api/${brand.id}/update`
         : '/brands/api/create'
-      await fetchApi(url, {
+      const saved = await fetchApi<{ id: number }>(url, {
         method: 'POST',
         body: JSON.stringify({
           name: name.trim(),
@@ -98,6 +110,20 @@ export function BrandFormDialog({
           promo_keywords: promoKeywords,
         }),
       })
+      // 수집/픽업 정책은 별도 엔드포인트로 저장 (admin_collection)
+      const targetId = (mode === 'edit' && brand) ? brand.id : (saved as any)?.id
+      if (targetId) {
+        try {
+          await fetchApi(`/api/admin/collection/policy/${targetId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+              collection_depth: collectionDepth,
+              longtail_count: longtailCount,
+              preset_video_limit: presetVideoLimit,
+            }),
+          })
+        } catch { /* policy 저장 실패해도 brand 자체는 만들어짐 */ }
+      }
       onOpenChange(false)
       onSuccess()
     } catch (e) { toast.error("오류", { description: e instanceof Error ? e.message : String(e) }) } finally {
@@ -166,6 +192,62 @@ export function BrandFormDialog({
               placeholder='예: 케라틴 직접 보충으로 모발 성장 촉진, 해외 논문 검증'
               rows={3}
             />
+          </div>
+
+          {/* 수집 정책 */}
+          <div className='mb-5 rounded-lg border border-border p-3 space-y-3 bg-muted/20'>
+            <div className='flex items-center justify-between'>
+              <span className='text-foreground text-sm font-medium'>영상 수집 정책</span>
+              <span className='text-muted-foreground text-[11px]'>운영 중 변경 가능</span>
+            </div>
+
+            <div>
+              <label className='text-foreground text-xs font-medium mb-1 block'>수집 깊이</label>
+              <div className='flex gap-1 flex-wrap'>
+                {(['quick','standard','deep','max'] as const).map(d => (
+                  <button key={d} type='button'
+                    onClick={() => setCollectionDepth(d)}
+                    className={`px-3 py-1.5 rounded-md text-xs border ${
+                      collectionDepth === d
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border bg-background text-muted-foreground hover:bg-muted/40'
+                    }`}>
+                    {d === 'quick' ? '빠름 (1년)' :
+                     d === 'standard' ? '표준 (5년)' :
+                     d === 'deep' ? '깊음 (5년+변형15)' :
+                     '최대 (10년+변형30)'}
+                  </button>
+                ))}
+              </div>
+              <p className='text-muted-foreground text-[11px] mt-1.5'>
+                깊을수록 풀 크고 시간 오래. 운영 중 바꿀 수 있음.
+              </p>
+            </div>
+
+            <div className='grid grid-cols-2 gap-3'>
+              <div>
+                <label className='text-foreground text-xs font-medium mb-1 block'>변형 키워드 수</label>
+                <Input
+                  type='number'
+                  value={longtailCount}
+                  min={0} max={50}
+                  onChange={e => setLongtailCount(Math.max(0, Math.min(50, parseInt(e.target.value) || 0)))}
+                  className='h-8 text-sm'
+                />
+                <p className='text-muted-foreground text-[10px] mt-0.5'>키워드당 자동 생성</p>
+              </div>
+              <div>
+                <label className='text-foreground text-xs font-medium mb-1 block'>프리셋 한도</label>
+                <Input
+                  type='number'
+                  value={presetVideoLimit}
+                  min={1} max={10}
+                  onChange={e => setPresetVideoLimit(Math.max(1, Math.min(10, parseInt(e.target.value) || 1)))}
+                  className='h-8 text-sm'
+                />
+                <p className='text-muted-foreground text-[10px] mt-0.5'>같은 영상×프리셋 7일 내 ≤N</p>
+              </div>
+            </div>
           </div>
 
           {/* Promo Keywords (Tag Input) */}

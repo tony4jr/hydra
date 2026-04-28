@@ -26,16 +26,34 @@ def check_video_preset_limit(
     video_id: str,
     preset_code: str,
     period_days: int = 7,
+    max_count: int = 1,
 ) -> bool:
-    """같은 영상 + 같은 프리셋 = 7일 차단. True=허용."""
+    """같은 영상 + 같은 프리셋 캠페인 수 제한. True=허용.
+
+    max_count 안에 캠페인이 몇 개까지 가능한지. 기본 1 (한 번이라도 있으면 차단).
+    """
     cutoff = datetime.now(UTC) - timedelta(days=period_days)
-    existing = db.query(Campaign).filter(
+    count = db.query(Campaign).filter(
         Campaign.video_id == video_id,
         Campaign.scenario == preset_code,
         Campaign.created_at >= cutoff,
         Campaign.status != "cancelled",
-    ).first()
-    return existing is None
+    ).count()
+    return count < max_count
+
+
+def check_video_preset_limit_for_brand(
+    db: Session,
+    video_id: str,
+    preset_code: str,
+    brand_id: int,
+    period_days: int = 7,
+) -> bool:
+    """Brand.preset_video_limit 적용. brand 마다 다른 한도 가능."""
+    from hydra.db.models import Brand
+    brand = db.get(Brand, brand_id) if brand_id else None
+    max_count = (brand.preset_video_limit if brand else None) or 1
+    return check_video_preset_limit(db, video_id, preset_code, period_days, max_count)
 
 
 def check_account_video_duplicate(

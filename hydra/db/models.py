@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 
 from sqlalchemy import (
-    BigInteger, Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text,
+    BigInteger, Boolean, Column, DateTime, Float, ForeignKey, Index, Integer, String, Text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
@@ -98,6 +98,12 @@ class Brand(Base):
     weekly_campaign_target = Column(Integer, default=0)
     auto_campaign_enabled = Column(Boolean, default=False)
 
+    # 영상 수집 정책 (Smart Pickup)
+    collection_depth = Column(String(20), default="standard")  # quick|standard|deep|max
+    longtail_count = Column(Integer, default=5)  # 키워드당 자동 생성할 변형 수
+    scoring_weights = Column(Text)  # JSON: {freshness, popularity, untouched, random}
+    preset_video_limit = Column(Integer, default=1)  # 같은 영상에 같은 프리셋 몇 회까지
+
     status = Column(String, default="active")
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
@@ -120,15 +126,21 @@ class Keyword(Base):
     total_comments_posted = Column(Integer, default=0)
     last_searched_at = Column(DateTime)
 
+    # Long-tail 변형 추적
+    parent_keyword_id = Column(Integer, ForeignKey("keywords.id", ondelete="SET NULL"))
+    is_variant = Column(Boolean, default=False)
+
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
     # relationships
     brand = relationship("Brand", back_populates="keywords")
     videos = relationship("Video", back_populates="keyword")
+    parent = relationship("Keyword", remote_side="Keyword.id", backref="variants")
 
     __table_args__ = (
         Index("idx_keywords_status", "status"),
         Index("idx_keywords_brand", "brand_id"),
+        Index("idx_keywords_parent", "parent_keyword_id"),
     )
 
 
@@ -159,6 +171,12 @@ class Video(Base):
     collected_at = Column(DateTime, default=lambda: datetime.now(UTC))
     last_worked_at = Column(DateTime)
 
+    # Smart Pickup 메타
+    total_campaigns_count = Column(Integer, default=0)
+    popularity_score = Column(Float)  # nightly 배치로 갱신
+    discovered_via = Column(String(50))  # search_viewCount|search_date|search_relevance|longtail|manual
+    discovery_keyword = Column(String(200))  # 발견 시 사용된 keyword/variant 텍스트
+
     # relationships
     keyword = relationship("Keyword", back_populates="videos")
     campaigns = relationship("Campaign", back_populates="video")
@@ -168,6 +186,8 @@ class Video(Base):
         Index("idx_videos_priority", "priority"),
         Index("idx_videos_published", "published_at"),
         Index("idx_videos_keyword", "keyword_id"),
+        Index("idx_videos_last_worked", "last_worked_at"),
+        Index("idx_videos_popularity", "popularity_score"),
     )
 
 

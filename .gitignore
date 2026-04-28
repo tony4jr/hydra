@@ -16,3 +16,10 @@ data/avatars/
 # SQLite 부속 파일 (WAL, SHM) — DB 세션 임시 파일
 *.db-shm
 *.db-wal
+
+# 운영 데이터 (비번/계정 정보 포함, 절대 git 금지)
+data/round2_progress/
+data/_pw_changes.log
+
+# Python 빌드 산출물
+hydra.egg-info/

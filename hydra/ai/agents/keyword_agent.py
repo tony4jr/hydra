@@ -56,6 +56,8 @@ def expand_keywords(db: Session, keyword: Keyword, max_count: int = 15) -> list[
             source="auto_expanded",
             status="active",
             priority=keyword.priority - 1 if keyword.priority > 1 else 1,
+            parent_keyword_id=keyword.id,
+            is_variant=True,
         )
         db.add(new_kw)
         created.append(new_kw)
