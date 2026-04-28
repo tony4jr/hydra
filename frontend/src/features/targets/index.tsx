@@ -17,6 +17,7 @@ import { ThemeSwitch } from '@/components/theme-switch'
 import { fetchApi } from '@/lib/api'
 import { useCountUp } from '@/hooks/use-count-up'
 import { VideoPoolPanel } from './video-pool-panel'
+import { KeywordPollingPanel } from './keyword-polling-panel'
 
 interface BrandRow {
   id: number
@@ -344,6 +345,9 @@ export default function TargetsPage() {
               )}
             </div>
           )}
+
+          {/* Phase 1: 키워드 폴링 토글 */}
+          <KeywordPollingPanel brandId={selectedBrand} />
 
           {/* Phase 1: 영상 풀 패널 (state/L tier 필터 + 수동 토글) */}
           <VideoPoolPanel brandId={selectedBrand} />

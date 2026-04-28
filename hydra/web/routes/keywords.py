@@ -32,8 +32,15 @@ def list_keywords(
         {
             "id": k.id, "text": k.text, "brand_id": k.brand_id,
             "source": k.source, "status": k.status, "priority": k.priority,
-            "videos_found": k.total_videos_found,
+            "total_videos_found": k.total_videos_found,
             "comments_posted": k.total_comments_posted,
+            "is_variant": bool(k.is_variant),
+            "parent_keyword_id": k.parent_keyword_id,
+            "is_negative": bool(k.is_negative),
+            "poll_5min": bool(k.poll_5min),
+            "poll_30min": bool(k.poll_30min),
+            "poll_daily": bool(k.poll_daily),
+            "keyword_tier": k.keyword_tier or "core",
         }
         for k in query.all()
     ]
@@ -87,5 +94,35 @@ def pause_keyword(keyword_id: int, db: Session = Depends(get_db)):
     if not kw:
         return {"error": "not found"}
     kw.status = "paused"
+    db.commit()
+    return {"ok": True}
+
+
+class KeywordFieldUpdate(BaseModel):
+    field: str
+    value: bool | str | int
+
+
+@router.post("/api/{keyword_id}/update-field")
+def update_field(keyword_id: int, data: KeywordFieldUpdate, db: Session = Depends(get_db)):
+    """Phase 1: poll_5min/poll_30min/poll_daily/is_negative 등 토글."""
+    kw = db.query(Keyword).get(keyword_id)
+    if not kw:
+        return {"error": "not found"}
+    allowed = {"poll_5min", "poll_30min", "poll_daily", "is_negative", "status", "keyword_tier"}
+    if data.field not in allowed:
+        return {"error": f"field {data.field} not allowed"}
+    setattr(kw, data.field, data.value)
+    db.commit()
+    return {"ok": True, "field": data.field, "value": data.value}
+
+
+@router.post("/api/{keyword_id}/delete")
+def delete_keyword(keyword_id: int, db: Session = Depends(get_db)):
+    """키워드 soft-delete (status='excluded'). 영상/매칭 기록은 유지."""
+    kw = db.query(Keyword).get(keyword_id)
+    if not kw:
+        return {"error": "not found"}
+    kw.status = "excluded"
     db.commit()
     return {"ok": True}
