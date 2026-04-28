@@ -1,78 +1,111 @@
 #!/usr/bin/env bash
 # HYDRA VPS 배포 스크립트 — /opt/hydra 에서 deployer 유저로 실행.
 # Task 25 의 /api/admin/deploy 엔드포인트가 이 파일을 호출한다.
+#
+# 설계 원칙:
+#   1. 모든 단계는 시작/끝 + 결과 로그를 남긴다 (silence-by-default 금지).
+#   2. 실패하면 명확한 메시지 + 종료 코드. systemd가 failed 로 표시.
+#   3. frontend dist 가 없거나 stale 이면 강제 빌드 (no-new-commits 가드 무시).
+#   4. 모든 npm/pip/git 출력은 그대로 흘려보낸다 (--silent 금지).
 set -euo pipefail
+
+# 모든 명령 trace + timestamp (systemd journal 에 한 줄씩 시간이 박힘)
+ts() { date '+%H:%M:%S'; }
+log() { echo "[$(ts)] $*"; }
+fail() { log "❌ FAIL — $*"; exit 1; }
 
 cd /opt/hydra
 
-# 1. 안전 가드: main 브랜치에서만 실행
+# 1. 안전 가드
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-if [[ "$CURRENT_BRANCH" != "main" ]]; then
-    echo "[deploy] ABORT — not on main (current=$CURRENT_BRANCH)" >&2
-    exit 1
-fi
+[[ "$CURRENT_BRANCH" == "main" ]] || fail "not on main (current=$CURRENT_BRANCH)"
 
 PREV_REV=$(git rev-parse --short HEAD)
-echo "[deploy] starting — prev=$PREV_REV"
+log "starting — prev=$PREV_REV  user=$(whoami)  cwd=$(pwd)"
 
 # 2. 최신 코드 pull
-echo "[deploy] git fetch + reset..."
-git fetch origin main --quiet
+log "git fetch + reset…"
+git fetch origin main
 git reset --hard origin/main
-
 NEW_REV=$(git rev-parse --short HEAD)
+log "git HEAD → $NEW_REV"
+
+CODE_CHANGED=true
 if [[ "$NEW_REV" == "$PREV_REV" ]]; then
-    echo "[deploy] no new commits — skip restart"
-    exit 0
+    CODE_CHANGED=false
+    log "no new commits — backend skip, frontend will rebuild only if dist missing"
 fi
 
-# 3. Python 의존성
-echo "[deploy] pip install -e ."
-.venv/bin/pip install -e . --quiet
+# 3. Backend (only if code changed)
+if [[ "$CODE_CHANGED" == "true" ]]; then
+    log "pip install -e . …"
+    .venv/bin/pip install -e .
 
-# 4. DB 마이그레이션 (실패 시 중단)
-echo "[deploy] alembic upgrade head..."
-set -a
-. ./.env
-set +a
-.venv/bin/alembic upgrade head
+    log "alembic upgrade head…"
+    set -a
+    . ./.env
+    set +a
+    .venv/bin/alembic upgrade head
+fi
 
-# 5. 프론트엔드 빌드 + nginx 로 배포 — frontend/package.json + npm 둘 다 있을 때만
-if [[ -f frontend/package.json ]] && command -v npm >/dev/null 2>&1; then
-    echo "[deploy] frontend build..."
-    (cd frontend && npm ci --silent && npm run build)
-
-    # 빌드 결과물을 nginx webroot 로 동기화 (--delete 로 고아파일 제거)
-    echo "[deploy] syncing frontend/dist → /var/www/hydra..."
-    sudo mkdir -p /var/www/hydra
-    sudo rsync -a --delete frontend/dist/ /var/www/hydra/
-    sudo chown -R www-data:www-data /var/www/hydra
+# 4. Frontend — 정책:
+#    - npm 없음 = 명시적 ABORT (운영 환경 문제이므로 조용히 skip 금지)
+#    - dist 폴더 없음 → 무조건 build (commit 안 바뀌어도)
+#    - dist 있음 + 코드 안바뀜 → skip (안전하게 재사용)
+#    - 코드 바뀜 → 무조건 build
+if [[ ! -f frontend/package.json ]]; then
+    log "frontend/package.json 없음 — frontend deploy skip (저장소 이상 가능)"
+elif ! command -v npm >/dev/null 2>&1; then
+    fail "npm not installed on VPS — cannot build frontend (apt install nodejs)"
 else
-    echo "[deploy] frontend skipped (no package.json or npm)"
+    NEED_BUILD=false
+    if [[ "$CODE_CHANGED" == "true" ]]; then
+        NEED_BUILD=true
+        log "frontend: code changed → rebuild"
+    elif [[ ! -f /var/www/hydra/index.html ]]; then
+        NEED_BUILD=true
+        log "frontend: /var/www/hydra/index.html 없음 → rebuild"
+    else
+        log "frontend: skip (code unchanged + dist present)"
+    fi
+
+    if [[ "$NEED_BUILD" == "true" ]]; then
+        log "frontend: node=$(node -v 2>&1) npm=$(npm -v 2>&1)"
+        log "frontend: npm ci…"
+        # --silent 금지 — 에러 즉시 보이게. set -e 로 실패 시 자동 abort.
+        (cd frontend && npm ci) || fail "npm ci failed"
+        log "frontend: npm run build…"
+        (cd frontend && npm run build) || fail "npm run build failed"
+        log "frontend: rsync → /var/www/hydra…"
+        sudo mkdir -p /var/www/hydra
+        sudo rsync -a --delete frontend/dist/ /var/www/hydra/
+        sudo chown -R www-data:www-data /var/www/hydra
+        log "frontend: ✅ deployed"
+    fi
 fi
 
-# 5a. nginx 설정 동기화 — repo 의 deploy/nginx-hydra.conf 가 변경된 경우에만
+# 5. nginx config sync (변경된 경우에만)
 if [[ -f deploy/nginx-hydra.conf ]] && command -v nginx >/dev/null 2>&1; then
     NGINX_TARGET="/etc/nginx/sites-available/hydra"
     if ! sudo cmp -s deploy/nginx-hydra.conf "$NGINX_TARGET" 2>/dev/null; then
-        echo "[deploy] nginx config changed — applying..."
+        log "nginx config changed — applying…"
         sudo cp deploy/nginx-hydra.conf "$NGINX_TARGET"
         sudo ln -sf "$NGINX_TARGET" /etc/nginx/sites-enabled/hydra
         if sudo nginx -t; then
             sudo systemctl reload nginx
-            echo "[deploy] nginx reloaded"
+            log "nginx reloaded"
         else
-            echo "[deploy] nginx -t failed — config NOT applied, check manually" >&2
+            fail "nginx -t failed — config NOT applied"
         fi
     fi
 fi
 
-# 6. 서버 재시작 (deployer 무비번 sudo 설정돼있어야 — Validation B Step 3)
-echo "[deploy] restarting hydra-server..."
-sudo systemctl restart hydra-server
+# 6. backend restart + version bump (only if code changed)
+if [[ "$CODE_CHANGED" == "true" ]]; then
+    log "restarting hydra-server…"
+    sudo systemctl restart hydra-server
+    log "bumping version to $NEW_REV…"
+    .venv/bin/python scripts/bump_version.py "$NEW_REV"
+fi
 
-# 7. 버전 갱신 — heartbeat/v2 응답에 반영됨
-echo "[deploy] bumping version to $NEW_REV..."
-.venv/bin/python scripts/bump_version.py "$NEW_REV"
-
-echo "[deploy] done — was=$PREV_REV now=$NEW_REV"
+log "✅ done — was=$PREV_REV now=$NEW_REV  code_changed=$CODE_CHANGED"
