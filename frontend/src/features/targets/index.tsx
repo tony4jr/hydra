@@ -263,10 +263,16 @@ export default function TargetsPage() {
                   <Button
                     size='sm' className='hydra-btn-press'
                     onClick={handleStartCollection}
-                    disabled={collectStarting || !selectedBrand || status?.in_progress?.running}
+                    disabled={
+                      collectStarting || !selectedBrand ||
+                      status?.in_progress?.running ||
+                      (status?.keywords?.length || 0) === 0
+                    }
+                    title={(status?.keywords?.length || 0) === 0 ? '키워드 0개 — 먼저 키워드를 추가하세요 (아래 키워드 폴링 패널)' : ''}
                   >
                     <Download className='mr-1.5 h-3.5 w-3.5' />
-                    {status?.in_progress?.running ? '수집 중…' :
+                    {(status?.keywords?.length || 0) === 0 ? '키워드 없음' :
+                     status?.in_progress?.running ? '수집 중…' :
                      collectStarting ? '시작 중…' : '깊은 수집 시작'}
                   </Button>
                 </div>
