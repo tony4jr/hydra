@@ -3,8 +3,8 @@
 from datetime import UTC, datetime
 
 from sqlalchemy import (
-    BigInteger, Boolean, Column, DateTime, Float, ForeignKey, Index, Integer, String, Text,
-    UniqueConstraint,
+    BigInteger, Boolean, Column, Date, DateTime, Float, ForeignKey, Index, Integer,
+    SmallInteger, String, Text, UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
 
@@ -130,6 +130,13 @@ class Keyword(Base):
     parent_keyword_id = Column(Integer, ForeignKey("keywords.id", ondelete="SET NULL"))
     is_variant = Column(Boolean, default=False)
 
+    # Phase 1 — 키워드 tier + 폴링 빈도
+    keyword_tier = Column(String(20), default="core")  # core|expansion|long_tail
+    is_negative = Column(Boolean, default=False)  # 부정 키워드 (배제 룰)
+    poll_5min = Column(Boolean, default=False)  # 핫 키워드만 (운영자가 명시 활성화)
+    poll_30min = Column(Boolean, default=False)
+    poll_daily = Column(Boolean, default=True)
+
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
     # relationships
@@ -177,6 +184,22 @@ class Video(Base):
     discovered_via = Column(String(50))  # search_viewCount|search_date|search_relevance|longtail|manual
     discovery_keyword = Column(String(200))  # 발견 시 사용된 keyword/variant 텍스트
 
+    # Phase 1 — L 티어 + Lifecycle Phase + state
+    l_tier = Column(String(2))  # L1|L2|L3|L4
+    lifecycle_phase = Column(SmallInteger)  # 1=신규(7일)|2=안정화(~1m)|3=에버그린(~6m)|4=장기
+    category_subtype = Column(String(50))  # Phase 2 LLM 분류
+    embedding_score = Column(Float)  # 0~1 (Phase 1 임베딩 분류)
+    our_presence_score = Column(Float, default=0)
+    total_scenarios_run = Column(Integer, default=0)
+    last_action_at = Column(DateTime)
+    next_revisit_at = Column(DateTime)
+    state = Column(String(20), default="pending")  # pending|active|paused|completed|blacklisted
+    blacklist_reason = Column(String(100))
+    top_comment_likes = Column(Integer, default=0)  # 베스트댓글 진입성 점수용
+    view_count_prev_day = Column(Integer, default=0)
+    views_per_hour_recent = Column(Float, default=0)
+    relevance_score_v2 = Column(Float)  # Phase 2 5점수 합산 (popularity_score 와 별개)
+
     # relationships
     keyword = relationship("Keyword", back_populates="videos")
     campaigns = relationship("Campaign", back_populates="video")
@@ -188,6 +211,10 @@ class Video(Base):
         Index("idx_videos_keyword", "keyword_id"),
         Index("idx_videos_last_worked", "last_worked_at"),
         Index("idx_videos_popularity", "popularity_score"),
+        Index("idx_videos_l_tier", "l_tier"),
+        Index("idx_videos_state", "state"),
+        Index("idx_videos_next_revisit", "next_revisit_at"),
+        Index("idx_videos_lifecycle", "lifecycle_phase"),
     )
 
 
@@ -850,4 +877,134 @@ class AuditLog(Base):
     __table_args__ = (
         Index("idx_audit_user_time", "user_id", "timestamp"),
         Index("idx_audit_action_time", "action", "timestamp"),
+    )
+
+
+# ─────────────────────────────────────────────────────────────────
+# Phase 1 — 신규 테이블 (Smart Pickup 명세 채택)
+# ─────────────────────────────────────────────────────────────────
+
+
+class TargetCollectionConfig(Base):
+    """Brand(=Target) 별 수집·분류 정책. 운영 디폴트값 박혀있음."""
+    __tablename__ = "target_collection_config"
+
+    target_id = Column(Integer, ForeignKey("brands.id", ondelete="CASCADE"), primary_key=True)
+    # L1 풀
+    l1_threshold_score = Column(Float, default=70.0, nullable=False)
+    l1_max_pool_size = Column(Integer, default=1000, nullable=False)
+    # L2 신규
+    l2_max_age_hours = Column(Integer, default=24, nullable=False)
+    l2_min_channel_subscribers = Column(Integer, default=10000, nullable=False)
+    # L3 트렌딩
+    l3_views_per_hour_threshold = Column(Integer, default=1000, nullable=False)
+    l3_views_24h_threshold = Column(Integer, default=10000, nullable=False)
+    # 임베딩
+    embedding_reference_text = Column(Text)
+    embedding_threshold = Column(Float, default=0.65, nullable=False)
+    # 룰 필터
+    hard_block_min_video_seconds = Column(Integer, default=30, nullable=False)
+    exclude_kids_category = Column(Boolean, default=True, nullable=False)
+    exclude_live_streaming = Column(Boolean, default=True, nullable=False)
+    # 점수 가중치 JSON
+    score_weights = Column(Text)
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False)
+
+
+class YoutubeVideoGlobalState(Base):
+    """같은 YouTube 영상이 여러 타겟에서 동시 작전 시 충돌 방지용 글로벌 상태."""
+    __tablename__ = "youtube_video_global_state"
+
+    youtube_video_id = Column(String(20), primary_key=True)
+    total_actions_24h = Column(Integer, default=0, nullable=False)
+    total_actions_7d = Column(Integer, default=0, nullable=False)
+    active_target_count = Column(SmallInteger, default=0, nullable=False)
+    active_scenario_count = Column(SmallInteger, default=0, nullable=False)
+    last_action_at = Column(DateTime)
+    last_main_comment_at = Column(DateTime)
+    recent_action_log = Column(Text)  # JSON array
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False)
+
+    __table_args__ = (
+        Index("idx_global_state_actions_24h", "total_actions_24h"),
+    )
+
+
+class VideoKeywordMatch(Base):
+    """영상이 어떤 키워드의 검색 결과 상위에 등장했는지 추적 (검색 노출도 점수용)."""
+    __tablename__ = "video_keyword_matches"
+
+    match_id = Column(Integer, primary_key=True, autoincrement=True)
+    video_id = Column(String, ForeignKey("videos.id", ondelete="CASCADE"), nullable=False)
+    keyword_id = Column(Integer, ForeignKey("keywords.id"), nullable=False)
+    search_rank = Column(SmallInteger)
+    matched_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("video_id", "keyword_id", name="uq_video_keyword"),
+        Index("idx_match_video", "video_id"),
+    )
+
+
+class ChannelBlacklist(Base):
+    """채널 단위 차단. target_id NULL = 전 시스템 글로벌 차단."""
+    __tablename__ = "channel_blacklist"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    channel_id = Column(String(50), nullable=False)
+    target_id = Column(Integer, ForeignKey("brands.id", ondelete="CASCADE"))  # NULL = global
+    reason = Column(String(100))
+    added_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("channel_id", "target_id", name="uq_channel_target"),
+        Index("idx_channel_blacklist_global", "channel_id"),
+    )
+
+
+class TargetCategoryFitness(Base):
+    """Phase 2: 타겟별 LLM 카테고리의 적합도 (0~1). 어드민에서 편집."""
+    __tablename__ = "target_category_fitness"
+
+    target_id = Column(Integer, ForeignKey("brands.id", ondelete="CASCADE"), primary_key=True)
+    category = Column(String(50), primary_key=True)
+    fitness = Column(Float, default=0.5, nullable=False)
+
+
+class VideoCollectionLog(Base):
+    """수집 작업 추적 (운영 디버그·모니터링)."""
+    __tablename__ = "video_collection_log"
+
+    log_id = Column(Integer, primary_key=True, autoincrement=True)
+    target_id = Column(Integer, nullable=False)
+    poll_type = Column(String(20))
+    keywords_processed = Column(Integer, default=0, nullable=False)
+    api_calls_made = Column(Integer, default=0, nullable=False)
+    videos_found = Column(Integer, default=0, nullable=False)
+    videos_new = Column(Integer, default=0, nullable=False)
+    videos_updated = Column(Integer, default=0, nullable=False)
+    videos_blocked = Column(Integer, default=0, nullable=False)
+    started_at = Column(DateTime, nullable=False)
+    completed_at = Column(DateTime)
+    status = Column(String(20))
+    error_message = Column(Text)
+
+    __table_args__ = (
+        Index("idx_collection_log_target_started", "target_id", "started_at"),
+    )
+
+
+class YoutubeQuotaLog(Base):
+    """API 키별 일일 quota 사용량. 5분 폴링 도입 시 필수."""
+    __tablename__ = "youtube_quota_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    api_key_index = Column(Integer, nullable=False)
+    day = Column(Date, nullable=False)
+    quota_used = Column(Integer, default=0, nullable=False)
+    last_request_at = Column(DateTime)
+
+    __table_args__ = (
+        UniqueConstraint("api_key_index", "day", name="uq_quota_per_day"),
+        Index("idx_quota_day", "day"),
     )
