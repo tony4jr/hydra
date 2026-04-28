@@ -751,7 +751,7 @@ button, a, input, select, textarea, [role="button"], [role="tab"] {
     transparent 360deg
   );
   filter: blur(70px);
-  animation: hydra-aurora-rotate 18s linear infinite, hydra-aurora-breathe 8s ease-in-out infinite alternate;
+  animation: hydra-aurora-rotate 9s linear infinite, hydra-aurora-breathe 5s ease-in-out infinite alternate;
   z-index: 0;
   pointer-events: none;
   mix-blend-mode: screen;
@@ -771,7 +771,7 @@ button, a, input, select, textarea, [role="button"], [role="tab"] {
     transparent 360deg
   );
   filter: blur(90px);
-  animation: hydra-aurora-rotate-rev 28s linear infinite;
+  animation: hydra-aurora-rotate-rev 14s linear infinite;
   z-index: 0;
   pointer-events: none;
   mix-blend-mode: screen;
