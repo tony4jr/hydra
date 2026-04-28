@@ -56,6 +56,62 @@ def trigger_deploy(_session: dict = Depends(admin_session)) -> dict:
     return {"started": True, "unit": DEPLOY_UNIT}
 
 
+@router.get("/deploy/status")
+def deploy_status(_session: dict = Depends(admin_session)) -> dict:
+    """현재 systemd 유닛 상태 + 마지막 종료 코드."""
+    try:
+        active = subprocess.run(
+            ["systemctl", "is-active", DEPLOY_UNIT],
+            capture_output=True, text=True, timeout=5,
+        ).stdout.strip()
+        result = subprocess.run(
+            ["systemctl", "show", DEPLOY_UNIT, "--property=Result,ExecMainStatus,ActiveEnterTimestamp,InactiveEnterTimestamp"],
+            capture_output=True, text=True, timeout=5,
+        ).stdout.strip()
+        props = {}
+        for line in result.splitlines():
+            if "=" in line:
+                k, v = line.split("=", 1)
+                props[k] = v
+        return {
+            "active": active,  # active|inactive|activating|failed
+            "result": props.get("Result", ""),  # success|exit-code|signal|...
+            "exit_code": props.get("ExecMainStatus", ""),
+            "last_run_started": props.get("ActiveEnterTimestamp", ""),
+            "last_run_ended": props.get("InactiveEnterTimestamp", ""),
+        }
+    except FileNotFoundError:
+        raise HTTPException(500, "systemctl not available")
+    except subprocess.SubprocessError as e:
+        raise HTTPException(500, f"systemctl query failed: {e}")
+
+
+@router.get("/deploy/log")
+def deploy_log(lines: int = 200, _session: dict = Depends(admin_session)) -> dict:
+    """최근 배포 로그를 journalctl 에서 가져옴 (파일보다 안정적)."""
+    n = max(10, min(lines, 1000))
+    try:
+        out = subprocess.run(
+            ["sudo", "journalctl", "-u", DEPLOY_UNIT, "-n", str(n), "--no-pager", "--output=short-iso"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if out.returncode != 0:
+            # Fallback: log file
+            log_file = Path("/var/log/hydra/deploy.log")
+            if log_file.is_file():
+                content = subprocess.run(
+                    ["sudo", "tail", "-n", str(n), str(log_file)],
+                    capture_output=True, text=True, timeout=5,
+                ).stdout
+                return {"source": "file", "lines": content}
+            return {"source": "none", "lines": out.stderr or "(no log available)"}
+        return {"source": "journal", "lines": out.stdout}
+    except FileNotFoundError:
+        raise HTTPException(500, "journalctl not available")
+    except subprocess.SubprocessError as e:
+        raise HTTPException(500, f"log read failed: {e}")
+
+
 @router.post("/pause")
 def pause_all(_session: dict = Depends(admin_session)) -> dict:
     scfg.set_paused(True)

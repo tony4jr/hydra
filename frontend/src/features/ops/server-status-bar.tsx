@@ -1,6 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Play, Rocket } from 'lucide-react'
+import { useState } from 'react'
+import { AlertTriangle, FileText, Play, Rocket } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { fetchApi } from '@/lib/api'
 import { toast } from 'sonner'
@@ -34,12 +38,41 @@ async function postDeploy() {
   })
 }
 
+type DeployStatus = {
+  active: string
+  result: string
+  exit_code: string
+  last_run_started: string
+  last_run_ended: string
+}
+
+async function fetchDeployStatus(): Promise<DeployStatus> {
+  return fetchApi<DeployStatus>('/api/admin/deploy/status')
+}
+async function fetchDeployLog(): Promise<{ source: string; lines: string }> {
+  return fetchApi<{ source: string; lines: string }>('/api/admin/deploy/log?lines=300')
+}
+
 export function ServerStatusBar() {
   const qc = useQueryClient()
+  const [logOpen, setLogOpen] = useState(false)
   const { data } = useQuery({
     queryKey: ['server-config'],
     queryFn: fetchServerConfig,
     refetchInterval: 10_000,
+  })
+
+  const { data: deployStatus, refetch: refetchStatus } = useQuery({
+    queryKey: ['deploy-status'],
+    queryFn: fetchDeployStatus,
+    refetchInterval: logOpen ? 3_000 : false,
+    enabled: logOpen,
+  })
+  const { data: deployLog, refetch: refetchLog } = useQuery({
+    queryKey: ['deploy-log'],
+    queryFn: fetchDeployLog,
+    refetchInterval: logOpen ? 3_000 : false,
+    enabled: logOpen,
   })
 
   const pause = useMutation({
@@ -174,7 +207,58 @@ export function ServerStatusBar() {
           <Rocket className='h-4 w-4' />
           {deploy.isPending ? '배포중…' : '배포'}
         </Button>
+
+        <Button
+          size='sm'
+          variant='outline'
+          onClick={() => { setLogOpen(true); refetchStatus(); refetchLog() }}
+          className='min-h-[40px]'
+          title='배포 로그 보기'
+        >
+          <FileText className='h-4 w-4' />
+          로그
+        </Button>
       </div>
+
+      <Dialog open={logOpen} onOpenChange={setLogOpen}>
+        <DialogContent className='max-w-3xl'>
+          <DialogHeader>
+            <DialogTitle>배포 로그</DialogTitle>
+          </DialogHeader>
+          {deployStatus && (
+            <div className='flex gap-3 text-xs flex-wrap mb-2'>
+              <span className={cn(
+                'px-2 py-1 rounded-md',
+                deployStatus.active === 'active' || deployStatus.active === 'activating'
+                  ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
+                  : deployStatus.result === 'success'
+                  ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                  : 'bg-red-500/15 text-red-600 dark:text-red-400'
+              )}>
+                상태: {deployStatus.active}
+              </span>
+              <span className='px-2 py-1 rounded-md bg-muted'>결과: {deployStatus.result || '—'}</span>
+              <span className='px-2 py-1 rounded-md bg-muted'>exit: {deployStatus.exit_code || '—'}</span>
+              {deployStatus.last_run_started && (
+                <span className='px-2 py-1 rounded-md bg-muted'>
+                  시작: {deployStatus.last_run_started.split(' ').slice(0, 2).join(' ')}
+                </span>
+              )}
+            </div>
+          )}
+          <pre className='bg-zinc-950 text-zinc-100 text-[11px] leading-snug rounded-md p-3 overflow-auto max-h-[60vh] font-mono whitespace-pre-wrap'>
+            {deployLog?.lines || '(로그 로딩 중…)'}
+          </pre>
+          <div className='flex justify-end gap-2'>
+            <Button size='sm' variant='outline' onClick={() => { refetchStatus(); refetchLog() }}>
+              새로고침
+            </Button>
+            <Button size='sm' variant='ghost' onClick={() => setLogOpen(false)}>
+              닫기
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
