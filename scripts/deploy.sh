@@ -67,7 +67,16 @@ fi
 # ── 4. Frontend — fail-fast, no silent skip
 log "── FRONTEND ──"
 [[ -f frontend/package.json ]] || fail "frontend/package.json missing"
-command -v npm >/dev/null 2>&1 || fail "npm not installed (run: sudo apt install nodejs)"
+command -v node >/dev/null 2>&1 || fail "node not installed (run: sudo apt install nodejs)"
+
+# 이 프로젝트는 pnpm 사용 (frontend/pnpm-lock.yaml). corepack 으로 매번 동일 버전 보장.
+# Node 20+ 에는 corepack 포함. enable 은 idempotent — 매번 호출해도 안전.
+if ! command -v pnpm >/dev/null 2>&1; then
+    log "frontend: corepack enable (installing pnpm)…"
+    sudo corepack enable >/dev/null 2>&1 || fail "corepack enable failed — Node 20+ 인지 확인"
+    sudo corepack prepare pnpm@latest --activate >/dev/null 2>&1 || fail "corepack pnpm prepare failed"
+fi
+log "frontend: node=$(node -v) pnpm=$(pnpm -v)"
 
 NEED_BUILD=false
 if [[ "$CODE_CHANGED" == "true" ]]; then
@@ -81,24 +90,20 @@ else
 fi
 
 if [[ "$NEED_BUILD" == "true" ]]; then
-    log "frontend: node=$(node -v) npm=$(npm -v)"
-
-    # cd in-place — set -e propagation 확실.
     pushd frontend > /dev/null
-    log "frontend: npm ci start (timeout=300s)…"
-    # timeout 으로 hang 방지. 실패 시 stderr/stdout 둘다 잡힘.
-    if ! timeout 300 stdbuf -oL -eL npm ci 2>&1; then
+    log "frontend: pnpm install --frozen-lockfile (timeout=300s)…"
+    if ! timeout 300 stdbuf -oL -eL pnpm install --frozen-lockfile 2>&1; then
         rc=$?
         popd > /dev/null
-        fail "npm ci failed (rc=$rc)"
+        fail "pnpm install failed (rc=$rc)"
     fi
-    log "frontend: npm ci ✅"
+    log "frontend: pnpm install ✅"
 
-    log "frontend: npm run build start (timeout=180s)…"
-    if ! timeout 180 stdbuf -oL -eL npm run build 2>&1; then
+    log "frontend: pnpm run build (timeout=180s)…"
+    if ! timeout 180 stdbuf -oL -eL pnpm run build 2>&1; then
         rc=$?
         popd > /dev/null
-        fail "npm run build failed (rc=$rc)"
+        fail "pnpm run build failed (rc=$rc)"
     fi
     log "frontend: build ✅"
     popd > /dev/null
