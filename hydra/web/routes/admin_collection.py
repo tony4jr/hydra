@@ -193,3 +193,98 @@ def update_policy(
         }
     finally:
         db.close()
+
+
+@router.get("/config/{brand_id}")
+def get_target_config(brand_id: int, _session: dict = Depends(admin_session)) -> dict:
+    """TargetCollectionConfig 조회 — Phase 1 임계값."""
+    from hydra.db.models import TargetCollectionConfig
+    db = _db_session.SessionLocal()
+    try:
+        brand = db.get(Brand, brand_id)
+        if not brand:
+            raise HTTPException(404, "brand not found")
+        cfg = db.get(TargetCollectionConfig, brand_id)
+        if cfg is None:
+            cfg = TargetCollectionConfig(target_id=brand_id)
+            db.add(cfg)
+            db.commit()
+            db.refresh(cfg)
+        return {
+            "target_id": brand_id,
+            "embedding_reference_text": cfg.embedding_reference_text or "",
+            "embedding_threshold": cfg.embedding_threshold,
+            "l1_threshold_score": cfg.l1_threshold_score,
+            "l1_max_pool_size": cfg.l1_max_pool_size,
+            "l2_max_age_hours": cfg.l2_max_age_hours,
+            "l3_views_per_hour_threshold": cfg.l3_views_per_hour_threshold,
+            "hard_block_min_video_seconds": cfg.hard_block_min_video_seconds,
+            "exclude_kids_category": cfg.exclude_kids_category,
+            "exclude_live_streaming": cfg.exclude_live_streaming,
+        }
+    finally:
+        db.close()
+
+
+@router.patch("/config/{brand_id}")
+def update_target_config(
+    brand_id: int,
+    body: dict,
+    _session: dict = Depends(admin_session),
+) -> dict:
+    """TargetCollectionConfig 업데이트 — embedding reference 등.
+
+    body 가능 필드:
+      - embedding_reference_text: str (시장 설명 — Haiku 가 영상 관련도 평가용)
+      - embedding_threshold: float (0.0~1.0)
+      - l1_threshold_score: float (0~100)
+      - l1_max_pool_size: int
+      - l2_max_age_hours: int
+      - l3_views_per_hour_threshold: int
+      - hard_block_min_video_seconds: int
+      - exclude_kids_category: bool
+      - exclude_live_streaming: bool
+    """
+    from hydra.db.models import TargetCollectionConfig
+    from hydra.services.video_embedding import reset_reference_cache
+
+    db = _db_session.SessionLocal()
+    try:
+        brand = db.get(Brand, brand_id)
+        if not brand:
+            raise HTTPException(404, "brand not found")
+        cfg = db.get(TargetCollectionConfig, brand_id)
+        if cfg is None:
+            cfg = TargetCollectionConfig(target_id=brand_id)
+            db.add(cfg); db.flush()
+
+        # Reference text 변경 시 캐시 무효화
+        if "embedding_reference_text" in body:
+            new_ref = (body["embedding_reference_text"] or "").strip()
+            if cfg.embedding_reference_text != new_ref:
+                cfg.embedding_reference_text = new_ref or None
+                reset_reference_cache(brand_id)
+
+        if "embedding_threshold" in body:
+            v = float(body["embedding_threshold"])
+            cfg.embedding_threshold = max(0.0, min(1.0, v))
+        if "l1_threshold_score" in body:
+            v = float(body["l1_threshold_score"])
+            cfg.l1_threshold_score = max(0.0, min(100.0, v))
+        if "l1_max_pool_size" in body:
+            cfg.l1_max_pool_size = max(10, min(100000, int(body["l1_max_pool_size"])))
+        if "l2_max_age_hours" in body:
+            cfg.l2_max_age_hours = max(1, min(720, int(body["l2_max_age_hours"])))
+        if "l3_views_per_hour_threshold" in body:
+            cfg.l3_views_per_hour_threshold = max(0, int(body["l3_views_per_hour_threshold"]))
+        if "hard_block_min_video_seconds" in body:
+            cfg.hard_block_min_video_seconds = max(0, int(body["hard_block_min_video_seconds"]))
+        if "exclude_kids_category" in body:
+            cfg.exclude_kids_category = bool(body["exclude_kids_category"])
+        if "exclude_live_streaming" in body:
+            cfg.exclude_live_streaming = bool(body["exclude_live_streaming"])
+
+        db.commit()
+        return {"ok": True, "target_id": brand_id}
+    finally:
+        db.close()

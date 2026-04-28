@@ -18,6 +18,7 @@ import { fetchApi } from '@/lib/api'
 import { useCountUp } from '@/hooks/use-count-up'
 import { VideoPoolPanel } from './video-pool-panel'
 import { KeywordPollingPanel } from './keyword-polling-panel'
+import { TargetConfigPanel } from './target-config-panel'
 
 interface BrandRow {
   id: number
@@ -345,6 +346,9 @@ export default function TargetsPage() {
               )}
             </div>
           )}
+
+          {/* Phase 1: 분류 설정 (embedding reference + 임계값) */}
+          <TargetConfigPanel brandId={selectedBrand} />
 
           {/* Phase 1: 키워드 폴링 토글 */}
           <KeywordPollingPanel brandId={selectedBrand} />
