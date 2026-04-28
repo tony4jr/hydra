@@ -17,7 +17,7 @@ ExecStart=/bin/bash -c '\
     REMOTE=$(git rev-parse origin/main) && \
     if [ "$LOCAL" != "$REMOTE" ]; then \
         echo "[$(date +%H:%M:%S)] auto-pull: $LOCAL -> $REMOTE — triggering deploy"; \
-        systemctl start --no-block hydra-deploy.service; \
+        sudo systemctl start --no-block hydra-deploy.service; \
     fi'
 StandardOutput=append:/var/log/hydra/auto-pull.log
 StandardError=append:/var/log/hydra/auto-pull.log
