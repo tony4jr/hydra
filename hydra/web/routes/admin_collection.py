@@ -24,7 +24,7 @@ _in_progress: dict[int, dict] = {}
 
 
 @router.post("/start/{brand_id}")
-def start_collection(brand_id: int, _session: dict = Depends(admin_session)) -> dict:
+async def start_collection(brand_id: int, _session: dict = Depends(admin_session)) -> dict:
     """초기 깊은 수집 트리거 — 비동기. status 엔드포인트로 진행 확인."""
     db = _db_session.SessionLocal()
     try:
