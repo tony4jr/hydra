@@ -1,0 +1,27 @@
+[Unit]
+Description=HYDRA Deploy (oneshot) — triggered by /api/admin/deploy
+After=network.target
+
+[Service]
+Type=oneshot
+User=deployer
+WorkingDirectory=/opt/hydra
+ExecStart=/bin/bash /opt/hydra/scripts/deploy.sh
+
+# 충분한 시간 — npm ci 첫 빌드 1-3분, vite build 30s-1min, 여유 5min.
+TimeoutStartSec=600
+
+# Line-buffer 강제 — 프로세스가 죽어도 출력 안 잃음.
+StandardOutput=append:/var/log/hydra/deploy.log
+StandardError=append:/var/log/hydra/deploy.log
+
+# stdbuf 가 PATH 에 있어야 함 (보통 /usr/bin/stdbuf).
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# 메모리 가드 — vite build 가 1GB+ 필요. 최소 1.5GB 보장.
+# 만약 cgroup 제한 걸려있으면 OOM kill 됨. 명시적으로 풀어줌.
+MemoryMax=infinity
+TasksMax=infinity
+
+[Install]
+WantedBy=multi-user.target
