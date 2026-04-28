@@ -114,11 +114,12 @@ export default function TargetsPage() {
 
   useEffect(() => { loadVideos() }, [])
 
-  // Brand 목록 로드
+  // Brand 목록 로드 — API 는 직접 배열 반환
   useEffect(() => {
-    fetchApi<{ items: BrandRow[] }>('/brands/api/list')
+    fetchApi<BrandRow[] | { items: BrandRow[] }>('/brands/api/list')
       .then(d => {
-        const items = d.items || []
+        // 두 가지 형식 모두 처리 (배열 직접 또는 {items: [...]})
+        const items: BrandRow[] = Array.isArray(d) ? d : (d.items || [])
         setBrands(items)
         if (items.length > 0) setSelectedBrand(items[0].id)
       })
