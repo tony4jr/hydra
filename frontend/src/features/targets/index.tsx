@@ -16,6 +16,7 @@ import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { fetchApi } from '@/lib/api'
 import { useCountUp } from '@/hooks/use-count-up'
+import { VideoPoolPanel } from './video-pool-panel'
 
 interface BrandRow {
   id: number
@@ -343,6 +344,9 @@ export default function TargetsPage() {
               )}
             </div>
           )}
+
+          {/* Phase 1: 영상 풀 패널 (state/L tier 필터 + 수동 토글) */}
+          <VideoPoolPanel brandId={selectedBrand} />
 
           {/* Stat cards */}
           {loading ? (
