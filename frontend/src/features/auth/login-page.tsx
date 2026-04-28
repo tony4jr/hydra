@@ -78,11 +78,6 @@ export function LoginPage() {
           <div className='hydra-login-tag'>
             의도된 댓글, 자연스러운 영향력.
           </div>
-          <ul className='hydra-login-bullets'>
-            <li>· 50+ 계정 동시 운용 + IP 회전</li>
-            <li>· AI 기반 댓글 + 시나리오 자동화</li>
-            <li>· 실시간 함대 모니터링</li>
-          </ul>
           <div className='hydra-login-clock'>
             {time.toLocaleString('ko-KR', {
               year: 'numeric', month: '2-digit', day: '2-digit',
@@ -103,7 +98,7 @@ export function LoginPage() {
             </div>
             <h1 className='hydra-login-title'>안녕하세요, 다시 오셨네요</h1>
             <p className='hydra-login-sub'>
-              자격증명을 입력해서 함대 콘솔에 접속하세요.
+              로그인 해주세요.
             </p>
           </div>
 

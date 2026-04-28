@@ -728,12 +728,72 @@ button, a, input, select, textarea, [role="button"], [role="tab"] {
   justify-content: center;
   padding: 64px;
   background: linear-gradient(135deg,
-    oklch(0.18 0.05 264) 0%,
-    oklch(0.12 0.06 254) 50%,
-    oklch(0.08 0.04 244) 100%
+    oklch(0.12 0.04 264) 0%,
+    oklch(0.08 0.05 254) 50%,
+    oklch(0.05 0.03 244) 100%
   );
   color: white;
   overflow: hidden;
+  isolation: isolate;
+}
+
+/* Aurora — primary ribbon (slow rotate + breathe) */
+.hydra-login-brand::before {
+  content: '';
+  position: absolute;
+  inset: -25%;
+  background: conic-gradient(from 0deg at 50% 50%,
+    transparent 0deg,
+    oklch(0.65 0.22 220 / 0.55) 60deg,
+    oklch(0.7 0.25 280 / 0.45) 130deg,
+    transparent 200deg,
+    oklch(0.6 0.2 180 / 0.35) 280deg,
+    transparent 360deg
+  );
+  filter: blur(60px);
+  animation: hydra-aurora-rotate 40s linear infinite, hydra-aurora-breathe 12s ease-in-out infinite alternate;
+  z-index: 0;
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+
+/* Aurora — secondary veil (counter-rotates for depth) */
+.hydra-login-brand::after {
+  content: '';
+  position: absolute;
+  inset: -20%;
+  background: conic-gradient(from 180deg at 60% 40%,
+    transparent 0deg,
+    oklch(0.7 0.18 160 / 0.4) 90deg,
+    transparent 180deg,
+    oklch(0.55 0.22 320 / 0.3) 270deg,
+    transparent 360deg
+  );
+  filter: blur(80px);
+  animation: hydra-aurora-rotate-rev 60s linear infinite;
+  z-index: 0;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  opacity: 0.85;
+}
+
+@keyframes hydra-aurora-rotate {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes hydra-aurora-rotate-rev {
+  from { transform: rotate(360deg); }
+  to   { transform: rotate(0deg); }
+}
+@keyframes hydra-aurora-breathe {
+  0%   { opacity: 0.7; }
+  50%  { opacity: 1;   }
+  100% { opacity: 0.75;}
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hydra-login-brand::before,
+  .hydra-login-brand::after { animation: none; }
 }
 
 @media (min-width: 900px) {
@@ -743,10 +803,12 @@ button, a, input, select, textarea, [role="button"], [role="tab"] {
 .hydra-login-orb {
   position: absolute;
   border-radius: 50%;
-  filter: blur(80px);
-  opacity: 0.5;
+  filter: blur(90px);
+  opacity: 0.45;
   pointer-events: none;
-  animation: hydra-orb-drift 16s ease-in-out infinite alternate;
+  z-index: 1;
+  mix-blend-mode: screen;
+  animation: hydra-orb-drift 18s ease-in-out infinite alternate;
 }
 
 .hydra-login-orb-1 {
