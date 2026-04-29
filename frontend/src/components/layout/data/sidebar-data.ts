@@ -33,7 +33,7 @@ export const sidebarData: SidebarData = {
   ],
   navGroups: [
     {
-      title: '운영',
+      title: '홈',
       items: [
         {
           title: '대시보드',
