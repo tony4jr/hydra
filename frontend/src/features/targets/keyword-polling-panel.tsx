@@ -1,8 +1,8 @@
 /**
- * Phase 1 — 키워드 폴링 토글 패널.
+ * 키워드 수집 주기 패널.
  *
- * 키워드별로 5min/30min/daily 폴링 활성화 + 부정 키워드 토글.
- * 5min 은 핫 키워드(트렌드 잡고 싶은 거)만 켜는 게 권장.
+ * 키워드별로 5분/30분/일배치 수집 활성화 + 부정 키워드 토글.
+ * 5분은 핫 키워드(트렌드 잡고 싶은 거)만 켜는 게 권장.
  */
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
@@ -96,9 +96,9 @@ export function KeywordPollingPanel({ brandId }: { brandId: number | null }) {
     <div className='mb-5 rounded-xl border border-border bg-card p-5'>
       <div className='flex items-center justify-between mb-3 flex-wrap gap-2'>
         <div>
-          <span className='text-foreground text-[14px] font-medium'>키워드 폴링</span>
+          <span className='text-foreground text-[14px] font-medium'>키워드 수집 주기</span>
           <span className='text-muted-foreground text-[11px] ml-2'>
-            ⚡ 5분: 핫 키워드만 (quota 보호)
+            ⚡ 5분: 핫 키워드만 (API 사용량 보호)
           </span>
         </div>
         <div className='flex gap-2'>
@@ -180,7 +180,7 @@ function KwRow({ kw, onUpdate, onRemove }: {
           active={kw.poll_5min}
           warn={kw.poll_5min}
           onClick={() => onUpdate(kw.id, 'poll_5min', !kw.poll_5min)}
-          tooltip='핫 키워드만 (quota 보호)'
+          tooltip='핫 키워드만 (API 사용량 보호)'
         />
         <ToggleBtn
           label='30분'

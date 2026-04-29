@@ -8,6 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "format:check": "prettier --check .",
     "format": "prettier --write .",
     "knip": "knip"
@@ -77,6 +79,7 @@
     "prettier-plugin-tailwindcss": "^0.7.2",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.57.2",
-    "vite": "^8.0.3"
+    "vite": "^8.0.3",
+    "vitest": "^4.1.5"
   }
 }

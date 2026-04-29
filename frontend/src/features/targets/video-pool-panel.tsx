@@ -1,8 +1,8 @@
 /**
- * Phase 1 — 영상 풀 패널.
+ * 영상 풀 패널.
  *
- * Brand(=Target)별 영상 풀 조회 + state/L tier/phase 필터 + 수동 토글 UI.
- * LLM/임베딩 오분류 즉시 대응 (운영 첫날 필수).
+ * 시장(Brand)별 영상 풀 조회 + 상태/우선순위 필터 + 수동 토글 UI.
+ * 자동 분류 오판 즉시 대응 (운영 첫날 필수).
  */
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
@@ -13,6 +13,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { fetchApi } from '@/lib/api'
+import { videoState, tier as tierLabels, term, labels } from '@/lib/i18n-terms'
 
 interface PoolVideo {
   id: string
@@ -33,9 +34,6 @@ interface PoolVideo {
   next_revisit_at: string | null
 }
 
-const stateLabels: Record<string, string> = {
-  pending: '대기', active: '활성', blacklisted: '차단', paused: '일시정지', completed: '완료',
-}
 const stateTag: Record<string, string> = {
   active: 'hydra-tag-success', pending: 'hydra-tag-muted', blacklisted: 'hydra-tag-danger',
   paused: 'hydra-tag-warning', completed: 'hydra-tag-blue',
@@ -72,7 +70,7 @@ export function VideoPoolPanel({ brandId }: { brandId: number | null }) {
         method: 'POST',
         body: JSON.stringify({ state: newState, reason: newState === 'blacklisted' ? 'manual' : null }),
       })
-      toast.success(`${stateLabels[newState]} 처리됨`)
+      toast.success(`${term(videoState, newState)} 처리됨`)
       load()
     } catch (e) {
       toast.error('상태 변경 실패', { description: e instanceof Error ? e.message : String(e) })
@@ -98,7 +96,7 @@ export function VideoPoolPanel({ brandId }: { brandId: number | null }) {
     <div className='mb-5 rounded-xl border border-border bg-card p-5'>
       <div className='flex items-center justify-between mb-3 flex-wrap gap-2'>
         <div className='flex items-center gap-3'>
-          <span className='text-foreground text-[14px] font-medium'>영상 풀 (Phase 1)</span>
+          <span className='text-foreground text-[14px] font-medium'>영상 풀</span>
           <span className='text-muted-foreground text-[12px]'>{total.toLocaleString()}개</span>
         </div>
         <div className='flex gap-2 items-center'>
@@ -117,14 +115,14 @@ export function VideoPoolPanel({ brandId }: { brandId: number | null }) {
           </Select>
           <Select value={tierFilter} onValueChange={setTierFilter}>
             <SelectTrigger className='w-24 h-8 text-xs'>
-              <SelectValue placeholder='티어' />
+              <SelectValue placeholder='우선순위' />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value='all'>모든 티어</SelectItem>
-              <SelectItem value='L1'>L1 (영구 자산)</SelectItem>
-              <SelectItem value='L2'>L2 (신규)</SelectItem>
-              <SelectItem value='L3'>L3 (트렌딩)</SelectItem>
-              <SelectItem value='L4'>L4 (롱테일)</SelectItem>
+              <SelectItem value='all'>모든 우선순위</SelectItem>
+              <SelectItem value='L1'>{tierLabels.L1}</SelectItem>
+              <SelectItem value='L2'>{tierLabels.L2}</SelectItem>
+              <SelectItem value='L3'>{tierLabels.L3}</SelectItem>
+              <SelectItem value='L4'>{tierLabels.L4}</SelectItem>
             </SelectContent>
           </Select>
           <Button size='sm' variant='outline' className='h-8' onClick={load}>
@@ -147,10 +145,10 @@ export function VideoPoolPanel({ brandId }: { brandId: number | null }) {
             <thead>
               <tr className='border-b border-border bg-muted/30 text-muted-foreground'>
                 <th className='p-2 text-left font-medium'>제목</th>
-                <th className='p-2 text-center font-medium w-12'>티어</th>
-                <th className='p-2 text-center font-medium w-12'>Phase</th>
+                <th className='p-2 text-center font-medium w-12'>우선순위</th>
+                <th className='p-2 text-center font-medium w-12'>단계</th>
                 <th className='p-2 text-right font-medium w-20'>조회수</th>
-                <th className='p-2 text-right font-medium w-20'>임베딩</th>
+                <th className='p-2 text-right font-medium w-20'>{labels.marketFitness}</th>
                 <th className='p-2 text-right font-medium w-20'>1등 좋아요</th>
                 <th className='p-2 text-center font-medium w-20'>상태</th>
                 <th className='p-2 text-center font-medium w-32'>액션</th>
@@ -186,7 +184,7 @@ export function VideoPoolPanel({ brandId }: { brandId: number | null }) {
                   </td>
                   <td className='p-2 text-center'>
                     <span className={`hydra-tag ${stateTag[v.state] || 'hydra-tag-muted'}`} title={v.blacklist_reason || ''}>
-                      {stateLabels[v.state] || v.state}
+                      {term(videoState, v.state, v.state)}
                     </span>
                   </td>
                   <td className='p-2 text-center'>
