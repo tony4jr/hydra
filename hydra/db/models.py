@@ -215,6 +215,7 @@ class Video(Base):
         Index("idx_videos_state", "state"),
         Index("idx_videos_next_revisit", "next_revisit_at"),
         Index("idx_videos_lifecycle", "lifecycle_phase"),
+        Index("idx_videos_collected_at", "collected_at"),
     )
 
 
@@ -623,6 +624,7 @@ class Task(Base):
         Index("idx_tasks_worker", "worker_id"),
         Index("idx_tasks_priority_status", "priority", "status"),
         Index("idx_tasks_scheduled", "scheduled_at"),
+        Index("idx_tasks_created_at", "created_at"),
     )
 
 
