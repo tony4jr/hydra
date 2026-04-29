@@ -1,8 +1,8 @@
 /**
- * Phase 1 — TargetCollectionConfig 편집 패널.
+ * 분류 설정 편집 패널.
  *
- * embedding reference text + 임계값들 운영자가 직접 조정.
- * 가장 중요: embedding_reference_text — Haiku 가 이걸로 영상 관련도 판단.
+ * 시장 정의 + 임계값들 운영자가 직접 조정.
+ * 가장 중요: 시장 정의(embedding_reference_text) — Haiku 가 이걸로 영상 관련도 판단.
  */
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
 import { fetchApi } from '@/lib/api'
+import { labels } from '@/lib/i18n-terms'
 
 interface TargetConfig {
   target_id: number
@@ -88,10 +89,10 @@ export function TargetConfigPanel({ brandId }: { brandId: number | null }) {
     }`}>
       <div className='flex items-center justify-between mb-2 cursor-pointer' onClick={() => setOpen(o => !o)}>
         <div className='flex items-center gap-2'>
-          <span className='text-foreground text-[14px] font-medium'>분류 설정 (Phase 1)</span>
+          <span className='text-foreground text-[14px] font-medium'>분류 설정</span>
           {isMissingRef ? (
             <span className='inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 text-[11px]'>
-              <AlertCircle className='h-3 w-3' /> reference 비어있음 — 임베딩 분류 작동 안 함
+              <AlertCircle className='h-3 w-3' /> 시장 정의 비어있음 — 자동 분류 작동 안 함
             </span>
           ) : (
             <span className='text-muted-foreground text-[11px]'>
@@ -104,10 +105,10 @@ export function TargetConfigPanel({ brandId }: { brandId: number | null }) {
 
       {open && (
         <div className='mt-4 space-y-4'>
-          {/* Reference text — 가장 중요 */}
+          {/* 시장 정의 — 가장 중요 */}
           <div>
             <label className='text-foreground text-xs font-medium block mb-1'>
-              임베딩 Reference Text
+              {labels.marketDefinition}
               <span className='text-muted-foreground ml-2'>(이 시장의 정의 — Haiku 가 이걸로 영상 관련도 판단)</span>
             </label>
             <Textarea
@@ -126,7 +127,7 @@ export function TargetConfigPanel({ brandId }: { brandId: number | null }) {
           <div className='grid grid-cols-2 lg:grid-cols-4 gap-3'>
             <div>
               <label className='text-foreground text-xs font-medium mb-1 block'>
-                관련도 임계값
+                {labels.marketFitness} 임계값
                 <span className='text-muted-foreground ml-1'>(0~1)</span>
               </label>
               <Input
@@ -139,7 +140,7 @@ export function TargetConfigPanel({ brandId }: { brandId: number | null }) {
             </div>
             <div>
               <label className='text-foreground text-xs font-medium mb-1 block'>
-                L1 점수 임계값
+                장기 자산 점수 임계값
                 <span className='text-muted-foreground ml-1'>(0~100)</span>
               </label>
               <Input
@@ -148,11 +149,11 @@ export function TargetConfigPanel({ brandId }: { brandId: number | null }) {
                 onChange={e => setL1Th(e.target.value)}
                 className='h-8 text-sm'
               />
-              <p className='text-muted-foreground text-[10px] mt-0.5'>이상이면 L1. 권장 70</p>
+              <p className='text-muted-foreground text-[10px] mt-0.5'>이상이면 장기 자산. 권장 70</p>
             </div>
             <div>
               <label className='text-foreground text-xs font-medium mb-1 block'>
-                L3 트렌딩 임계
+                트렌딩 임계
                 <span className='text-muted-foreground ml-1'>(시간당 조회수)</span>
               </label>
               <Input
@@ -161,7 +162,7 @@ export function TargetConfigPanel({ brandId }: { brandId: number | null }) {
                 onChange={e => setL3Vph(e.target.value)}
                 className='h-8 text-sm'
               />
-              <p className='text-muted-foreground text-[10px] mt-0.5'>이상이면 L3. 권장 1000</p>
+              <p className='text-muted-foreground text-[10px] mt-0.5'>이상이면 트렌딩. 권장 1000</p>
             </div>
             <div>
               <label className='text-foreground text-xs font-medium mb-1 block'>

@@ -354,13 +354,13 @@ export default function TargetsPage() {
             </div>
           )}
 
-          {/* Phase 1: 분류 설정 (embedding reference + 임계값) */}
+          {/* 분류 설정: 시장 정의 + 임계값 */}
           <TargetConfigPanel brandId={selectedBrand} />
 
-          {/* Phase 1: 키워드 폴링 토글 */}
+          {/* 키워드 수집 주기 */}
           <KeywordPollingPanel brandId={selectedBrand} />
 
-          {/* Phase 1: 영상 풀 패널 (state/L tier 필터 + 수동 토글) */}
+          {/* 영상 풀: 상태/우선순위 필터 + 수동 토글 */}
           <VideoPoolPanel brandId={selectedBrand} />
 
           {/* Stat cards */}
