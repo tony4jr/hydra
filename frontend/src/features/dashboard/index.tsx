@@ -9,6 +9,7 @@ import { fetchApi } from '@/lib/api'
 import { useCountUp } from '@/hooks/use-count-up'
 import { ServerStatusBar } from '@/features/ops/server-status-bar'
 import { DashboardHero } from './components/hero-row'
+import { PipelineFlow } from './components/PipelineFlow'
 import { ActivityStream } from './components/activity-stream'
 import type { DashboardStats, WorkerInfo } from './types'
 
@@ -132,6 +133,9 @@ export function Dashboard() {
 
           {/* === Hero Big Number === */}
           <DashboardHero />
+
+          {/* === PR-2b-2: 파이프라인 흐름 (24h 깔때기 5단계) === */}
+          <PipelineFlow />
 
           {/* === Task 28: 서버 상태 바 (배포 + 긴급정지) === */}
           <ServerStatusBar />
