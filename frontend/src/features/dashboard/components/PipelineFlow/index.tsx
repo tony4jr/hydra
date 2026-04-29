@@ -62,20 +62,17 @@ export function PipelineFlow({ windowHours = 24 }: Props) {
   }
 
   const allZero = data.stages.every((s) => s.count === 0)
-  if (allZero) {
-    return (
-      <Card>
-        <CardContent className='p-4 text-sm text-muted-foreground'>
-          최근 {data.window_hours}시간 동안 활동이 없어요.
-        </CardContent>
-      </Card>
-    )
-  }
+  const showIdleMessage = allZero && !data.bottleneck_message
 
   return (
     <div className='space-y-2'>
       {data.bottleneck_message && (
         <BottleneckBanner message={data.bottleneck_message} />
+      )}
+      {showIdleMessage && (
+        <p className='text-muted-foreground text-xs'>
+          최근 {data.window_hours}시간 활동 없음
+        </p>
       )}
       <div className='grid grid-cols-2 gap-2 md:grid-cols-5'>
         {data.stages.map((metric) => (
