@@ -23,3 +23,6 @@ data/_pw_changes.log
 
 # Python 빌드 산출물
 hydra.egg-info/
+
+# Redesign 문서 패키지 zip (소스 .md 만 추적)
+redesign/*.zip
