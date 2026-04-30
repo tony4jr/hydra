@@ -6,9 +6,6 @@
    - Brand-aligned color usage
    ============================================ */
 
-/* === Pretendard Variable (Korean-first) === */
-@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.css");
-
 :root {
   --font-display: 'Pretendard Variable', 'Pretendard', -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, 'JetBrains Mono', Consolas, monospace;
@@ -47,28 +44,6 @@
   --duration-fast: 120ms;
   --duration-base: 200ms;
   --duration-slow: 320ms;
-}
-
-/* Apply Pretendard globally — better Korean rendering */
-html, body, button, input, select, textarea {
-  font-family: var(--font-display);
-  font-feature-settings: 'ss01' on, 'cv01' on, 'tnum' on;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  letter-spacing: -0.01em;
-}
-
-/* === Refined Card === */
-.hydra-card {
-  background: var(--card);
-  color: var(--card-foreground);
-  border: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-xs);
-  transition:
-    transform var(--duration-base) var(--ease-out-cubic),
-    box-shadow var(--duration-base) var(--ease-out-cubic),
-    border-color var(--duration-base) var(--ease-out-cubic);
 }
 
 .hydra-card-hover:hover {
@@ -120,16 +95,6 @@ html, body, button, input, select, textarea {
   font-feature-settings: 'tnum' on;
 }
 
-.hydra-stat-delta {
-  font-size: 12px;
-  font-weight: 600;
-  font-feature-settings: 'tnum' on;
-}
-
-.hydra-stat-delta.up   { color: var(--hydra-success); }
-.hydra-stat-delta.down { color: var(--hydra-danger); }
-.hydra-stat-delta.flat { color: var(--muted-foreground); }
-
 /* === Refined Button — soft press === */
 .hydra-btn-press {
   transition:
@@ -140,16 +105,6 @@ html, body, button, input, select, textarea {
 
 .hydra-btn-press:active:not(:disabled) {
   transform: translateY(1px) scale(0.99);
-}
-
-/* === Section Header (typography emphasis) === */
-.hydra-section-h {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted-foreground);
-  margin-bottom: var(--space-3);
 }
 
 .hydra-page-h {
@@ -554,7 +509,6 @@ button, a, input, select, textarea, [role="button"], [role="tab"] {
 }
 
 /* Card subtle gradient for depth in dark mode */
-.dark .hydra-card,
 .dark .hydra-stat-card,
 .dark .hydra-hero,
 .dark .hydra-activity {
@@ -575,35 +529,6 @@ button, a, input, select, textarea, [role="button"], [role="tab"] {
 .dark .hydra-hero-num {
   text-shadow: 0 0 80px color-mix(in oklab, var(--hydra-blue) 30%, transparent);
 }
-
-/* === Floating Action Button === */
-.hydra-fab {
-  position: fixed;
-  bottom: 24px;
-  right: 24px;
-  width: 52px;
-  height: 52px;
-  border-radius: 999px;
-  background: var(--hydra-blue);
-  color: white;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 8px 20px color-mix(in oklab, var(--hydra-blue) 40%, transparent),
-              0 4px 8px rgb(0 0 0 / 0.1);
-  transition: all var(--duration-base) var(--ease-out-cubic);
-  z-index: 30;
-  cursor: pointer;
-  border: none;
-}
-
-.hydra-fab:hover {
-  transform: scale(1.06) translateY(-2px);
-  box-shadow: 0 12px 28px color-mix(in oklab, var(--hydra-blue) 60%, transparent),
-              0 6px 12px rgb(0 0 0 / 0.15);
-}
-
-.hydra-fab:active { transform: scale(0.98); }
 
 /* === Wizard / Stepper === */
 .hydra-wizard-steps {
@@ -697,15 +622,7 @@ button, a, input, select, textarea, [role="button"], [role="tab"] {
   margin-bottom: var(--space-1);
 }
 
-.hydra-wizard-help {
-  font-size: 12.5px;
-  color: var(--muted-foreground);
-  margin-bottom: var(--space-3);
-  line-height: 1.5;
-}
-
 /* === Dialog soft (refined shadcn) === */
-.hydra-dialog [data-slot="dialog-content"],
 [data-slot="dialog-content"] {
   border-radius: calc(var(--radius-lg) + 4px) !important;
   box-shadow: var(--shadow-xl) !important;
@@ -855,17 +772,6 @@ button, a, input, select, textarea, [role="button"], [role="tab"] {
   color: rgba(255, 255, 255, 0.92);
   max-width: 480px;
   line-height: 1.4;
-}
-
-.hydra-login-bullets {
-  list-style: none;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.65);
-  margin-bottom: 64px;
 }
 
 .hydra-login-clock {

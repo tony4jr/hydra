@@ -1,3 +1,5 @@
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.css");
+
 :root {
   --radius: 0.625rem;
   --background: oklch(1 0 0);
@@ -32,6 +34,15 @@
   --sidebar-accent-foreground: var(--accent-foreground);
   --sidebar-border: var(--border);
   --sidebar-ring: var(--ring);
+}
+
+/* === Global font apply (PR-D1: toss-polish.css 에서 이동) === */
+html, body, button, input, select, textarea {
+  font-family: var(--font-display);
+  font-feature-settings: 'ss01' on, 'cv01' on, 'tnum' on;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.01em;
 }
 
 .dark {
