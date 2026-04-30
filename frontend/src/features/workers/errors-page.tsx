@@ -108,8 +108,8 @@ export default function WorkerErrorsPage() {
       </Header>
       <Main>
         <div className='mb-4'>
-          <h1 className='text-2xl font-bold'>워커 에러</h1>
-          <p className='text-muted-foreground text-sm'>
+          <h1 className='hydra-page-h'>워커 에러</h1>
+          <p className='hydra-page-sub'>
             워커가 보고한 에러/진단 로그. 10초마다 자동 갱신.
           </p>
         </div>

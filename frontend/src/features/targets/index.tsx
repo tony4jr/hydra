@@ -1,6 +1,17 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Plus, ChevronLeft, ChevronRight, Download, RefreshCw } from 'lucide-react'
+import {
+  CheckCircle,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Download,
+  ListTodo,
+  Plus,
+  RefreshCw,
+  Video,
+  type LucideIcon,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -73,13 +84,16 @@ const statusTag: Record<string, string> = {
   available: 'hydra-tag-muted', completed: 'hydra-tag-success', in_progress: 'hydra-tag-primary',
 }
 
-function StatCard({ label, value }: { label: string; value: number | string }) {
+function StatCard({ label, value, icon: Icon }: { label: string; value: number | string; icon: LucideIcon }) {
   const isNum = typeof value === 'number'
   const animated = useCountUp(isNum ? value : 0)
   return (
     <div className='bg-card rounded-xl border border-border p-4'>
-      <span className='text-muted-foreground text-[12px]'>{label}</span>
-      <div className='text-[28px] font-bold'>
+      <div className='flex items-center gap-2 text-muted-foreground text-[12px]'>
+        <Icon className='size-3.5' />
+        <span>{label}</span>
+      </div>
+      <div className='mt-1 text-3xl font-semibold tabular-nums'>
         {isNum ? animated : value}
       </div>
     </div>
@@ -203,8 +217,8 @@ export default function TargetsPage() {
         <div >
           <div className='mb-5 flex flex-wrap items-center justify-between gap-2'>
             <div>
-              <h2 className='text-[22px] font-bold hydra-page-h'>타겟</h2>
-              <p className='text-muted-foreground text-[13px]'>수집된 영상 목록 확인 및 관리</p>
+              <h1 className='hydra-page-h'>타겟</h1>
+              <p className='hydra-page-sub'>수집된 영상 목록 확인 및 관리</p>
             </div>
             <div className='flex gap-2'>
               {campaigns.length > 0 && (
@@ -370,12 +384,13 @@ export default function TargetsPage() {
             </div>
           ) : (
             <div className='grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5'>
-              <StatCard label='전체 영상' value={total} />
-              <StatCard label='완료' value={completed} />
-              <StatCard label='대기' value={pending} />
+              <StatCard label='전체 영상' value={total} icon={Video} />
+              <StatCard label='완료' value={completed} icon={CheckCircle} />
+              <StatCard label='대기' value={pending} icon={ListTodo} />
               <StatCard
                 label='마지막 수집'
                 value={lastCollect ? new Date(lastCollect).toLocaleDateString('ko') : '-'}
+                icon={Clock}
               />
             </div>
           )}
