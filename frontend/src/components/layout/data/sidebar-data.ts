@@ -68,13 +68,23 @@ export const sidebarData: SidebarData = {
       ],
     },
     {
-      title: '관리',
+      title: '제품 운영',
       items: [
         {
           title: '계정',
           url: '/accounts',
           icon: Users,
         },
+        {
+          title: '아바타',
+          url: '/avatars',
+          icon: Image,
+        },
+      ],
+    },
+    {
+      title: '인프라',
+      items: [
         {
           title: '워커',
           icon: Monitor,
@@ -83,11 +93,6 @@ export const sidebarData: SidebarData = {
             { title: '에러 로그', url: '/workers/errors' },
             { title: 'IP 감시', url: '/workers/ip-monitor' },
           ],
-        },
-        {
-          title: '아바타',
-          url: '/avatars',
-          icon: Image,
         },
         {
           title: '감사 로그',
