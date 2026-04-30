@@ -305,8 +305,8 @@ export default function AccountsPage() {
         <div >
           <div className='mb-5 flex items-start justify-between gap-4'>
             <div>
-              <h2 className='text-[22px] font-bold hydra-page-h'>계정</h2>
-              <p className='text-muted-foreground text-[13px]'>
+              <h1 className='hydra-page-h'>계정</h1>
+              <p className='hydra-page-sub'>
                 YouTube 계정 라이프사이클 관리
               </p>
             </div>

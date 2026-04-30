@@ -1,5 +1,16 @@
 import { useEffect, useState } from 'react'
-import { Plus, Pause, Play, Lock, Monitor, Pencil, MoreVertical } from 'lucide-react'
+import {
+  Activity,
+  CircleDot,
+  Lock,
+  Monitor,
+  MoreVertical,
+  Pause,
+  Pencil,
+  Play,
+  Plus,
+  type LucideIcon,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
@@ -37,12 +48,15 @@ interface Worker {
   } | null
 }
 
-function SummaryCard({ label, value, sub }: { label: string; value: number; sub?: string }) {
+function SummaryCard({ label, value, sub, icon: Icon }: { label: string; value: number; sub?: string; icon: LucideIcon }) {
   const animated = useCountUp(value)
   return (
     <div className='bg-card rounded-xl border border-border p-4'>
-      <span className='text-muted-foreground text-[12px]'>{label}</span>
-      <div className='text-[28px] font-bold'>{animated}</div>
+      <div className='flex items-center gap-2 text-muted-foreground text-[12px]'>
+        <Icon className='size-3.5' />
+        <span>{label}</span>
+      </div>
+      <div className='mt-1 text-3xl font-semibold tabular-nums'>{animated}</div>
       {sub && <span className='text-muted-foreground text-[11px]'>{sub}</span>}
     </div>
   )
@@ -126,8 +140,8 @@ export default function WorkersPage() {
         <div >
           <div className='mb-5 flex flex-wrap items-center justify-between gap-2'>
             <div>
-              <h2 className='text-[22px] font-bold hydra-page-h'>워커</h2>
-              <p className='text-muted-foreground text-[13px]'>Worker PC 상태 관제 및 관리</p>
+              <h1 className='hydra-page-h'>워커</h1>
+              <p className='hydra-page-sub'>Worker PC 상태 관제 및 관리</p>
             </div>
             <Button onClick={() => setAddDialogOpen(true)} className='hydra-btn-press'>
               <Plus className='mr-2 h-4 w-4' /> 워커 추가
@@ -141,9 +155,9 @@ export default function WorkersPage() {
             </div>
           ) : (
             <div className='grid grid-cols-3 gap-3 mb-5'>
-              <SummaryCard label='온라인' value={onlineCount} sub={`전체 ${workers.length}대`} />
-              <SummaryCard label='실행중 태스크' value={totalTasks} />
-              <SummaryCard label='등록된 워커' value={workers.length} />
+              <SummaryCard label='온라인' value={onlineCount} sub={`전체 ${workers.length}대`} icon={CircleDot} />
+              <SummaryCard label='실행중 태스크' value={totalTasks} icon={Activity} />
+              <SummaryCard label='등록된 워커' value={workers.length} icon={Monitor} />
             </div>
           )}
 

@@ -65,8 +65,8 @@ export default function IpMonitorPage() {
       </Header>
       <Main>
         <div className='mb-4'>
-          <h1 className='text-2xl font-bold'>Exit IP 감시</h1>
-          <p className='text-muted-foreground text-sm'>
+          <h1 className='hydra-page-h'>Exit IP 감시</h1>
+          <p className='hydra-page-sub'>
             워커들이 사용한 외부 IP 이력. 같은 IP × 다계정 = 안티디텍션 위험.
           </p>
         </div>

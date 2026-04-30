@@ -86,8 +86,8 @@ export default function CampaignsPage() {
         <div >
           <div className='mb-5 flex flex-wrap items-center justify-between gap-2'>
             <div>
-              <h2 className='text-[22px] font-bold hydra-page-h'>캠페인</h2>
-              <p className='text-muted-foreground text-[13px]'>
+              <h1 className='hydra-page-h'>캠페인</h1>
+              <p className='hydra-page-sub'>
                 어디에, 어떻게, 얼마나 작업할지 관리하세요
               </p>
             </div>
