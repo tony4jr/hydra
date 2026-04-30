@@ -1,9 +1,17 @@
 import { describe, it, expect } from 'vitest'
 import {
+  Eye,
+  ListTodo,
+  MessageCircle,
+  ShieldCheck,
+  Target,
+} from 'lucide-react'
+import {
+  formatPassRate,
+  getStageIcon,
   getStageLabel,
   getStageRouteTo,
   isClickableStage,
-  formatPassRate,
 } from './logic'
 
 describe('getStageLabel', () => {
@@ -60,5 +68,15 @@ describe('formatPassRate', () => {
 
   it('handles 0', () => {
     expect(formatPassRate(0)).toBe('0%')
+  })
+})
+
+describe('getStageIcon', () => {
+  it('returns Lucide icon for each stage', () => {
+    expect(getStageIcon('discovered')).toBe(Eye)
+    expect(getStageIcon('market_fit')).toBe(Target)
+    expect(getStageIcon('task_created')).toBe(ListTodo)
+    expect(getStageIcon('comment_posted')).toBe(MessageCircle)
+    expect(getStageIcon('survived_24h')).toBe(ShieldCheck)
   })
 })

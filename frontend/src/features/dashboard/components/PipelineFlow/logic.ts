@@ -1,8 +1,17 @@
 /**
  * PipelineFlow pure functions.
  *
- * UI 무관한 로직만. 단위 테스트 가능 (logic.test.ts).
+ * 라벨/라우팅/포맷 + stage 별 아이콘 매핑.
+ * 단위 테스트 가능 (logic.test.ts).
  */
+import {
+  Eye,
+  ListTodo,
+  MessageCircle,
+  ShieldCheck,
+  Target,
+  type LucideIcon,
+} from 'lucide-react'
 
 import type { StageName } from './types'
 
@@ -39,4 +48,16 @@ export function isClickableStage(stage: StageName): boolean {
 export function formatPassRate(rate: number | null): string | null {
   if (rate === null) return null
   return `${Math.round(rate * 100)}%`
+}
+
+/** stage 별 lucide 아이콘. */
+export function getStageIcon(stage: StageName): LucideIcon {
+  const map: Record<StageName, LucideIcon> = {
+    discovered: Eye,
+    market_fit: Target,
+    task_created: ListTodo,
+    comment_posted: MessageCircle,
+    survived_24h: ShieldCheck,
+  }
+  return map[stage]
 }
