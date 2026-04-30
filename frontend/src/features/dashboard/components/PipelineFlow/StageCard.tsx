@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 
 import {
   formatPassRate,
+  getStageIcon,
   getStageLabel,
   getStageRouteTo,
   isClickableStage,
@@ -27,6 +28,7 @@ export function StageCard({ metric }: Props) {
   const passRateText = formatPassRate(pass_rate)
   const route = getStageRouteTo(stage)
   const clickable = isClickableStage(stage)
+  const Icon = getStageIcon(stage)
 
   const cardClassName = cn(
     'transition-colors',
@@ -37,8 +39,11 @@ export function StageCard({ metric }: Props) {
   const inner = (
     <Card className={cardClassName}>
       <CardContent className='p-4'>
-        <div className='text-muted-foreground text-xs'>{label}</div>
-        <div className='mt-1 text-2xl font-medium'>{count}</div>
+        <div className='flex items-center gap-2'>
+          <Icon className='size-3.5 text-muted-foreground' />
+          <span className='text-muted-foreground text-xs'>{label}</span>
+        </div>
+        <div className='mt-2 text-3xl font-semibold tabular-nums'>{count}</div>
         <div className='mt-1 text-xs'>
           {passRateText !== null ? (
             <span
