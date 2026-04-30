@@ -45,7 +45,7 @@ function StatCard({ label, value, color }: { label: string; value: number; color
         <div className={`w-2.5 h-2.5 rounded-full ${color}`} />
         <span className='text-muted-foreground text-[12px]'>{label}</span>
       </div>
-      <div className='text-[28px] font-bold'>{animated}</div>
+      <div className='text-[32px] font-semibold tabular-nums'>{animated}</div>
     </div>
   )
 }
@@ -120,8 +120,8 @@ export default function TasksQueuePage() {
         <div >
           <div className='mb-5 flex flex-wrap items-center justify-between gap-2'>
             <div>
-              <h2 className='text-[22px] font-bold'>작업 큐</h2>
-              <p className='text-muted-foreground text-[13px]'>실시간 태스크 모니터링</p>
+              <h1 className='hydra-page-h'>작업 큐</h1>
+              <p className='hydra-page-sub'>실시간 태스크 모니터링</p>
             </div>
             {uniqueCampaigns.length > 0 && (
               <Select value={campaignFilter} onValueChange={setCampaignFilter}>

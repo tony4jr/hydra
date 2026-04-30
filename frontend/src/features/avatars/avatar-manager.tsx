@@ -262,8 +262,8 @@ export function AvatarManager() {
       <Main>
         <div className='space-y-5'>
           <div>
-            <h1 className='text-2xl font-bold'>아바타</h1>
-            <p className='text-sm text-muted-foreground'>
+            <h1 className='hydra-page-h'>아바타</h1>
+            <p className='hydra-page-sub'>
               총 {totalFiles}개 등록 · 워커가 계정 생성 시 사용
             </p>
           </div>

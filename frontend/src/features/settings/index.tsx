@@ -42,8 +42,8 @@ export function Settings() {
 
       <Main fixed>
         <div className='space-y-0.5'>
-          <h1 className='text-[22px] font-bold'>설정</h1>
-          <p className='text-muted-foreground text-[13px]'>
+          <h1 className='hydra-page-h'>설정</h1>
+          <p className='hydra-page-sub'>
             API 키, 행동 패턴, 프리셋 등 HYDRA 설정을 관리합니다
           </p>
         </div>

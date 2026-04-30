@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Activity, AlertCircle, CheckCircle, ListTodo } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { fetchApi } from '@/lib/api'
 
@@ -30,20 +31,32 @@ export function TaskStatsPanel() {
     <div className='space-y-3'>
       <div className='grid grid-cols-4 gap-3'>
         <Card className='p-3'>
-          <div className='text-xs text-muted-foreground'>대기</div>
-          <div className='text-2xl font-bold'>{stats.pending}</div>
+          <div className='flex items-center gap-2 text-xs text-muted-foreground'>
+            <ListTodo className='size-3.5' />
+            <span>대기</span>
+          </div>
+          <div className='mt-1 text-3xl font-semibold tabular-nums'>{stats.pending}</div>
         </Card>
         <Card className='p-3'>
-          <div className='text-xs text-muted-foreground'>실행중</div>
-          <div className='text-2xl font-bold text-amber-500'>{stats.running}</div>
+          <div className='flex items-center gap-2 text-xs text-muted-foreground'>
+            <Activity className='size-3.5' />
+            <span>실행중</span>
+          </div>
+          <div className='mt-1 text-3xl font-semibold tabular-nums text-amber-500'>{stats.running}</div>
         </Card>
         <Card className='p-3'>
-          <div className='text-xs text-muted-foreground'>완료</div>
-          <div className='text-2xl font-bold text-green-500'>{stats.done}</div>
+          <div className='flex items-center gap-2 text-xs text-muted-foreground'>
+            <CheckCircle className='size-3.5' />
+            <span>완료</span>
+          </div>
+          <div className='mt-1 text-3xl font-semibold tabular-nums text-green-500'>{stats.done}</div>
         </Card>
         <Card className='p-3'>
-          <div className='text-xs text-muted-foreground'>실패</div>
-          <div className='text-2xl font-bold text-destructive'>{stats.failed}</div>
+          <div className='flex items-center gap-2 text-xs text-muted-foreground'>
+            <AlertCircle className='size-3.5' />
+            <span>실패</span>
+          </div>
+          <div className='mt-1 text-3xl font-semibold tabular-nums text-destructive'>{stats.failed}</div>
         </Card>
       </div>
 
