@@ -99,8 +99,8 @@ export function AuditLogPage() {
       <Main>
         <div className='space-y-5'>
           <div>
-            <h1 className='text-2xl font-bold'>감사 로그</h1>
-            <p className='text-sm text-muted-foreground'>
+            <h1 className='hydra-page-h'>감사 로그</h1>
+            <p className='hydra-page-sub'>
               /api/admin/* 쓰기 작업 이력 · {data?.total ?? 0}건
             </p>
           </div>

@@ -41,7 +41,7 @@ function StatCard({ label, value, icon: Icon, color, trend }: {
         <span className='text-muted-foreground text-[12px]'>{label}</span>
         <Icon className={`h-4 w-4 ${color}`} />
       </div>
-      <div className='text-[28px] font-bold'>{animated}</div>
+      <div className='text-[32px] font-semibold tabular-nums'>{animated}</div>
       {trend && <span className='text-muted-foreground text-[11px]'>{trend}</span>}
     </div>
   )
@@ -100,8 +100,8 @@ export default function AnalyticsPage() {
         <div >
           <div className='mb-5 flex flex-wrap items-center justify-between gap-2'>
             <div>
-              <h2 className='text-[22px] font-bold'>분석</h2>
-              <p className='text-muted-foreground text-[13px]'>성과 확인 및 기간별 추세</p>
+              <h1 className='hydra-page-h'>분석</h1>
+              <p className='hydra-page-sub'>성과 확인 및 기간별 추세</p>
             </div>
             {/* Period selector */}
             <div className='flex gap-1 bg-muted rounded-lg p-1'>
