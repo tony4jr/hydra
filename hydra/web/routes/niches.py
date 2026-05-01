@@ -631,3 +631,41 @@ def delete_niche_persona(niche_id: int, persona_id: str, db: Session = Depends(g
     n.personas_json = _json_dump(new_list)
     db.commit()
     return {"ok": True, "personas": new_list}
+
+
+# ─── PR-4e: 캠페인 탭 ────────────────────────────────────────────
+
+
+@router.get("/{niche_id}/campaigns")
+def niche_campaigns(
+    niche_id: int,
+    status: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Niche 단위 캠페인 리스트 (niche 컨텍스트 강제)."""
+    n = db.get(Niche, niche_id)
+    if n is None:
+        raise HTTPException(404, "niche not found")
+
+    q = db.query(Campaign).filter(Campaign.niche_id == niche_id)
+    if status:
+        q = q.filter(Campaign.status == status)
+    rows = q.order_by(Campaign.created_at.desc()).limit(200).all()
+
+    return [
+        {
+            "id": c.id,
+            "name": c.name,
+            "scenario": c.scenario,
+            "status": c.status,
+            "campaign_type": c.campaign_type,
+            "comment_mode": c.comment_mode,
+            "target_count": c.target_count,
+            "duration_days": c.duration_days,
+            "start_date": c.start_date.isoformat() if c.start_date else None,
+            "end_date": c.end_date.isoformat() if c.end_date else None,
+            "created_at": c.created_at.isoformat() if c.created_at else None,
+            "completed_at": c.completed_at.isoformat() if c.completed_at else None,
+        }
+        for c in rows
+    ]

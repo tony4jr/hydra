@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -588,3 +588,32 @@ def get_campaign(campaign_id: int, db: Session = Depends(get_db)):
             for s in steps
         ],
     }
+
+
+# ─── PR-4e: pause / resume (백엔드 연결) ──────────────────────────
+
+
+@router.post("/api/{cp_id}/pause")
+def pause_campaign(cp_id: int, db: Session = Depends(get_db)):
+    """캠페인 일시정지. status: active|planning → paused."""
+    c = db.get(Campaign, cp_id)
+    if c is None:
+        raise HTTPException(404, "campaign not found")
+    if c.status not in ("active", "planning"):
+        raise HTTPException(409, f"cannot pause from status={c.status}")
+    c.status = "paused"
+    db.commit()
+    return {"id": cp_id, "status": "paused"}
+
+
+@router.post("/api/{cp_id}/resume")
+def resume_campaign(cp_id: int, db: Session = Depends(get_db)):
+    """캠페인 재개. status: paused → active."""
+    c = db.get(Campaign, cp_id)
+    if c is None:
+        raise HTTPException(404, "campaign not found")
+    if c.status != "paused":
+        raise HTTPException(409, f"cannot resume from status={c.status}")
+    c.status = "active"
+    db.commit()
+    return {"id": cp_id, "status": "active"}
