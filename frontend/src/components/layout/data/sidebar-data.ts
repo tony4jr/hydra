@@ -13,6 +13,7 @@ import {
   Image,
   ScrollText,
   Boxes,
+  Sparkles,
 } from 'lucide-react'
 import { type SidebarData } from '../types'
 
@@ -37,6 +38,11 @@ export const sidebarData: SidebarData = {
           title: '대시보드',
           url: '/',
           icon: LayoutDashboard,
+        },
+        {
+          title: '시작하기',
+          url: '/onboarding',
+          icon: Sparkles,
         },
         {
           title: '작업',
