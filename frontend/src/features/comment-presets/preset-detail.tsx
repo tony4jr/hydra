@@ -17,6 +17,14 @@ import { Heart, Plus, RotateCcw, Trash2 } from 'lucide-react'
 
 import { useCommentPreset } from '@/hooks/use-comment-presets'
 import { http } from '@/lib/api'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import type {
   CommentSlotDistribution,
   CommentSlotEmoji,
@@ -179,6 +187,9 @@ export default function CommentPresetDetailPage() {
                           seenIndex={seen}
                           totalCount={total}
                           depth={depth}
+                          availableLabels={Array.from(
+                            new Set(slots.map((x) => x.slot_label))
+                          )}
                         />
                       )
                     })}
@@ -276,6 +287,7 @@ function SlotCard({
   seenIndex,
   totalCount,
   depth,
+  availableLabels,
 }: {
   slot: CommentTreeSlot
   presetId: number
@@ -283,6 +295,7 @@ function SlotCard({
   seenIndex: number
   totalCount: number
   depth: number
+  availableLabels: string[]
 }) {
   const [text, setText] = useState(slot.text_template ?? '')
   const [length, setLength] = useState<CommentSlotLength>(slot.length)
@@ -334,23 +347,81 @@ function SlotCard({
       className='flex gap-3 p-3.5 rounded-lg hover:bg-muted/30 transition-colors'
       style={indentStyle}
     >
-      <div className='relative shrink-0'>
-        <div
-          className='w-9 h-9 rounded-full flex items-center justify-center text-white text-[14px] font-semibold'
-          style={{ background: gradientFor(slot.slot_label) }}
-        >
-          {slot.slot_label}
-        </div>
-        {isReentry && (
-          <div
-            className='absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full flex items-center justify-center'
-            style={{ background: '#a16207', border: '2px solid var(--background, #fafafa)' }}
-            title='재등장 슬롯'
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type='button'
+            className='relative shrink-0 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-full'
+            title='클릭해서 답글 대상 변경'
           >
-            <RotateCcw className='w-2 h-2 text-white' />
-          </div>
-        )}
-      </div>
+            <div
+              className='w-9 h-9 rounded-full flex items-center justify-center text-white text-[14px] font-semibold hover:opacity-90 transition-opacity'
+              style={{ background: gradientFor(slot.slot_label) }}
+            >
+              {slot.slot_label}
+            </div>
+            {isReentry && (
+              <div
+                className='absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full flex items-center justify-center'
+                style={{ background: '#a16207', border: '2px solid var(--background, #fafafa)' }}
+                title='재등장 슬롯'
+              >
+                <RotateCcw className='w-2 h-2 text-white' />
+              </div>
+            )}
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align='start' className='w-56'>
+          <DropdownMenuLabel className='text-[11px] text-muted-foreground'>
+            답글 대상 슬롯
+          </DropdownMenuLabel>
+          <DropdownMenuItem
+            onClick={async () => {
+              await http.patch(
+                `/api/admin/comment-presets/${presetId}/slots/${slot.id}`,
+                { reply_to_slot_label: null },
+              )
+              window.location.reload()
+            }}
+            className='gap-2'
+          >
+            <span className='inline-flex items-center justify-center w-5 h-5 rounded bg-muted text-[10px] font-semibold'>
+              ●
+            </span>
+            <span className='flex-1 text-[12.5px]'>메인 댓글로 (답글 X)</span>
+            {!slot.reply_to_slot_label && (
+              <span className='text-[10px] text-primary'>현재</span>
+            )}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          {availableLabels
+            .filter((l) => l !== slot.slot_label)
+            .map((l) => (
+              <DropdownMenuItem
+                key={l}
+                onClick={async () => {
+                  await http.patch(
+                    `/api/admin/comment-presets/${presetId}/slots/${slot.id}`,
+                    { reply_to_slot_label: l },
+                  )
+                  window.location.reload()
+                }}
+                className='gap-2'
+              >
+                <span
+                  className='inline-flex items-center justify-center w-5 h-5 rounded text-white text-[10px] font-semibold'
+                  style={{ background: gradientFor(l) }}
+                >
+                  {l}
+                </span>
+                <span className='flex-1 text-[12.5px]'>{l} 에게 답글</span>
+                {slot.reply_to_slot_label === l && (
+                  <span className='text-[10px] text-primary'>현재</span>
+                )}
+              </DropdownMenuItem>
+            ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       <div className='flex-1 min-w-0'>
         <div className='flex items-center gap-2 mb-2 flex-wrap'>
