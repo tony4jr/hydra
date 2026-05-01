@@ -16,7 +16,7 @@ from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
 
 from hydra.db.session import init_db
-from hydra.web.routes import accounts, brands, campaigns, dashboard, keywords, videos, settings, pools, logs, system, export, creator, recovery, campaign_videos, niches
+from hydra.web.routes import accounts, brands, campaigns, dashboard, keywords, videos, settings, pools, logs, system, export, creator, recovery, campaign_videos, niches, tags
 from hydra.web.routes import (
     admin_auth, admin_workers, admin_avatars, admin_deploy, admin_audit,
     admin_accounts, admin_tasks, admin_adspower, admin_collection, admin_video_pool,
@@ -82,6 +82,7 @@ app.include_router(dashboard.router, prefix="", tags=["dashboard"])
 app.include_router(accounts.router, prefix="/accounts", tags=["accounts"], dependencies=_ADMIN_DEPS)
 app.include_router(brands.router, prefix="/brands", tags=["brands"], dependencies=_ADMIN_DEPS)
 app.include_router(niches.router, prefix="/api/admin/niches", tags=["admin-niches"], dependencies=_ADMIN_DEPS)
+app.include_router(tags.router, prefix="/api/admin/tags", tags=["admin-tags"], dependencies=_ADMIN_DEPS)
 app.include_router(campaigns.router, prefix="/campaigns", tags=["campaigns"], dependencies=_ADMIN_DEPS)
 app.include_router(campaign_videos.router, prefix="/api/campaigns", tags=["campaign-videos"], dependencies=_ADMIN_DEPS)
 app.include_router(keywords.router, prefix="/keywords", tags=["keywords"], dependencies=_ADMIN_DEPS)

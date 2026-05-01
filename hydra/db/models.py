@@ -172,6 +172,9 @@ class Niche(Base):
     keywords = relationship("Keyword", back_populates="niche")
     campaigns = relationship("Campaign", back_populates="niche")
 
+    # PR-6: 자유 태그 (N:M)
+    tags = relationship("Tag", secondary="niche_tags", back_populates="niches")
+
     __table_args__ = (
         Index("ix_niches_brand_state", "brand_id", "state"),
     )
@@ -337,6 +340,8 @@ class Campaign(Base):
     niche = relationship("Niche", back_populates="campaigns")
     steps = relationship("CampaignStep", back_populates="campaign")
     like_boosts = relationship("LikeBoostQueue", back_populates="campaign")
+    # PR-6: 자유 태그 (N:M)
+    tags = relationship("Tag", secondary="campaign_tags", back_populates="campaigns")
 
     __table_args__ = (
         Index("idx_campaigns_status", "status"),
@@ -593,6 +598,40 @@ class RecoveryEmail(Base):
     __table_args__ = (
         Index("idx_recovery_available", "disabled", "used_by_account_id"),
     )
+
+
+# PR-6 — 자유 태그 (Tag) + N:M 연결
+class Tag(Base):
+    """자유 태그. namespace + value 조합으로 다차원 분류 (Niche, Campaign 에 N:M)."""
+    __tablename__ = "tags"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    namespace = Column(String(60), nullable=False)
+    value = Column(String(120), nullable=False)
+    description = Column(Text)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+
+    niches = relationship("Niche", secondary="niche_tags", back_populates="tags")
+    campaigns = relationship("Campaign", secondary="campaign_tags", back_populates="tags")
+
+    __table_args__ = (
+        UniqueConstraint("namespace", "value", name="uq_tags_ns_value"),
+        Index("ix_tags_namespace", "namespace"),
+    )
+
+
+class NicheTag(Base):
+    __tablename__ = "niche_tags"
+    niche_id = Column(Integer, ForeignKey("niches.id", ondelete="CASCADE"), primary_key=True)
+    tag_id = Column(Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True)
+    __table_args__ = (Index("ix_niche_tags_tag", "tag_id"),)
+
+
+class CampaignTag(Base):
+    __tablename__ = "campaign_tags"
+    campaign_id = Column(Integer, ForeignKey("campaigns.id", ondelete="CASCADE"), primary_key=True)
+    tag_id = Column(Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True)
+    __table_args__ = (Index("ix_campaign_tags_tag", "tag_id"),)
 
 
 class PersonaSlot(Base):
