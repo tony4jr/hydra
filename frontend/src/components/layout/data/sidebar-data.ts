@@ -12,6 +12,7 @@ import {
   Sparkles,
   Activity,
   AlertTriangle,
+  ListChecks,
 } from 'lucide-react'
 import { type SidebarData } from '../types'
 
@@ -77,6 +78,11 @@ export const sidebarData: SidebarData = {
           title: '영상',
           url: '/videos',
           icon: Video,
+        },
+        {
+          title: '프리셋',
+          url: '/presets',
+          icon: ListChecks,
         },
         {
           title: '계정',
