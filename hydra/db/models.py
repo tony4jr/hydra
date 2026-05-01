@@ -817,6 +817,53 @@ class CommentTreeSlot(Base):
     )
 
 
+# PR-8h — 영상/채널 즐겨찾기 + 보호
+class FavoriteChannel(Base):
+    __tablename__ = "favorite_channels"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    brand_id = Column(Integer, ForeignKey("brands.id", ondelete="CASCADE"), nullable=False)
+    channel_id = Column(String, nullable=False)
+    channel_title = Column(String)
+    note = Column(Text)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("brand_id", "channel_id", name="uq_fav_channel"),
+        Index("ix_fav_channel_brand", "brand_id"),
+    )
+
+
+class FavoriteVideo(Base):
+    __tablename__ = "favorite_videos"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    brand_id = Column(Integer, ForeignKey("brands.id", ondelete="CASCADE"), nullable=False)
+    video_id = Column(String, ForeignKey("videos.id", ondelete="CASCADE"), nullable=False)
+    note = Column(Text)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("brand_id", "video_id", name="uq_fav_video"),
+        Index("ix_fav_video_brand", "brand_id"),
+    )
+
+
+class ProtectedVideo(Base):
+    __tablename__ = "protected_videos"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    brand_id = Column(Integer, ForeignKey("brands.id", ondelete="CASCADE"), nullable=False)
+    video_id = Column(String, ForeignKey("videos.id", ondelete="CASCADE"), nullable=False)
+    reason = Column(Text)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("brand_id", "video_id", name="uq_protected_video"),
+        Index("ix_protected_brand", "brand_id"),
+    )
+
+
 # PR-8g — 댓글 실행 (실제 작성된 댓글 + 추적)
 class CommentExecution(Base):
     __tablename__ = "comment_executions"
