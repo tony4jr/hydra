@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, UTC
 from sqlalchemy.orm import Session
 
 from hydra.db.models import Video, TargetCollectionConfig
+from hydra.services._niche_helper import get_niche_for_target
 
 
 # Phase 별 한도 (작업 빈도 + 재방문 간격)
@@ -84,24 +85,32 @@ def compute_l_tier(
     우선순위: L2 (신규) > L3 (트렌딩) > L1 (점수 ≥ threshold) > L4 (나머지)
     """
     now = now or datetime.now(UTC)
+    niche = get_niche_for_target(db, target_id)
     cfg = db.get(TargetCollectionConfig, target_id)
 
-    # L2: 업로드 6시간 이내 (신규 진입 윈도우)
+    # L2: 업로드 N시간 이내 (신규 진입 윈도우 — Niche.new_video_hours, default 6)
+    new_video_hours = (niche.new_video_hours if niche else None) or 6
     if video.published_at:
         pub = video.published_at
         if pub.tzinfo is None:
             pub = pub.replace(tzinfo=UTC)
         age_hours = (now - pub).total_seconds() / 3600
-        if age_hours < 6:
+        if age_hours < new_video_hours:
             return "L2"
 
-    # L3: 시간당 조회수 급증
-    threshold_l3 = (cfg.l3_views_per_hour_threshold if cfg else 1000) or 1000
+    # L3: 시간당 조회수 급증 (Niche.trending_vph_threshold fallback to TCC.l3_views_per_hour_threshold)
+    if niche is not None:
+        threshold_l3 = niche.trending_vph_threshold or 1000
+    else:
+        threshold_l3 = (cfg.l3_views_per_hour_threshold if cfg else 1000) or 1000
     if (video.views_per_hour_recent or 0) > threshold_l3:
         return "L3"
 
-    # L1: 점수 임계값 이상 (relevance_score_v2 가 있으면 그거, 없으면 popularity_score)
-    threshold_l1 = (cfg.l1_threshold_score if cfg else 70.0) or 70.0
+    # L1: 점수 임계값 이상 (Niche.long_term_score_threshold fallback to TCC.l1_threshold_score)
+    if niche is not None:
+        threshold_l1 = niche.long_term_score_threshold or 70.0
+    else:
+        threshold_l1 = (cfg.l1_threshold_score if cfg else 70.0) or 70.0
     score = video.relevance_score_v2 or (video.popularity_score or 0) * 100
     if score >= threshold_l1:
         return "L1"

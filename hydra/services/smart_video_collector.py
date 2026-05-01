@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from hydra.collection.youtube_api import search_videos, enrich_videos
 from hydra.db.models import Brand, Keyword, Video
+from hydra.services._niche_helper import get_niche_for_target
 
 log = logging.getLogger(__name__)
 
@@ -169,7 +170,12 @@ def collect_initial_for_brand(db: Session, brand_id: int) -> dict:
     if not brand:
         return {"error": "brand not found"}
 
-    profile = DEPTH_PROFILES.get(brand.collection_depth or "standard", DEPTH_PROFILES["standard"])
+    niche = get_niche_for_target(db, brand_id)
+    depth = (niche.collection_depth if niche else None) or brand.collection_depth or "standard"
+    profile = dict(DEPTH_PROFILES.get(depth, DEPTH_PROFILES["standard"]))
+    # Niche.keyword_variation_count overrides DEPTH_PROFILES["longtail_count"] when present.
+    if niche is not None and niche.keyword_variation_count is not None:
+        profile["longtail_count"] = niche.keyword_variation_count
     pa_iso = _published_after_iso(profile["publishedAfter_years"])
 
     # 원본 (variant 가 아닌) 키워드만 처리
