@@ -1,18 +1,29 @@
 # PR-4 — 시장 상세 5탭 페이지 (가장 큰 작업)
 
+> **정리 노트 (PR-4 spec-fix, 2026-05-01)** — 본 작업 시작 전 부정합 정리:
+>
+> 1. **Sub-PR 개수**: "5개 sub-PR" 표현 → **6개 (PR-4a~f)** 로 통일. 실제 분할 목록과 작업 순서가 6개임.
+> 2. **5탭 정식 명칭/순서**: **개요 / 수집 / 메시지 / 캠페인 / 분석** (이 순서). URL suffix 는 개요=없음(default), 나머지=`/collection`, `/messaging`, `/campaigns`, `/analytics`.
+> 3. **루트 URL**: `/products/$brandId/niches/$nicheId/...` (단순 `/niches/$nicheId` 아님 — 브레드크럼/Brand 컨텍스트 보존).
+> 4. **사이드바 변경 시점**: PR-4a 는 **새 "제품 운영" 메뉴 추가만**, 기존 [브랜드][타겟][캠페인][분석] 메뉴는 **PR-4f (분석 탭) 머지 후 제거** (한동안 병존, 운영자 혼란 최소화 — "위험 평가" 표와 일치).
+> 5. **백엔드 API prefix**: PR-3b 가 실제 배포한 prefix 는 `/api/admin/niches`. PR-4 신규 endpoint 는 동일 컨벤션 따라 **`/api/admin/niches/{niche_id}/overview`**, `/collection/flow`, `/keywords`, `/recent-videos`, `/simulate-threshold`, `/messaging`, `/personas`, `/campaigns`, `/analytics` (이전 spec 의 `/niches/api/...` 표기는 deprecated).
+> 6. **페르소나 모델**: PR-3a 마이그레이션에서 페르소나 컬럼 흡수 안 함 (Niche 12 비즈니스 컬럼에 없음). PR-4d (메시지 탭) 안에서 별도 마이그레이션 필요 — `niche_personas` join 테이블 또는 `personas.niche_id` FK 추가. 본 PR 범위.
+> 7. **자동 백필 Niche 이름 = Brand 이름**: PR-3a 결과 Niche.name 이 Brand.name 동일. PR-4a 제품 목록 트리에서 동일 이름 노출되어 혼란 가능. UX 메모: PR-4a 에서 Niche 이름 옆에 "(default)" 같은 hint 표기 또는 운영자에게 rename 유도 빈 상태 안내.
+> 8. **PR-3 후속 마이그레이션**: niche_id NOT NULL 변경, TargetCollectionConfig drop 등은 PR-4 머지 후 안정성 확인되면 (PR-3 spec L266) — 본 PR 범위 X.
+
 ## 목표
 
 운영자 멘탈모델의 핵심 페이지. 한 시장(Niche)의 모든 운영을 한 페이지 5탭에서 처리합니다.
 
 기존 [브랜드 폼] + [타겟 페이지] + [캠페인 일부] + [분석 일부]가 이 페이지로 통합됩니다. 정보 흩어짐 문제의 핵심 해결.
 
-이 PR은 가장 큰 작업이라 **탭 단위로 점진적 머지**합니다 (5개 sub-PR로 나눠도 OK).
+이 PR은 가장 큰 작업이라 **탭 단위로 점진적 머지**합니다 (6개 sub-PR — PR-4a~f).
 
 ---
 
 ## 의존성
 
-- 선행 PR: PR-1 (용어), PR-3 (Niche 모델)
+- 선행 PR: PR-1 (용어), PR-3 (Niche 모델, PR-3a/b/c 모두 merge 됨)
 - 후속 PR: PR-5 (영상 통합 보기에서 이 페이지 링크), PR-6 (태그)
 
 ---
@@ -74,7 +85,7 @@ URL 예시:
 각 탭이 사용할 신규/변경 endpoint:
 
 ### 1. 시장 개요 (탭 1)
-- `GET /niches/api/{niche_id}/overview` (신규)
+- `GET /api/admin/niches/{niche_id}/overview` (신규)
   ```python
   class NicheOverviewResponse(BaseModel):
       niche: NicheResponse
@@ -87,11 +98,11 @@ URL 예시:
 
 5단계 깔때기에 필요한 데이터:
 
-- `GET /niches/api/{niche_id}/collection/flow` (신규)
+- `GET /api/admin/niches/{niche_id}/collection/flow` (신규)
   - PR-2의 `/api/admin/pipeline/flow`와 동일 구조, niche 단위
   - `?window_hours=24` 지원
 
-- `GET /niches/api/{niche_id}/keywords` (신규, 기존 keywords API 재구성)
+- `GET /api/admin/niches/{niche_id}/keywords` (신규, 기존 keywords API 재구성)
   ```python
   class KeywordWithMetrics(BaseModel):
       id: int
@@ -103,11 +114,11 @@ URL 예시:
       metrics_7d: dict  # discovered, passed_market, pass_rate
   ```
 
-- `POST /niches/api/{niche_id}/keywords` (신규)
-- `PATCH /niches/api/{niche_id}/keywords/{kw_id}` (폴링 변경, 변형 on/off)
-- `DELETE /niches/api/{niche_id}/keywords/{kw_id}`
+- `POST /api/admin/niches/{niche_id}/keywords` (신규)
+- `PATCH /api/admin/niches/{niche_id}/keywords/{kw_id}` (폴링 변경, 변형 on/off)
+- `DELETE /api/admin/niches/{niche_id}/keywords/{kw_id}`
 
-- `GET /niches/api/{niche_id}/recent-videos` (신규)
+- `GET /api/admin/niches/{niche_id}/recent-videos` (신규)
   ```python
   # 키워드별/시장별 최근 발견 영상 + 통과/탈락 사유
   class RecentVideo(BaseModel):
@@ -123,7 +134,7 @@ URL 예시:
       result_reason: str | None
   ```
 
-- `POST /niches/api/{niche_id}/simulate-threshold` (신규, 시장 정의 시뮬레이션)
+- `POST /api/admin/niches/{niche_id}/simulate-threshold` (신규, 시장 정의 시뮬레이션)
   ```python
   class ThresholdSimulationRequest(BaseModel):
       market_definition: str | None = None  # 변경 시 미리보기
@@ -135,10 +146,10 @@ URL 예시:
       borderline: list[RecentVideo]  # 임계값 ±0.05 영상들
   ```
 
-  주의: 이 API는 새 임계값으로 즉시 영향 주지 않음. 미리보기만. 실제 적용은 `PATCH /niches/api/{niche_id}` 호출.
+  주의: 이 API는 새 임계값으로 즉시 영향 주지 않음. 미리보기만. 실제 적용은 `PATCH /api/admin/niches/{niche_id}` 호출.
 
 ### 3. 메시지 탭 (탭 3)
-- `GET /niches/api/{niche_id}/messaging` (신규)
+- `GET /api/admin/niches/{niche_id}/messaging` (신규)
   ```python
   class NicheMessaging(BaseModel):
       core_message: str  # 핵심 메시지 (Brand에서 niche로 옮김)
@@ -149,14 +160,14 @@ URL 예시:
       personas: list[Persona]   # Niche에 할당된 페르소나 슬롯
       preset_selection: list[str]   # 활성화된 프리셋 키
   ```
-- `PATCH /niches/api/{niche_id}/messaging`
-- `POST /niches/api/{niche_id}/personas` — 페르소나 추가 (max 10 슬롯)
-- `DELETE /niches/api/{niche_id}/personas/{persona_id}`
+- `PATCH /api/admin/niches/{niche_id}/messaging`
+- `POST /api/admin/niches/{niche_id}/personas` — 페르소나 추가 (max 10 슬롯)
+- `DELETE /api/admin/niches/{niche_id}/personas/{persona_id}`
 
 ### 4. 캠페인 탭 (탭 4)
-- `GET /niches/api/{niche_id}/campaigns` (신규)
+- `GET /api/admin/niches/{niche_id}/campaigns` (신규)
   - 기존 `/campaigns/api/list?niche_id=`와 동일하지만 niche 컨텍스트 강제
-- `POST /niches/api/{niche_id}/campaigns` (신규, 단순화된 wizard 백엔드)
+- `POST /api/admin/niches/{niche_id}/campaigns` (신규, 단순화된 wizard 백엔드)
   - 기존 4-step wizard 대신 2-step:
     - step 1: 프리셋 + 영상 비율
     - step 2: 기간 + 목표 영상 수
@@ -165,7 +176,7 @@ URL 예시:
 - `POST /campaigns/api/{cp_id}/resume` (백엔드 연결)
 
 ### 5. 분석 탭 (탭 5)
-- `GET /niches/api/{niche_id}/analytics` (신규)
+- `GET /api/admin/niches/{niche_id}/analytics` (신규)
   ```python
   class NicheAnalytics(BaseModel):
       window_days: int  # 7 / 30 / all
@@ -184,6 +195,8 @@ URL 예시:
 ## 프론트엔드 변경
 
 ### 1. 사이드바 메뉴 재구성
+
+> ⚠️ **분할 시점 주의 (정리 노트 #4 참조)**: PR-4a 는 새 "제품 운영" 그룹과 메뉴를 **추가만** 한다. 기존 [브랜드][타겟][캠페인][분석] 메뉴 **제거는 PR-4f (분석 탭) 머지 시점에 일괄**. PR-4a~e 동안은 두 진입점이 병존 — 운영자 혼란 최소화 + 회귀 안전.
 
 `frontend/src/components/sidebar.tsx`:
 
@@ -362,12 +375,12 @@ export function MarketDefinitionEditor({ niche }: { niche: Niche }) {
 
   // textarea + 슬라이더 + 시뮬레이션 결과
   // 저장 버튼 (저장 안 하면 미리보기만)
-  // "AI 다듬기" 버튼 → /niches/api/$id/refine-definition (PR-7에서 신설, 이 PR에선 placeholder)
+  // "AI 다듬기" 버튼 → /api/admin/niches/$id/refine-definition (PR-7에서 신설, 이 PR에선 placeholder)
 }
 ```
 
 시뮬레이션 동작:
-- text 또는 threshold 변경 시 디바운스 300ms 후 `POST /niches/api/{id}/simulate-threshold`
+- text 또는 threshold 변경 시 디바운스 300ms 후 `POST /api/admin/niches/{id}/simulate-threshold`
 - 응답으로 통과/탈락/경계 카운트 + 경계선 영상 표시
 - 저장 전엔 niche의 실제 값에 영향 없음
 
@@ -528,15 +541,15 @@ stale time:
 
 ## 완료 정의
 
-### 5개 sub-PR로 분할 권장
+### 6개 sub-PR로 분할 (PR-4a~f)
 
 각 sub-PR이 독립 머지 가능:
-- **PR-4a** — 라우트 구조 + 사이드바 + 제품 목록 + 시장 layout (탭 헤더만)
-- **PR-4b** — 개요 탭
-- **PR-4c** — 수집 탭 (가장 큰 sub-PR)
-- **PR-4d** — 메시지 탭
-- **PR-4e** — 캠페인 탭
-- **PR-4f** — 분석 탭
+- **PR-4a** — 라우트 구조 + 사이드바 "제품 운영" 신설 + 제품 목록 + 시장 layout (탭 헤더만, 기존 사이드바 메뉴 제거 X)
+- **PR-4b** — 개요 탭 (overview API + UI)
+- **PR-4c** — 수집 탭 (가장 큰 sub-PR — 5단계 깔때기, 키워드 테이블, 시뮬레이션)
+- **PR-4d** — 메시지 탭 (페르소나 모델 마이그레이션 + messaging API + UI)
+- **PR-4e** — 캠페인 탭 (2-step 모달 + pause/resume 백엔드 연결)
+- **PR-4f** — 분석 탭 + **사이드바 정리** (기존 [브랜드][타겟][캠페인][분석] 메뉴 제거)
 
 각 sub-PR마다:
 - [ ] 해당 백엔드 endpoint 작동 + 테스트
@@ -547,8 +560,8 @@ stale time:
 - [ ] 스크린샷 첨부
 
 전체 완료:
-- [ ] 6개 sub-PR 모두 머지됨
-- [ ] 사이드바에서 기존 [브랜드] [타겟] [캠페인] [분석] 메뉴 사라짐
+- [ ] 6개 sub-PR 모두 머지됨 (PR-4a~f)
+- [ ] PR-4f 머지 시점에 사이드바에서 기존 [브랜드] [타겟] [캠페인] [분석] 메뉴 사라짐 (PR-4a~e 동안은 새 메뉴와 병존)
 - [ ] 모든 운영자 액션이 시장 페이지 안에서 가능
 - [ ] regression: 기존 자동 캠페인 분배가 정상 작동
 
