@@ -13,6 +13,12 @@ import {
 } from 'lucide-react'
 import { type SidebarData } from '../types'
 
+/**
+ * PR-8a 사이드바 IA — 3 그룹 (지금/자산/안전).
+ *
+ * 신규 페이지 (피드/문제/예정/프리셋/키워드) 는 PR-8b 등 후속 sub-PR 에서 추가.
+ * 본 PR-8a 는 현재 존재하는 페이지의 그룹/순서 재배치 + rename 만.
+ */
 export const sidebarData: SidebarData = {
   user: {
     name: 'HYDRA Admin',
@@ -28,7 +34,7 @@ export const sidebarData: SidebarData = {
   ],
   navGroups: [
     {
-      title: '홈',
+      title: '지금',
       items: [
         {
           title: '대시보드',
@@ -36,22 +42,22 @@ export const sidebarData: SidebarData = {
           icon: LayoutDashboard,
         },
         {
+          title: '예정',
+          url: '/tasks',
+          icon: ListTodo,
+        },
+        {
           title: '시작하기',
           url: '/onboarding',
           icon: Sparkles,
         },
-        {
-          title: '작업',
-          url: '/tasks',
-          icon: ListTodo,
-        },
       ],
     },
     {
-      title: '제품 운영',
+      title: '자산',
       items: [
         {
-          title: '제품',
+          title: '타겟',
           url: '/products',
           icon: Boxes,
         },
@@ -73,7 +79,7 @@ export const sidebarData: SidebarData = {
       ],
     },
     {
-      title: '인프라',
+      title: '안전',
       items: [
         {
           title: '워커',
@@ -81,7 +87,7 @@ export const sidebarData: SidebarData = {
           icon: Monitor,
         },
         {
-          title: '감사 로그',
+          title: '로그',
           url: '/audit',
           icon: ScrollText,
         },

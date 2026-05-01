@@ -94,7 +94,7 @@ export const labels = {
   // 페이지명
   pageHome: '운영 현황',
   pageProducts: '제품 목록',
-  pageNiche: '시장',
+  pageNiche: '타겟',
   pageCampaigns: '캠페인',
   pageVideos: '영상',
   pageTasks: '작업 큐',
@@ -104,7 +104,7 @@ export const labels = {
   pageSettings: '시스템 설정',
 
   // 도메인 핵심 용어 (운영자 멘탈모델)
-  niche: '시장',
+  niche: '타겟',
   marketDefinition: '시장 정의',         // ← embedding_reference_text 의 UI 라벨
   marketFitness: '시장 적합도',          // ← embedding_score 의 UI 라벨
   collectionFunnel: '수집 흐름',

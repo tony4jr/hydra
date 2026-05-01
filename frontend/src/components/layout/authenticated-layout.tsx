@@ -5,8 +5,10 @@ import { LayoutProvider } from '@/context/layout-provider'
 import { SearchProvider } from '@/context/search-provider'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/layout/app-sidebar'
+import { ScopeBar } from '@/components/layout/scope-bar'
 import { SkipToMain } from '@/components/skip-to-main'
 import { LiveStatusBar } from '@/components/live-status-bar'
+import { ActiveBrandProvider } from '@/lib/active-brand'
 
 type AuthenticatedLayoutProps = {
   children?: React.ReactNode
@@ -17,27 +19,23 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
   return (
     <SearchProvider>
       <LayoutProvider>
-        <SidebarProvider defaultOpen={defaultOpen}>
-          <SkipToMain />
-          <AppSidebar />
-          <SidebarInset
-            className={cn(
-              // Set content container, so we can use container queries
-              '@container/content',
-
-              // If layout is fixed, set the height
-              // to 100svh to prevent overflow
-              'has-data-[layout=fixed]:h-svh',
-
-              // If layout is fixed and sidebar is inset,
-              // set the height to 100svh - spacing (total margins) to prevent overflow
-              'peer-data-[variant=inset]:has-data-[layout=fixed]:h-[calc(100svh-(var(--spacing)*4))]'
-            )}
-          >
-            <LiveStatusBar />
-            {children ?? <Outlet />}
-          </SidebarInset>
-        </SidebarProvider>
+        <ActiveBrandProvider>
+          <SidebarProvider defaultOpen={defaultOpen}>
+            <SkipToMain />
+            <AppSidebar />
+            <SidebarInset
+              className={cn(
+                '@container/content',
+                'has-data-[layout=fixed]:h-svh',
+                'peer-data-[variant=inset]:has-data-[layout=fixed]:h-[calc(100svh-(var(--spacing)*4))]'
+              )}
+            >
+              <LiveStatusBar />
+              <ScopeBar />
+              {children ?? <Outlet />}
+            </SidebarInset>
+          </SidebarProvider>
+        </ActiveBrandProvider>
       </LayoutProvider>
     </SearchProvider>
   )
