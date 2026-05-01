@@ -113,6 +113,13 @@ export const labels = {
   ghostDetection: '댓글 생존 검증',
   apiQuota: 'API 사용량',                // ← quota 의 UI 라벨
 
+  // 시장 페이지 5탭 (PR-4)
+  tabOverview: '개요',
+  tabCollection: '수집',
+  tabMessaging: '메시지',
+  tabCampaigns: '캠페인',
+  tabAnalytics: '분석',
+
   // 상태 동사
   pause: '일시정지',
   resume: '재개',

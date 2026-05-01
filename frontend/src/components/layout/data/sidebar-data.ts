@@ -15,6 +15,7 @@ import {
   Command,
   Image,
   ScrollText,
+  Boxes,
 } from 'lucide-react'
 import { type SidebarData } from '../types'
 
@@ -70,6 +71,11 @@ export const sidebarData: SidebarData = {
     {
       title: '제품 운영',
       items: [
+        {
+          title: '제품',
+          url: '/products',
+          icon: Boxes,
+        },
         {
           title: '계정',
           url: '/accounts',

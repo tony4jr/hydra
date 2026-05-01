@@ -8,6 +8,7 @@ import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { fetchApi } from '@/lib/api'
 import { useNicheCountByBrand } from '@/hooks/use-niches'
+import { labels } from '@/lib/i18n-terms'
 import { BrandFormDialog } from './brand-form-dialog'
 
 interface Brand {
@@ -100,7 +101,7 @@ export default function BrandsPage() {
                     <div className='flex items-center gap-1.5'>
                       {nicheCountByBrand[brand.id] > 0 && (
                         <span className='hydra-tag hydra-tag-primary'>
-                          시장 {nicheCountByBrand[brand.id]}개
+                          {labels.niche} {nicheCountByBrand[brand.id]}개
                         </span>
                       )}
                       {brand.product_category && (
