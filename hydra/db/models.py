@@ -171,6 +171,9 @@ class Niche(Base):
     promotional_keywords = Column(Text)  # JSON list
     preset_selection = Column(Text)  # JSON list of preset codes
 
+    # PR-8d — 댓글 트리 프리셋 FK (alembic 만 nullable, 모델은 nullable 유지)
+    comment_preset_id = Column(Integer, ForeignKey("comment_presets.id", ondelete="SET NULL"))
+
     created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC),
                         onupdate=lambda: datetime.now(UTC), nullable=False)
@@ -766,6 +769,50 @@ class Preset(Base):
 
     __table_args__ = (
         Index("idx_presets_code", "code"),
+    )
+
+
+# PR-8d — 댓글 트리 프리셋 (운영자 댓글 양식). 기존 Preset (campaign step 시퀀스) 와 별도 영역.
+class CommentPreset(Base):
+    __tablename__ = "comment_presets"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(80), nullable=False)
+    description = Column(Text)
+    is_global = Column(Boolean, default=True, nullable=False)
+    is_default = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC),
+                        onupdate=lambda: datetime.now(UTC), nullable=False)
+
+    slots = relationship("CommentTreeSlot", back_populates="comment_preset",
+                         cascade="all, delete-orphan",
+                         order_by="CommentTreeSlot.position")
+
+
+class CommentTreeSlot(Base):
+    __tablename__ = "comment_tree_slots"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    comment_preset_id = Column(Integer,
+                               ForeignKey("comment_presets.id", ondelete="CASCADE"),
+                               nullable=False)
+    slot_label = Column(String(4), nullable=False)
+    reply_to_slot_label = Column(String(4))
+    position = Column(Integer, nullable=False)
+    text_template = Column(Text)
+    length = Column(String(10), default="medium", nullable=False)
+    emoji = Column(String(10), default="sometimes", nullable=False)
+    ai_variation = Column(Integer, default=50, nullable=False)
+    like_min = Column(Integer, default=0, nullable=False)
+    like_max = Column(Integer, default=0, nullable=False)
+    like_distribution = Column(String(10), default="adaptive", nullable=False)
+
+    comment_preset = relationship("CommentPreset", back_populates="slots")
+
+    __table_args__ = (
+        UniqueConstraint("comment_preset_id", "slot_label", name="uq_slots_preset_label"),
+        Index("ix_slots_preset", "comment_preset_id"),
     )
 
 

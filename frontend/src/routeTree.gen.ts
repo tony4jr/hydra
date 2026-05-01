@@ -25,6 +25,7 @@ import { Route as AuthenticatedTargetsIndexRouteImport } from './routes/_authent
 import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
 import { Route as AuthenticatedQueueIndexRouteImport } from './routes/_authenticated/queue/index'
 import { Route as AuthenticatedProductsIndexRouteImport } from './routes/_authenticated/products/index'
+import { Route as AuthenticatedPresetsIndexRouteImport } from './routes/_authenticated/presets/index'
 import { Route as AuthenticatedOnboardingIndexRouteImport } from './routes/_authenticated/onboarding/index'
 import { Route as AuthenticatedFeedIndexRouteImport } from './routes/_authenticated/feed/index'
 import { Route as AuthenticatedCampaignsIndexRouteImport } from './routes/_authenticated/campaigns/index'
@@ -136,6 +137,12 @@ const AuthenticatedProductsIndexRoute =
   AuthenticatedProductsIndexRouteImport.update({
     id: '/products/',
     path: '/products/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedPresetsIndexRoute =
+  AuthenticatedPresetsIndexRouteImport.update({
+    id: '/presets/',
+    path: '/presets/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedOnboardingIndexRoute =
@@ -328,6 +335,7 @@ export interface FileRoutesByFullPath {
   '/campaigns/': typeof AuthenticatedCampaignsIndexRoute
   '/feed/': typeof AuthenticatedFeedIndexRoute
   '/onboarding/': typeof AuthenticatedOnboardingIndexRoute
+  '/presets/': typeof AuthenticatedPresetsIndexRoute
   '/products/': typeof AuthenticatedProductsIndexRoute
   '/queue/': typeof AuthenticatedQueueIndexRoute
   '/settings/': typeof AuthenticatedSettingsIndexRoute
@@ -371,6 +379,7 @@ export interface FileRoutesByTo {
   '/campaigns': typeof AuthenticatedCampaignsIndexRoute
   '/feed': typeof AuthenticatedFeedIndexRoute
   '/onboarding': typeof AuthenticatedOnboardingIndexRoute
+  '/presets': typeof AuthenticatedPresetsIndexRoute
   '/products': typeof AuthenticatedProductsIndexRoute
   '/queue': typeof AuthenticatedQueueIndexRoute
   '/settings': typeof AuthenticatedSettingsIndexRoute
@@ -416,6 +425,7 @@ export interface FileRoutesById {
   '/_authenticated/campaigns/': typeof AuthenticatedCampaignsIndexRoute
   '/_authenticated/feed/': typeof AuthenticatedFeedIndexRoute
   '/_authenticated/onboarding/': typeof AuthenticatedOnboardingIndexRoute
+  '/_authenticated/presets/': typeof AuthenticatedPresetsIndexRoute
   '/_authenticated/products/': typeof AuthenticatedProductsIndexRoute
   '/_authenticated/queue/': typeof AuthenticatedQueueIndexRoute
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
@@ -462,6 +472,7 @@ export interface FileRouteTypes {
     | '/campaigns/'
     | '/feed/'
     | '/onboarding/'
+    | '/presets/'
     | '/products/'
     | '/queue/'
     | '/settings/'
@@ -505,6 +516,7 @@ export interface FileRouteTypes {
     | '/campaigns'
     | '/feed'
     | '/onboarding'
+    | '/presets'
     | '/products'
     | '/queue'
     | '/settings'
@@ -549,6 +561,7 @@ export interface FileRouteTypes {
     | '/_authenticated/campaigns/'
     | '/_authenticated/feed/'
     | '/_authenticated/onboarding/'
+    | '/_authenticated/presets/'
     | '/_authenticated/products/'
     | '/_authenticated/queue/'
     | '/_authenticated/settings/'
@@ -687,6 +700,13 @@ declare module '@tanstack/react-router' {
       path: '/products'
       fullPath: '/products/'
       preLoaderRoute: typeof AuthenticatedProductsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/presets/': {
+      id: '/_authenticated/presets/'
+      path: '/presets'
+      fullPath: '/presets/'
+      preLoaderRoute: typeof AuthenticatedPresetsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/onboarding/': {
@@ -953,6 +973,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedCampaignsIndexRoute: typeof AuthenticatedCampaignsIndexRoute
   AuthenticatedFeedIndexRoute: typeof AuthenticatedFeedIndexRoute
   AuthenticatedOnboardingIndexRoute: typeof AuthenticatedOnboardingIndexRoute
+  AuthenticatedPresetsIndexRoute: typeof AuthenticatedPresetsIndexRoute
   AuthenticatedProductsIndexRoute: typeof AuthenticatedProductsIndexRoute
   AuthenticatedQueueIndexRoute: typeof AuthenticatedQueueIndexRoute
   AuthenticatedTargetsIndexRoute: typeof AuthenticatedTargetsIndexRoute
@@ -979,6 +1000,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedCampaignsIndexRoute: AuthenticatedCampaignsIndexRoute,
   AuthenticatedFeedIndexRoute: AuthenticatedFeedIndexRoute,
   AuthenticatedOnboardingIndexRoute: AuthenticatedOnboardingIndexRoute,
+  AuthenticatedPresetsIndexRoute: AuthenticatedPresetsIndexRoute,
   AuthenticatedProductsIndexRoute: AuthenticatedProductsIndexRoute,
   AuthenticatedQueueIndexRoute: AuthenticatedQueueIndexRoute,
   AuthenticatedTargetsIndexRoute: AuthenticatedTargetsIndexRoute,
