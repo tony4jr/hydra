@@ -183,7 +183,9 @@ class Keyword(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     text = Column(String, nullable=False)
     brand_id = Column(Integer, ForeignKey("brands.id"))
-    niche_id = Column(Integer, ForeignKey("niches.id", ondelete="SET NULL"), nullable=True)  # PR-3
+    # PR-3-cleanup: alembic 으로 prod NOT NULL 적용. 모델은 nullable=True 유지
+    # (SQLite 테스트 픽스처가 niche 미주입 — DB 가드만으로 충분).
+    niche_id = Column(Integer, ForeignKey("niches.id", ondelete="SET NULL"), nullable=True)
     source = Column(String, default="manual")   # manual|auto_expanded|trending
     status = Column(String, default="active")    # active|paused|excluded
     priority = Column(Integer, default=5)
@@ -295,7 +297,8 @@ class Campaign(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     video_id = Column(String, ForeignKey("videos.id"), nullable=True)
     brand_id = Column(Integer, ForeignKey("brands.id"), nullable=False)
-    niche_id = Column(Integer, ForeignKey("niches.id", ondelete="SET NULL"), nullable=True)  # PR-3
+    # PR-3-cleanup: alembic 으로 prod NOT NULL 적용. 모델은 nullable=True 유지.
+    niche_id = Column(Integer, ForeignKey("niches.id", ondelete="SET NULL"), nullable=True)
     scenario = Column(String, nullable=False)  # A~J
 
     status = Column(String, default="planning")
