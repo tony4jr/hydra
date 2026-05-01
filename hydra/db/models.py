@@ -95,6 +95,14 @@ class Brand(Base):
     tone_guide = Column(Text)
     target_audience = Column(String)
 
+    # PR-8c — Brand v2 운영 자산
+    industry = Column(String(60))
+    tone = Column(String(20))  # 친근/전문/캐주얼/공감
+    common_phrases = Column(Text)  # JSON array
+    forbidden_words = Column(Text)  # JSON array
+    avoid_competitors = Column(Text)  # JSON array
+    target_demographics = Column(Text)  # JSON {age, gender, interests}
+
     weekly_campaign_target = Column(Integer, default=0)
     auto_campaign_enabled = Column(Boolean, default=False)
 

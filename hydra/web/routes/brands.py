@@ -129,6 +129,13 @@ def get_brand(brand_id: int, db: Session = Depends(get_db)):
         "mention_rules": json.loads(b.mention_rules or "{}"),
         "tone_guide": b.tone_guide,
         "target_audience": b.target_audience,
+        # PR-8c — Brand v2 운영 자산
+        "industry": b.industry,
+        "tone": b.tone,
+        "common_phrases": json.loads(b.common_phrases or "[]"),
+        "forbidden_words": json.loads(b.forbidden_words or "[]"),
+        "avoid_competitors": json.loads(b.avoid_competitors or "[]"),
+        "target_demographics": json.loads(b.target_demographics or "{}"),
         # PR-3b: Niche 배열 추가 (frontend 가 PR-3c 에서 사용 시작)
         "niches": [
             {

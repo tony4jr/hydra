@@ -769,3 +769,52 @@ def niche_analytics(
         "hourly_pattern": hourly_pattern,
         "ranking_summary": ranking_summary,
     }
+
+
+# ─── PR-8c: 타겟 영상 모음 ────────────────────────────────────────
+
+
+@router.get("/{niche_id}/videos")
+def niche_videos(
+    niche_id: int,
+    sort: Optional[str] = "recent",
+    filter: Optional[str] = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    """Niche 의 영상 모음. PR-8f 의 VideoScore 출시 후 sort=score 정렬 추가."""
+    n = db.get(Niche, niche_id)
+    if n is None:
+        raise HTTPException(404, "niche not found")
+
+    q = db.query(Video).filter(Video.niche_id == niche_id)
+    if filter == "working":
+        q = q.filter(Video.state == "active")
+    elif filter == "pending":
+        q = q.filter(Video.state == "pending")
+    elif filter == "rejected":
+        q = q.filter(Video.state == "blacklisted")
+
+    if sort == "views":
+        q = q.order_by(Video.view_count.desc().nullslast())
+    elif sort == "fitness":
+        q = q.order_by(Video.embedding_score.desc().nullslast())
+    else:
+        q = q.order_by(Video.collected_at.desc())
+
+    rows = q.limit(limit).all()
+    return [
+        {
+            "video_id": v.id,
+            "title": v.title,
+            "channel": v.channel_title,
+            "view_count": v.view_count,
+            "url": v.url,
+            "state": v.state,
+            "tier": v.l_tier,
+            "market_fitness": v.embedding_score,
+            "blacklist_reason": v.blacklist_reason,
+            "collected_at": v.collected_at.isoformat() if v.collected_at else None,
+        }
+        for v in rows
+    ]
