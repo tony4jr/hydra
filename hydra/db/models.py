@@ -154,6 +154,15 @@ class Niche(Base):
     # 상태
     state = Column(String(20), default="active", nullable=False)  # active|paused|archived
 
+    # PR-4d — 메시지 탭 (Brand → Niche 이전, default Niche 백필)
+    core_message = Column(Text)
+    tone_guide = Column(Text)
+    target_audience = Column(String(200))
+    mention_rules = Column(Text)  # JSON
+    personas_json = Column(Text)  # JSON list, max 10 슬롯
+    promotional_keywords = Column(Text)  # JSON list
+    preset_selection = Column(Text)  # JSON list of preset codes
+
     created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC),
                         onupdate=lambda: datetime.now(UTC), nullable=False)

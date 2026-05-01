@@ -1,9 +1,15 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { TabPlaceholder } from '@/features/products/niche-tabs/placeholder'
-import { labels } from '@/lib/i18n-terms'
+import { createFileRoute, useParams } from '@tanstack/react-router'
+import { MessagingTab } from '@/features/products/niche-tabs/messaging'
+
+function MessagingRoute() {
+  const { nicheId } = useParams({
+    from: '/_authenticated/products/$brandId/niches/$nicheId/messaging',
+  })
+  return <MessagingTab nicheId={nicheId} />
+}
 
 export const Route = createFileRoute(
   '/_authenticated/products/$brandId/niches/$nicheId/messaging',
 )({
-  component: () => <TabPlaceholder tabName={labels.tabMessaging} subPrId='PR-4d' />,
+  component: MessagingRoute,
 })
