@@ -1,9 +1,10 @@
 /**
- * /presets — 댓글 트리 프리셋 라이브러리 (PR-8d).
- * 편집 UI 는 PR-8e (별도 페이지).
+ * /presets — 댓글 트리 프리셋 라이브러리.
+ * 카드 클릭 → /presets/$presetId 편집 페이지 (PR-8e).
  */
-import { useState } from 'react'
-import { Plus, Copy, Trash2 } from 'lucide-react'
+import { useState, type MouseEvent } from 'react'
+import { Link } from '@tanstack/react-router'
+import { Plus, Copy, Trash2, Pencil } from 'lucide-react'
 
 import { useCommentPresets } from '@/hooks/use-comment-presets'
 import { Header } from '@/components/layout/header'
@@ -23,6 +24,11 @@ export default function CommentPresetsPage() {
     await create({ name: name.trim() })
     setName('')
     setCreating(false)
+  }
+
+  const stop = (e: MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
   }
 
   return (
@@ -71,9 +77,11 @@ export default function CommentPresetsPage() {
           ) : (
             <div className='grid gap-3 md:grid-cols-2 lg:grid-cols-3'>
               {presets.map((p) => (
-                <div
+                <Link
                   key={p.id}
-                  className='bg-card border border-border rounded-xl p-5 hydra-card-hover'
+                  to='/presets/$presetId'
+                  params={{ presetId: String(p.id) }}
+                  className='bg-card border border-border rounded-xl p-5 hydra-card-hover block'
                 >
                   <div className='flex items-start justify-between mb-2 gap-2'>
                     <h3 className='text-foreground font-semibold text-[16px] truncate'>{p.name}</h3>
@@ -90,18 +98,26 @@ export default function CommentPresetsPage() {
                     슬롯 {p.slot_count}개 · 사용 중 {p.used_by_niches} 타겟
                   </p>
                   <div className='flex items-center gap-1.5'>
+                    <span className='inline-flex items-center gap-1 text-primary text-[12px] font-medium'>
+                      <Pencil className='h-3.5 w-3.5' /> 편집
+                    </span>
                     <Button
                       size='sm'
                       variant='ghost'
-                      onClick={() => clone(p.id)}
+                      onClick={(e) => {
+                        stop(e)
+                        clone(p.id)
+                      }}
                       title='복제'
+                      className='ml-auto'
                     >
                       <Copy className='h-3.5 w-3.5' />
                     </Button>
                     <Button
                       size='sm'
                       variant='ghost'
-                      onClick={() => {
+                      onClick={(e) => {
+                        stop(e)
                         if (confirm(`"${p.name}" 프리셋을 삭제할까요?`)) {
                           remove(p.id, p.is_default)
                         }
@@ -110,11 +126,8 @@ export default function CommentPresetsPage() {
                     >
                       <Trash2 className='h-3.5 w-3.5' />
                     </Button>
-                    <span className='ml-auto text-muted-foreground/60 text-[11px]'>
-                      편집은 PR-8e
-                    </span>
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
           )}
