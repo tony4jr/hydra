@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, case
 
 from hydra.db.session import get_db
-from hydra.db.models import Brand, Campaign, CampaignStep, ActionLog, Keyword
+from hydra.db.models import Brand, Campaign, CampaignStep, ActionLog, Keyword, Niche
 
 router = APIRouter()
 
@@ -113,6 +113,12 @@ def get_brand(brand_id: int, db: Session = Depends(get_db)):
     b = db.query(Brand).get(brand_id)
     if not b:
         return {"error": "not found"}
+    niches = (
+        db.query(Niche)
+        .filter(Niche.brand_id == brand_id, Niche.state != "archived")
+        .order_by(Niche.id.asc())
+        .all()
+    )
     return {
         "id": b.id, "name": b.name, "category": b.product_category,
         "core_message": b.core_message, "brand_story": b.brand_story,
@@ -123,6 +129,24 @@ def get_brand(brand_id: int, db: Session = Depends(get_db)):
         "mention_rules": json.loads(b.mention_rules or "{}"),
         "tone_guide": b.tone_guide,
         "target_audience": b.target_audience,
+        # PR-3b: Niche 배열 추가 (frontend 가 PR-3c 에서 사용 시작)
+        "niches": [
+            {
+                "id": n.id,
+                "name": n.name,
+                "description": n.description,
+                "market_definition": n.market_definition,
+                "embedding_threshold": n.embedding_threshold,
+                "trending_vph_threshold": n.trending_vph_threshold,
+                "new_video_hours": n.new_video_hours,
+                "long_term_score_threshold": n.long_term_score_threshold,
+                "collection_depth": n.collection_depth,
+                "keyword_variation_count": n.keyword_variation_count,
+                "preset_per_video_limit": n.preset_per_video_limit,
+                "state": n.state,
+            }
+            for n in niches
+        ],
     }
 
 

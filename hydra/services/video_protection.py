@@ -49,10 +49,15 @@ def check_video_preset_limit_for_brand(
     brand_id: int,
     period_days: int = 7,
 ) -> bool:
-    """Brand.preset_video_limit 적용. brand 마다 다른 한도 가능."""
+    """Niche.preset_per_video_limit (PR-3b) → Brand.preset_video_limit fallback. brand 마다 다른 한도 가능."""
     from hydra.db.models import Brand
-    brand = db.get(Brand, brand_id) if brand_id else None
-    max_count = (brand.preset_video_limit if brand else None) or 1
+    from hydra.services._niche_helper import get_niche_for_target
+    niche = get_niche_for_target(db, brand_id) if brand_id else None
+    if niche is not None and niche.preset_per_video_limit is not None:
+        max_count = niche.preset_per_video_limit
+    else:
+        brand = db.get(Brand, brand_id) if brand_id else None
+        max_count = (brand.preset_video_limit if brand else None) or 1
     return check_video_preset_limit(db, video_id, preset_code, period_days, max_count)
 
 

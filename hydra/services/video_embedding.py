@@ -18,6 +18,7 @@ import re
 from sqlalchemy.orm import Session
 
 from hydra.db.models import Video, TargetCollectionConfig
+from hydra.services._niche_helper import get_niche_for_target
 
 log = logging.getLogger(__name__)
 
@@ -84,8 +85,13 @@ def compute_relevance_score(
 
     Claude Haiku 호출. 영상당 약 $0.0003.
     """
+    niche = get_niche_for_target(db, target_id)
     cfg = db.get(TargetCollectionConfig, target_id)
-    if cfg is None or not cfg.embedding_reference_text:
+    reference_text = (
+        (niche.market_definition if niche else None)
+        or (cfg.embedding_reference_text if cfg else None)
+    )
+    if not reference_text:
         # reference text 없으면 임의 통과 (운영자가 아직 설정 안 함)
         return None
 
@@ -98,7 +104,7 @@ def compute_relevance_score(
         from hydra.ai.harness import call_claude
         from hydra.ai.base import MODEL_HAIKU
 
-        user_msg = _build_user_msg(cfg.embedding_reference_text, title, desc)
+        user_msg = _build_user_msg(reference_text, title, desc)
         text = call_claude(
             model=MODEL_HAIKU,
             system=SYSTEM_PROMPT,
@@ -132,8 +138,12 @@ def classify_by_embedding(
 
     video.embedding_score = score
 
-    cfg = db.get(TargetCollectionConfig, target_id)
-    threshold = (cfg.embedding_threshold if cfg else 0.65) or 0.65
+    niche = get_niche_for_target(db, target_id)
+    if niche is not None:
+        threshold = niche.embedding_threshold or 0.65
+    else:
+        cfg = db.get(TargetCollectionConfig, target_id)
+        threshold = (cfg.embedding_threshold if cfg else 0.65) or 0.65
 
     if score < threshold:
         return False, f"low_relevance:{score:.2f}"
@@ -143,6 +153,9 @@ def classify_by_embedding(
 
 def get_target_reference_embedding(db: Session, target_id: int):
     """Historical: OpenAI 임베딩 시절 reference 벡터. 이제 Claude 호출이라 N/A."""
+    niche = get_niche_for_target(db, target_id)
+    if niche and niche.market_definition:
+        return niche.market_definition
     cfg = db.get(TargetCollectionConfig, target_id)
     return cfg.embedding_reference_text if cfg else None
 
