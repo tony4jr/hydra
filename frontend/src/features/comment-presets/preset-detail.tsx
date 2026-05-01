@@ -1,13 +1,19 @@
 /**
- * /presets/$presetId — 댓글 트리 편집 (PR-8e).
+ * /presets/$presetId — 댓글 트리 편집 (PR-8e + visual fix).
  *
- * 슬롯 = 워커 1명. 자동 라벨링 (A/B/C...). 재등장 ↻ 표시.
- * 슬롯별 컨트롤: 양식 / 길이 / 이모지 / AI 변형 / 좋아요 범위 / 좋아요 시점.
- * 편집 모드 ↔ 미리보기 모드 토글.
+ * spec mockup: redesign/mockups/pr-8e-slot-editor.md
+ *
+ * 핵심 시각:
+ * - 36px 그라디언트 아바타 (A~F)
+ * - 답글 들여쓰기 (depth 1/2/3 = ml-12/24/36)
+ * - 분홍 좋아요 박스 (❤ + min~max + 시점)
+ * - ↻ 재등장 마크 (아바타 + 메타)
+ * - 화력 요약 (4 카드) + 슬롯 사용 통계
+ * - 편집 ↔ 미리보기 (YouTube 댓글 영역)
  */
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type CSSProperties } from 'react'
 import { Link, useParams } from '@tanstack/react-router'
-import { Plus, Trash2 } from 'lucide-react'
+import { Heart, Plus, RotateCcw, Trash2 } from 'lucide-react'
 
 import { useCommentPreset } from '@/hooks/use-comment-presets'
 import { http } from '@/lib/api'
@@ -24,27 +30,75 @@ import { ThemeSwitch } from '@/components/theme-switch'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 
+// ─── 그라디언트 (mockup 일치) ────────────────────────────────────
+const AVATAR_GRADIENT: Record<string, string> = {
+  A: 'linear-gradient(135deg, #f59e0b, #ef4444)',
+  B: 'linear-gradient(135deg, #3b82f6, #1e40af)',
+  C: 'linear-gradient(135deg, #10b981, #047857)',
+  D: 'linear-gradient(135deg, #8b5cf6, #6d28d9)',
+  E: 'linear-gradient(135deg, #ec4899, #be185d)',
+  F: 'linear-gradient(135deg, #14b8a6, #0f766e)',
+}
+const _DEFAULT_GRADIENT = 'linear-gradient(135deg, #71717a, #3f3f46)'
+const gradientFor = (label: string) =>
+  AVATAR_GRADIENT[label[0]?.toUpperCase()] ?? _DEFAULT_GRADIENT
+
+// ─── AI 강도 라벨 ────────────────────────────────────────────────
+function aiLabel(v: number): string {
+  if (v <= 20) return '안전 — 양식 그대로'
+  if (v <= 60) return '균형'
+  if (v <= 80) return '맥락 우선'
+  return '완전 자유'
+}
+
+// ─── placeholder 양식 ───────────────────────────────────────────
+function placeholderFor(replyDepth: number): string {
+  if (replyDepth === 0) return '저도 [고민] 때문에 고생했는데, 이 영상 보고 [공감]...'
+  if (replyDepth === 1) return '오 그거 [질문]?'
+  return '[답변] 입니다!'
+}
+
+// ─── 트리 구조 분석 helper ───────────────────────────────────────
+function buildDepthMap(slots: CommentTreeSlot[]): Record<number, number> {
+  const labelToDepth: Record<string, number> = {}
+  for (const s of slots) {
+    if (!s.reply_to_slot_label) labelToDepth[s.slot_label] = 0
+  }
+  const result: Record<number, number> = {}
+  for (const s of slots) {
+    if (!s.reply_to_slot_label) {
+      result[s.id] = 0
+    } else {
+      const parentDepth = labelToDepth[s.reply_to_slot_label] ?? 0
+      result[s.id] = parentDepth + 1
+      if (!(s.slot_label in labelToDepth)) {
+        labelToDepth[s.slot_label] = result[s.id]
+      }
+    }
+  }
+  return result
+}
+
 export default function CommentPresetDetailPage() {
   const { presetId } = useParams({ from: '/_authenticated/presets/$presetId' })
   const { detail, loading } = useCommentPreset(presetId)
   const [mode, setMode] = useState<'edit' | 'preview'>('edit')
-  const refresh = () => {
-    // useCommentPreset cache 갱신 — lean: 페이지 reload
-    window.location.reload()
-  }
-
-  // useCommentPreset 의 cache key 가 presetId 만이라 refresh 시 다시 fetch.
-  // 단순히 detail 재 fetch — useEffect 트리거 위해 query suffix 또는 useCommentPreset 확장.
-  // lean: window.location.reload() 대신 hook 강제 — useCommentPreset 가 version 모름.
-  // 대신 mutating 후 fetchApi 직접 호출하여 로컬 state 업데이트.
 
   const slots = detail?.slots ?? []
+
   const labelCounts = useMemo(() => {
     const m: Record<string, number> = {}
     for (const s of slots) m[s.slot_label] = (m[s.slot_label] ?? 0) + 1
     return m
   }, [slots])
-  const labelSeen: Record<string, number> = {}
+
+  const depthMap = useMemo(() => buildDepthMap(slots), [slots])
+
+  const totalLikesMin = slots.reduce((sum, s) => sum + (s.like_min || 0), 0)
+  const totalLikesMax = slots.reduce((sum, s) => sum + (s.like_max || 0), 0)
+  const uniqueWorkers = new Set(slots.map((s) => s.slot_label)).size
+
+  const labelSeenCounter: Record<string, number> = {}
 
   return (
     <>
@@ -67,59 +121,77 @@ export default function CommentPresetDetailPage() {
             </div>
           ) : (
             <>
-              <div className='flex items-center justify-between mt-1 mb-5'>
-                <div>
-                  <h1 className='hydra-page-h'>{detail.name}</h1>
-                  <p className='hydra-page-sub'>
-                    슬롯 {detail.slot_count}개 · 사용 중 {detail.used_by_niches} 타겟
-                    {detail.is_default && <> · 기본</>}
-                  </p>
-                </div>
-                <div className='flex items-center gap-1.5'>
-                  <Button
-                    variant={mode === 'edit' ? 'default' : 'outline'}
-                    size='sm'
-                    onClick={() => setMode('edit')}
-                  >
-                    편집
-                  </Button>
-                  <Button
-                    variant={mode === 'preview' ? 'default' : 'outline'}
-                    size='sm'
-                    onClick={() => setMode('preview')}
-                  >
-                    미리보기
-                  </Button>
-                </div>
+              <div className='mt-1 mb-4'>
+                <h1 className='hydra-page-h'>{detail.name}</h1>
+                <p className='hydra-page-sub'>
+                  슬롯 = 워커 1명. 같은 워커가 답답글로 재등장 가능 = 자연 토론.
+                </p>
+              </div>
+
+              <div className='inline-flex items-center gap-0 bg-muted/40 p-0.5 rounded-md mb-4'>
+                <button
+                  onClick={() => setMode('edit')}
+                  className={
+                    'px-3 py-1.5 text-[12.5px] rounded font-medium transition-colors ' +
+                    (mode === 'edit'
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground')
+                  }
+                >
+                  편집
+                </button>
+                <button
+                  onClick={() => setMode('preview')}
+                  className={
+                    'px-3 py-1.5 text-[12.5px] rounded font-medium transition-colors ' +
+                    (mode === 'preview'
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground')
+                  }
+                >
+                  실제 댓글 미리보기
+                </button>
               </div>
 
               {mode === 'edit' && (
-                <div className='space-y-3'>
-                  {slots.map((s) => {
-                    labelSeen[s.slot_label] = (labelSeen[s.slot_label] ?? 0) + 1
-                    const isReentry = labelSeen[s.slot_label] > 1
-                    const totalCount = labelCounts[s.slot_label]
-                    return (
-                      <SlotCard
-                        key={s.id}
-                        slot={s}
-                        presetId={Number(presetId)}
-                        isReentry={isReentry}
-                        labelSeen={labelSeen[s.slot_label]}
-                        totalCount={totalCount}
-                        refresh={refresh}
-                      />
-                    )
-                  })}
-                  <SlotAddRow
+                <>
+                  <FireSummary
+                    totalActions={slots.length}
+                    workerCount={uniqueWorkers}
+                    likeMin={totalLikesMin}
+                    likeMax={totalLikesMax}
+                  />
+                  <SlotUsage labelCounts={labelCounts} />
+
+                  <div className='space-y-1.5 mb-4'>
+                    {slots.map((s) => {
+                      labelSeenCounter[s.slot_label] =
+                        (labelSeenCounter[s.slot_label] ?? 0) + 1
+                      const seen = labelSeenCounter[s.slot_label]
+                      const total = labelCounts[s.slot_label]
+                      const depth = depthMap[s.id] ?? 0
+                      return (
+                        <SlotCard
+                          key={s.id}
+                          slot={s}
+                          presetId={Number(presetId)}
+                          isReentry={seen > 1}
+                          seenIndex={seen}
+                          totalCount={total}
+                          depth={depth}
+                        />
+                      )
+                    })}
+                  </div>
+
+                  <AddRow
                     presetId={Number(presetId)}
                     availableLabels={Array.from(new Set(slots.map((x) => x.slot_label)))}
-                    refresh={refresh}
                   />
-                </div>
+                </>
               )}
 
-              {mode === 'preview' && <PreviewSection slots={slots} />}
+              {mode === 'preview' && <PreviewSection slots={slots} depthMap={depthMap} />}
             </>
           )}
         </div>
@@ -128,20 +200,89 @@ export default function CommentPresetDetailPage() {
   )
 }
 
+function FireSummary({
+  totalActions,
+  workerCount,
+  likeMin,
+  likeMax,
+}: {
+  totalActions: number
+  workerCount: number
+  likeMin: number
+  likeMax: number
+}) {
+  return (
+    <div className='grid grid-cols-2 md:grid-cols-4 gap-2.5 mb-3.5'>
+      <FireCard label='총 댓글 (액션)' value={String(totalActions)} />
+      <FireCard label='슬롯 (워커 수)' value={String(workerCount)} valueColor='#a16207' />
+      <FireCard label='총 좋아요' value={`${likeMin} ~ ${likeMax}`} valueColor='#dc2626' />
+      <FireCard label='필요 워커' value={`${workerCount}명`} />
+    </div>
+  )
+}
+
+function FireCard({
+  label,
+  value,
+  valueColor,
+}: {
+  label: string
+  value: string
+  valueColor?: string
+}) {
+  return (
+    <div className='bg-card border border-border rounded-lg px-3 py-2.5'>
+      <div className='text-[11px] text-muted-foreground mb-0.5'>{label}</div>
+      <div
+        className='text-[18px] font-semibold'
+        style={valueColor ? { color: valueColor } : undefined}
+      >
+        {value}
+      </div>
+    </div>
+  )
+}
+
+function SlotUsage({ labelCounts }: { labelCounts: Record<string, number> }) {
+  const entries = Object.entries(labelCounts).sort((a, b) => a[0].localeCompare(b[0]))
+  if (entries.length === 0) return null
+  return (
+    <div className='flex items-center gap-2 px-3 py-2.5 bg-muted/40 rounded-lg mb-4 flex-wrap text-[12px]'>
+      <span className='text-muted-foreground mr-1'>슬롯 사용</span>
+      {entries.map(([label, count]) => (
+        <span
+          key={label}
+          className='inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-card border border-border rounded-full text-[11.5px]'
+        >
+          <span
+            className='inline-flex items-center justify-center w-[18px] h-[18px] rounded text-white text-[10.5px] font-semibold'
+            style={{ background: gradientFor(label) }}
+          >
+            {label}
+          </span>
+          <span className='text-muted-foreground'>
+            <strong className='text-foreground font-semibold'>{count}번</strong> 등장
+          </span>
+        </span>
+      ))}
+    </div>
+  )
+}
+
 function SlotCard({
   slot,
   presetId,
   isReentry,
-  labelSeen,
+  seenIndex,
   totalCount,
-  refresh,
+  depth,
 }: {
   slot: CommentTreeSlot
   presetId: number
   isReentry: boolean
-  labelSeen: number
+  seenIndex: number
   totalCount: number
-  refresh: () => void
+  depth: number
 }) {
   const [text, setText] = useState(slot.text_template ?? '')
   const [length, setLength] = useState<CommentSlotLength>(slot.length)
@@ -152,10 +293,14 @@ function SlotCard({
   const [dist, setDist] = useState<CommentSlotDistribution>(slot.like_distribution)
   const [saving, setSaving] = useState(false)
 
-  const reentryMark = isReentry ? '↻'.repeat(labelSeen - 1) : ''
-  const replyTo = slot.reply_to_slot_label
-    ? `${slot.reply_to_slot_label} 에 답글`
-    : '메인 댓글'
+  const indentStyle: CSSProperties =
+    depth > 0
+      ? {
+          marginLeft: `${depth * 48}px`,
+          borderLeft: '2px solid var(--border, #e4e4e7)',
+          paddingLeft: '14px',
+        }
+      : {}
 
   const save = async () => {
     setSaving(true)
@@ -175,149 +320,194 @@ function SlotCard({
   }
 
   const remove = async () => {
-    if (!confirm(`슬롯 ${slot.slot_label}${reentryMark} 을 삭제할까요?`)) return
+    if (!confirm(`슬롯 ${slot.slot_label} 을 삭제할까요?`)) return
     await http.delete(`/api/admin/comment-presets/${presetId}/slots/${slot.id}`)
-    refresh()
-    // 페이지 reload 가 필요한 case — useCommentPreset 의 cache 갱신 위해
     window.location.reload()
   }
 
+  const replyTarget = slot.reply_to_slot_label
+    ? `${slot.reply_to_slot_label} 슬롯에게`
+    : '메인 댓글'
+
   return (
-    <div className='bg-card border border-border rounded-xl p-5'>
-      <div className='flex items-center justify-between mb-3'>
-        <div className='flex items-center gap-2'>
-          <span className='hydra-tag hydra-tag-primary text-[14px] font-semibold'>
-            {slot.slot_label}
-            {reentryMark}
-          </span>
-          <span className='text-muted-foreground text-[12px]'>{replyTo}</span>
-          {totalCount > 1 && (
-            <span className='text-muted-foreground/60 text-[11px]'>
-              · 같은 워커 {totalCount}회 등장
-            </span>
-          )}
+    <div
+      className='flex gap-3 p-3.5 rounded-lg hover:bg-muted/30 transition-colors'
+      style={indentStyle}
+    >
+      <div className='relative shrink-0'>
+        <div
+          className='w-9 h-9 rounded-full flex items-center justify-center text-white text-[14px] font-semibold'
+          style={{ background: gradientFor(slot.slot_label) }}
+        >
+          {slot.slot_label}
         </div>
-        <Button variant='ghost' size='sm' onClick={remove}>
-          <Trash2 className='h-3.5 w-3.5' />
-        </Button>
+        {isReentry && (
+          <div
+            className='absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full flex items-center justify-center'
+            style={{ background: '#a16207', border: '2px solid var(--background, #fafafa)' }}
+            title='재등장 슬롯'
+          >
+            <RotateCcw className='w-2 h-2 text-white' />
+          </div>
+        )}
       </div>
 
-      <div className='space-y-3'>
-        <div>
-          <label className='block text-foreground text-[13px] mb-1'>양식</label>
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            rows={2}
-            className='w-full bg-background border border-border rounded-md text-[13px] px-2 py-1.5'
-          />
+      <div className='flex-1 min-w-0'>
+        <div className='flex items-center gap-2 mb-2 flex-wrap'>
+          <span
+            className='inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11.5px]'
+            style={
+              isReentry
+                ? { background: '#fef3c7', color: '#a16207' }
+                : { background: 'var(--muted, #f4f4f5)', color: 'var(--muted-foreground, #71717a)' }
+            }
+          >
+            <span
+              className='inline-flex items-center justify-center w-4 h-4 rounded text-white text-[10px] font-semibold'
+              style={{ background: gradientFor(slot.slot_label) }}
+            >
+              {slot.slot_label}
+            </span>
+            {isReentry ? (
+              <>
+                <RotateCcw className='w-3 h-3' />
+                <strong>재등장</strong>
+              </>
+            ) : slot.reply_to_slot_label ? (
+              <strong className='text-foreground'>답글</strong>
+            ) : (
+              <strong className='text-foreground'>메인 댓글</strong>
+            )}
+            <span className='opacity-70'>
+              · {seenIndex}번째 {totalCount > 1 && `/ 총 ${totalCount}회`}
+            </span>
+          </span>
+          <span className='text-[11.5px] text-muted-foreground'>대상: {replyTarget}</span>
         </div>
 
-        <div className='grid grid-cols-2 gap-3'>
-          <div>
-            <label className='block text-foreground text-[12px] mb-1'>길이</label>
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={2}
+          placeholder={placeholderFor(depth)}
+          className='w-full px-3 py-2.5 border border-border rounded-lg text-[13.5px] leading-6 bg-background outline-none focus:border-foreground/60 transition-colors resize-y'
+        />
+
+        <div className='flex items-center gap-2.5 mt-2.5 flex-wrap'>
+          <div className='flex items-center gap-1.5 text-[11.5px] text-muted-foreground'>
+            <span>길이</span>
             <select
               value={length}
               onChange={(e) => setLength(e.target.value as CommentSlotLength)}
-              className='w-full bg-background border border-border rounded-md text-[12px] px-2 py-1'
+              className='text-[11.5px] px-2 py-0.5 border border-border rounded bg-background'
             >
               <option value='short'>짧게</option>
               <option value='medium'>보통</option>
               <option value='long'>길게</option>
             </select>
           </div>
-          <div>
-            <label className='block text-foreground text-[12px] mb-1'>이모지</label>
+          <div className='flex items-center gap-1.5 text-[11.5px] text-muted-foreground'>
+            <span>이모지</span>
             <select
               value={emoji}
               onChange={(e) => setEmoji(e.target.value as CommentSlotEmoji)}
-              className='w-full bg-background border border-border rounded-md text-[12px] px-2 py-1'
+              className='text-[11.5px] px-2 py-0.5 border border-border rounded bg-background'
             >
               <option value='none'>없음</option>
               <option value='sometimes'>가끔</option>
               <option value='often'>자주</option>
             </select>
           </div>
+          <div className='flex items-center gap-2 text-[11.5px] px-2.5 py-1 bg-muted/40 rounded'>
+            <span className='text-muted-foreground'>AI</span>
+            <input
+              type='range'
+              min={0}
+              max={100}
+              step={10}
+              value={aiVariation}
+              onChange={(e) => setAiVariation(Number(e.target.value))}
+              className='w-20 h-1 cursor-pointer'
+            />
+            <span className='font-semibold text-foreground'>{aiVariation}%</span>
+            <span className='text-muted-foreground/80'>· {aiLabel(aiVariation)}</span>
+          </div>
         </div>
 
-        <div>
-          <label className='block text-foreground text-[12px] mb-1'>
-            AI 변형 강도 {aiVariation}%
-          </label>
+        <div
+          className='flex items-center gap-3 px-2.5 py-1.5 rounded mt-2 flex-wrap text-[11.5px]'
+          style={{ background: '#fef2f2', border: '1px solid #fecaca' }}
+        >
+          <span
+            className='inline-flex items-center gap-1.5 font-medium'
+            style={{ color: '#dc2626' }}
+          >
+            <Heart className='w-3 h-3' fill='#dc2626' />
+            좋아요
+          </span>
           <input
-            type='range'
+            type='number'
+            value={likeMin}
             min={0}
-            max={100}
-            value={aiVariation}
-            onChange={(e) => setAiVariation(Number(e.target.value))}
-            className='w-full'
+            onChange={(e) => setLikeMin(Number(e.target.value) || 0)}
+            className='w-[42px] px-1.5 py-0.5 border border-border rounded bg-background text-[11.5px] text-center'
+            style={{ color: '#dc2626' }}
           />
+          <span style={{ color: '#dc2626' }}>~</span>
+          <input
+            type='number'
+            value={likeMax}
+            min={0}
+            onChange={(e) => setLikeMax(Number(e.target.value) || 0)}
+            className='w-[42px] px-1.5 py-0.5 border border-border rounded bg-background text-[11.5px] text-center'
+            style={{ color: '#dc2626' }}
+          />
+          <span className='text-muted-foreground/70'>·</span>
+          <span style={{ color: '#dc2626' }}>시점</span>
+          <select
+            value={dist}
+            onChange={(e) => setDist(e.target.value as CommentSlotDistribution)}
+            className='text-[11.5px] px-2 py-0.5 border border-border rounded bg-background'
+          >
+            <option value='adaptive'>적응형</option>
+            <option value='burst'>한꺼번에</option>
+            <option value='spread'>시간 분산</option>
+            <option value='slow'>천천히</option>
+          </select>
         </div>
 
-        <div className='grid grid-cols-3 gap-3 items-end'>
-          <div>
-            <label className='block text-foreground text-[12px] mb-1'>좋아요 최소</label>
-            <input
-              type='number'
-              value={likeMin}
-              min={0}
-              onChange={(e) => setLikeMin(Number(e.target.value))}
-              className='w-full bg-background border border-border rounded-md text-[12px] px-2 py-1'
-            />
-          </div>
-          <div>
-            <label className='block text-foreground text-[12px] mb-1'>좋아요 최대</label>
-            <input
-              type='number'
-              value={likeMax}
-              min={0}
-              onChange={(e) => setLikeMax(Number(e.target.value))}
-              className='w-full bg-background border border-border rounded-md text-[12px] px-2 py-1'
-            />
-          </div>
-          <div>
-            <label className='block text-foreground text-[12px] mb-1'>분산</label>
-            <select
-              value={dist}
-              onChange={(e) => setDist(e.target.value as CommentSlotDistribution)}
-              className='w-full bg-background border border-border rounded-md text-[12px] px-2 py-1'
-            >
-              <option value='adaptive'>적응형</option>
-              <option value='burst'>한꺼번에</option>
-              <option value='spread'>시간 분산</option>
-              <option value='slow'>천천히</option>
-            </select>
-          </div>
+        <div className='flex gap-1.5 mt-2.5'>
+          <Button onClick={save} disabled={saving} size='sm' className='hydra-btn-press'>
+            {saving ? '저장 중…' : '저장'}
+          </Button>
+          <Button onClick={remove} size='sm' variant='ghost'>
+            <Trash2 className='w-3 h-3 mr-1' />
+            삭제
+          </Button>
         </div>
-
-        <Button onClick={save} disabled={saving} size='sm' className='hydra-btn-press'>
-          {saving ? '저장 중…' : '저장'}
-        </Button>
       </div>
     </div>
   )
 }
 
-function SlotAddRow({
+function AddRow({
   presetId,
   availableLabels,
-  refresh,
 }: {
   presetId: number
   availableLabels: string[]
-  refresh: () => void
 }) {
   const [replyTo, setReplyTo] = useState<string>('')
+  const [reuseLabel, setReuseLabel] = useState<string>('')
   const [busy, setBusy] = useState(false)
 
   const add = async () => {
     setBusy(true)
     try {
-      await http.post(`/api/admin/comment-presets/${presetId}/slots`, {
-        reply_to_slot_label: replyTo || null,
-        text_template: '',
-      })
-      refresh()
+      const body: Record<string, unknown> = { text_template: '' }
+      if (replyTo) body.reply_to_slot_label = replyTo
+      if (reuseLabel) body.slot_label = reuseLabel
+      await http.post(`/api/admin/comment-presets/${presetId}/slots`, body)
       window.location.reload()
     } finally {
       setBusy(false)
@@ -325,68 +515,141 @@ function SlotAddRow({
   }
 
   return (
-    <div className='bg-card border border-dashed border-border rounded-xl p-4 flex items-center gap-2'>
-      <span className='text-muted-foreground text-[12px]'>새 슬롯</span>
-      <select
-        value={replyTo}
-        onChange={(e) => setReplyTo(e.target.value)}
-        className='bg-background border border-border rounded-md text-[12px] px-2 py-1'
-      >
-        <option value=''>메인 댓글</option>
-        {availableLabels.map((l) => (
-          <option key={l} value={l}>
-            {l} 에 답글
-          </option>
-        ))}
-      </select>
+    <div className='flex flex-wrap items-center gap-2 px-3.5 py-3 bg-muted/40 rounded-lg'>
+      <span className='text-[11.5px] text-muted-foreground mr-1'>추가:</span>
+
+      <div className='inline-flex items-center gap-1 px-2.5 py-1.5 bg-card border border-border rounded-md text-[12.5px]'>
+        <span className='text-muted-foreground'>대상</span>
+        <select
+          value={replyTo}
+          onChange={(e) => setReplyTo(e.target.value)}
+          className='border-0 bg-transparent px-1 py-0 text-[12.5px] outline-none cursor-pointer'
+        >
+          <option value=''>메인 댓글</option>
+          {availableLabels.map((l) => (
+            <option key={l} value={l}>
+              {l} 에 답글
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className='inline-flex items-center gap-1 px-2.5 py-1.5 bg-card border border-border rounded-md text-[12.5px]'>
+        <span className='text-muted-foreground'>슬롯</span>
+        <select
+          value={reuseLabel}
+          onChange={(e) => setReuseLabel(e.target.value)}
+          className='border-0 bg-transparent px-1 py-0 text-[12.5px] outline-none cursor-pointer'
+        >
+          <option value=''>새 슬롯 (자동)</option>
+          {availableLabels.map((l) => (
+            <option key={l} value={l}>
+              ↻ {l} 재등장
+            </option>
+          ))}
+        </select>
+      </div>
+
       <Button onClick={add} disabled={busy} size='sm' className='ml-auto'>
-        <Plus className='h-3.5 w-3.5 mr-1' /> 추가
+        <Plus className='w-3 h-3 mr-1' />
+        추가
       </Button>
     </div>
   )
 }
 
-function PreviewSection({ slots }: { slots: CommentTreeSlot[] }) {
-  // 트리 구조로 정렬: NULL parent → A → A 의 자식 → ...
-  // 단순: position 순서대로 indented 표시 (계층 indent = depth)
-  const labelToDepth: Record<string, number> = {}
-  for (const s of slots) {
-    if (!s.reply_to_slot_label) {
-      labelToDepth[s.slot_label] = 0
-    } else {
-      labelToDepth[s.slot_label] = (labelToDepth[s.reply_to_slot_label] ?? 0) + 1
-    }
-  }
-
+function PreviewSection({
+  slots,
+  depthMap,
+}: {
+  slots: CommentTreeSlot[]
+  depthMap: Record<number, number>
+}) {
+  const labelSeenCounter: Record<string, number> = {}
   return (
-    <div className='bg-card border border-border rounded-xl p-5'>
-      <p className='text-muted-foreground text-[12px] mb-3'>
-        미리보기 — 실제 유튜브 댓글 영역처럼 (워커 자동 배정, mock)
-      </p>
-      <ul className='space-y-3'>
+    <div className='bg-card border border-border rounded-xl p-5 mt-3'>
+      <div className='flex items-center gap-2 pb-3 mb-3 border-b border-border'>
+        <div
+          className='w-6 h-6 rounded flex items-center justify-center'
+          style={{ background: '#ff0000' }}
+        >
+          <svg className='w-3.5 h-3.5 text-white' fill='currentColor' viewBox='0 0 24 24'>
+            <path d='M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z' />
+          </svg>
+        </div>
+        <div className='text-[13px] font-medium flex-1'>실제 영상 댓글 — 자연 토론</div>
+        <div className='text-[11.5px] text-muted-foreground'>
+          {new Set(slots.map((s) => s.slot_label)).size} 워커 · {slots.length} 액션
+        </div>
+      </div>
+
+      <ul className='space-y-0'>
         {slots.map((s) => {
-          const depth = labelToDepth[s.slot_label] ?? 0
+          labelSeenCounter[s.slot_label] = (labelSeenCounter[s.slot_label] ?? 0) + 1
+          const seen = labelSeenCounter[s.slot_label]
+          const isReentry = seen > 1
+          const depth = depthMap[s.id] ?? 0
           const likeAvg = Math.round(((s.like_min || 0) + (s.like_max || 0)) / 2)
+          const indentStyle: CSSProperties =
+            depth > 0 ? { marginLeft: `${depth * 48}px` } : {}
           return (
-            <li key={s.id} style={{ marginLeft: `${depth * 24}px` }}>
-              <div className='flex items-baseline gap-2'>
-                <span className='font-medium text-foreground text-[13px]'>
-                  유저{s.slot_label}
-                </span>
-                <span className='text-muted-foreground/70 text-[11px]'>
-                  · 워커 {s.slot_label}
-                </span>
+            <li
+              key={s.id}
+              className='flex gap-3 py-3.5 border-t border-border first:border-t-0'
+              style={indentStyle}
+            >
+              <div
+                className='w-9 h-9 rounded-full flex items-center justify-center text-white text-[14px] font-semibold shrink-0'
+                style={{ background: gradientFor(s.slot_label) }}
+              >
+                {s.slot_label}
               </div>
-              <p className='text-foreground text-[14px] mt-1'>
-                {s.text_template || <span className='text-muted-foreground/50'>(빈 양식)</span>}
-              </p>
-              <p className='text-muted-foreground/70 text-[11px] mt-1'>
-                ❤ {likeAvg} · {s.length} · {s.emoji} · AI {s.ai_variation}%
-              </p>
+              <div className='flex-1 min-w-0'>
+                <div className='flex items-center gap-2 mb-1 flex-wrap text-[12px]'>
+                  <span className='font-medium text-[12.5px]'>유저{s.slot_label}</span>
+                  <span className='text-muted-foreground/70'>· 1일 전</span>
+                  <span
+                    className='text-[10px] px-1.5 py-0.5 rounded font-semibold'
+                    style={
+                      isReentry
+                        ? { background: '#fef3c7', color: '#a16207' }
+                        : { background: '#f5f3ff', color: '#6d28d9' }
+                    }
+                  >
+                    {s.slot_label}
+                    {isReentry && ' · ↻ 재등장'} · ❤ {likeAvg}
+                  </span>
+                </div>
+                <p className='text-[13.5px] leading-relaxed break-words'>
+                  {s.text_template || (
+                    <span className='text-muted-foreground/50'>(빈 양식)</span>
+                  )}
+                </p>
+                <div className='flex items-center gap-4 mt-2 text-[11.5px] text-muted-foreground'>
+                  <span
+                    className='inline-flex items-center gap-1'
+                    style={{ color: '#dc2626' }}
+                  >
+                    <Heart className='w-3 h-3' fill='#dc2626' />
+                    <span className='font-semibold'>{likeAvg}</span>
+                  </span>
+                  <span>답글</span>
+                </div>
+              </div>
             </li>
           )
         })}
       </ul>
+
+      {slots.length > 0 && (
+        <div
+          className='mt-4 px-3 py-2.5 rounded-lg text-[12.5px] border'
+          style={{ background: '#f0fdf4', color: '#15803d', borderColor: '#15803d' }}
+        >
+          <strong>자연 토론</strong> · 슬롯 재등장 = 같은 워커가 답답글로 다시 등장 ·
+          알고리즘이 활발한 스레드 위로 올림 (HYDRA 의 차별점)
+        </div>
+      )}
     </div>
   )
 }
