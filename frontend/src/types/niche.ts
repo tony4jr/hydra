@@ -131,6 +131,23 @@ export interface NicheMessaging {
   personas: NichePersona[]
 }
 
+// ─── PR-4f: Analytics ────────────────────────────────────────────
+
+export interface NicheAnalytics {
+  window_days: number
+  daily_workload: { date: string; comments: number }[]
+  campaign_performance: {
+    campaign_id: number
+    name: string | null
+    status: string
+    comments: number
+  }[]
+  persona_performance: unknown[]
+  preset_performance: unknown[]
+  hourly_pattern: { hour: number; comments: number }[]
+  ranking_summary: { best_campaign_id: number | null; best_comments: number }
+}
+
 // ─── PR-4e: Campaigns ────────────────────────────────────────────
 
 export interface NicheCampaign {
