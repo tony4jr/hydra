@@ -669,3 +669,103 @@ def niche_campaigns(
         }
         for c in rows
     ]
+
+
+# ─── PR-4f: 분석 탭 ──────────────────────────────────────────────
+
+
+@router.get("/{niche_id}/analytics")
+def niche_analytics(
+    niche_id: int,
+    window_days: int = Query(default=7, ge=1, le=90),
+    db: Session = Depends(get_db),
+):
+    """Niche 분석 (lean — 기존 데이터 niche 필터링).
+
+    spec PR-4 §5: daily_workload / campaign_performance / persona / preset / hourly /
+    ranking_summary. 본 sub-PR 은 daily_workload + campaign_performance + hourly_pattern +
+    ranking_summary 우선 구현. persona/preset performance 는 PR-4f-followup
+    (Niche.personas_json/preset_selection 운용 후).
+    """
+    n = db.get(Niche, niche_id)
+    if n is None:
+        raise HTTPException(404, "niche not found")
+
+    cutoff = datetime.now(UTC) - timedelta(days=window_days)
+
+    # daily_workload (date 별 댓글 수)
+    rows = (
+        db.query(
+            func.date(ActionLog.created_at).label("d"),
+            func.count(ActionLog.id).label("n"),
+        )
+        .join(Campaign, Campaign.id == ActionLog.campaign_id)
+        .filter(
+            Campaign.niche_id == niche_id,
+            ActionLog.created_at >= cutoff,
+            ActionLog.action_type.in_(["comment", "reply"]),
+        )
+        .group_by("d")
+        .order_by("d")
+        .all()
+    )
+    daily_workload = [{"date": str(r.d), "comments": int(r.n)} for r in rows]
+
+    # campaign_performance (캠페인 별 댓글 수)
+    cp_rows = (
+        db.query(
+            Campaign.id, Campaign.name, Campaign.status,
+            func.count(ActionLog.id).label("n"),
+        )
+        .outerjoin(ActionLog, (ActionLog.campaign_id == Campaign.id) & (
+            ActionLog.created_at >= cutoff
+        ) & (ActionLog.action_type.in_(["comment", "reply"])))
+        .filter(Campaign.niche_id == niche_id)
+        .group_by(Campaign.id, Campaign.name, Campaign.status)
+        .all()
+    )
+    campaign_performance = [
+        {
+            "campaign_id": r.id,
+            "name": r.name,
+            "status": r.status,
+            "comments": int(r.n or 0),
+        }
+        for r in cp_rows
+    ]
+
+    # hourly_pattern (시간대 분포)
+    hour_rows = (
+        db.query(
+            func.extract("hour", ActionLog.created_at).label("h"),
+            func.count(ActionLog.id).label("n"),
+        )
+        .join(Campaign, Campaign.id == ActionLog.campaign_id)
+        .filter(
+            Campaign.niche_id == niche_id,
+            ActionLog.created_at >= cutoff,
+            ActionLog.action_type.in_(["comment", "reply"]),
+        )
+        .group_by("h")
+        .order_by("h")
+        .all()
+    )
+    hourly_pattern = [{"hour": int(r.h), "comments": int(r.n)} for r in hour_rows]
+
+    # ranking_summary (간단 베스트 캠페인)
+    best = max(campaign_performance, key=lambda x: x["comments"], default=None)
+    ranking_summary = (
+        {"best_campaign_id": best["campaign_id"], "best_comments": best["comments"]}
+        if best and best["comments"] > 0
+        else {"best_campaign_id": None, "best_comments": 0}
+    )
+
+    return {
+        "window_days": window_days,
+        "daily_workload": daily_workload,
+        "campaign_performance": campaign_performance,
+        "persona_performance": [],
+        "preset_performance": [],
+        "hourly_pattern": hourly_pattern,
+        "ranking_summary": ranking_summary,
+    }

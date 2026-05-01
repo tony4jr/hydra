@@ -1,10 +1,6 @@
 import {
   LayoutDashboard,
-  Tag,
-  Video,
-  Megaphone,
   ListTodo,
-  BarChart3,
   Users,
   Monitor,
   Settings,
@@ -42,29 +38,9 @@ export const sidebarData: SidebarData = {
           icon: LayoutDashboard,
         },
         {
-          title: '브랜드',
-          url: '/brands',
-          icon: Tag,
-        },
-        {
-          title: '타겟',
-          url: '/targets',
-          icon: Video,
-        },
-        {
-          title: '캠페인',
-          url: '/campaigns',
-          icon: Megaphone,
-        },
-        {
           title: '작업',
           url: '/tasks',
           icon: ListTodo,
-        },
-        {
-          title: '분석',
-          url: '/analytics',
-          icon: BarChart3,
         },
       ],
     },
