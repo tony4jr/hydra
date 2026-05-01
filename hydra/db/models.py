@@ -110,6 +110,62 @@ class Brand(Base):
     # relationships
     keywords = relationship("Keyword", back_populates="brand")
     campaigns = relationship("Campaign", back_populates="brand")
+    niches = relationship("Niche", back_populates="brand", cascade="all, delete-orphan")
+
+
+class Niche(Base):
+    """시장 (Niche) — Brand 1:N Niche.
+
+    PR-3: Brand 1계층 → Brand → Niche 2계층 확장.
+    이전엔 Brand 가 시장 정의 (embedding_reference_text 등) + 정책을 모두 가졌음.
+    Niche 가 흡수 (점진 마이그레이션, Brand fallback 가능).
+
+    출처 (spec PR-3 컬럼 매핑):
+    - market_definition          ← TargetCollectionConfig.embedding_reference_text
+    - embedding_threshold        ← TargetCollectionConfig.embedding_threshold
+    - trending_vph_threshold     ← TargetCollectionConfig.l3_views_per_hour_threshold
+    - long_term_score_threshold  ← TargetCollectionConfig.l1_threshold_score
+    - new_video_hours            ← 신규 도입 (default 6)
+    - collection_depth           ← Brand.collection_depth
+    - keyword_variation_count    ← Brand.longtail_count
+    - preset_per_video_limit     ← Brand.preset_video_limit
+    """
+    __tablename__ = "niches"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    brand_id = Column(Integer, ForeignKey("brands.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(120), nullable=False)
+    description = Column(Text)
+
+    # 시장 정의 (이전: TargetCollectionConfig)
+    market_definition = Column(Text)
+    embedding_threshold = Column(Float, default=0.65, nullable=False)
+
+    # 우선순위 임계값
+    trending_vph_threshold = Column(Integer, default=1000, nullable=False)
+    new_video_hours = Column(Integer, default=6, nullable=False)
+    long_term_score_threshold = Column(Integer, default=70, nullable=False)
+
+    # 수집 깊이 정책 (이전: Brand)
+    collection_depth = Column(String(20), default="standard", nullable=False)  # quick|standard|deep|max
+    keyword_variation_count = Column(Integer, default=5, nullable=False)
+    preset_per_video_limit = Column(Integer, default=1, nullable=False)
+
+    # 상태
+    state = Column(String(20), default="active", nullable=False)  # active|paused|archived
+
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC),
+                        onupdate=lambda: datetime.now(UTC), nullable=False)
+
+    # relationships
+    brand = relationship("Brand", back_populates="niches")
+    keywords = relationship("Keyword", back_populates="niche")
+    campaigns = relationship("Campaign", back_populates="niche")
+
+    __table_args__ = (
+        Index("ix_niches_brand_state", "brand_id", "state"),
+    )
 
 
 class Keyword(Base):
@@ -118,6 +174,7 @@ class Keyword(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     text = Column(String, nullable=False)
     brand_id = Column(Integer, ForeignKey("brands.id"))
+    niche_id = Column(Integer, ForeignKey("niches.id", ondelete="SET NULL"), nullable=True)  # PR-3
     source = Column(String, default="manual")   # manual|auto_expanded|trending
     status = Column(String, default="active")    # active|paused|excluded
     priority = Column(Integer, default=5)
@@ -141,12 +198,14 @@ class Keyword(Base):
 
     # relationships
     brand = relationship("Brand", back_populates="keywords")
+    niche = relationship("Niche", back_populates="keywords")
     videos = relationship("Video", back_populates="keyword")
     parent = relationship("Keyword", remote_side="Keyword.id", backref="variants")
 
     __table_args__ = (
         Index("idx_keywords_status", "status"),
         Index("idx_keywords_brand", "brand_id"),
+        Index("idx_keywords_niche", "niche_id"),
         Index("idx_keywords_parent", "parent_keyword_id"),
     )
 
@@ -173,6 +232,7 @@ class Video(Base):
 
     status = Column(String, default="available")
     keyword_id = Column(Integer, ForeignKey("keywords.id"))
+    niche_id = Column(Integer, ForeignKey("niches.id", ondelete="SET NULL"), nullable=True)  # PR-3
     priority = Column(String, default="normal")
 
     collected_at = Column(DateTime, default=lambda: datetime.now(UTC))
@@ -216,6 +276,7 @@ class Video(Base):
         Index("idx_videos_next_revisit", "next_revisit_at"),
         Index("idx_videos_lifecycle", "lifecycle_phase"),
         Index("idx_videos_collected_at", "collected_at"),
+        Index("idx_videos_niche", "niche_id"),
     )
 
 
@@ -225,6 +286,7 @@ class Campaign(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     video_id = Column(String, ForeignKey("videos.id"), nullable=True)
     brand_id = Column(Integer, ForeignKey("brands.id"), nullable=False)
+    niche_id = Column(Integer, ForeignKey("niches.id", ondelete="SET NULL"), nullable=True)  # PR-3
     scenario = Column(String, nullable=False)  # A~J
 
     status = Column(String, default="planning")
@@ -260,12 +322,14 @@ class Campaign(Base):
     # relationships
     video = relationship("Video", back_populates="campaigns")
     brand = relationship("Brand", back_populates="campaigns")
+    niche = relationship("Niche", back_populates="campaigns")
     steps = relationship("CampaignStep", back_populates="campaign")
     like_boosts = relationship("LikeBoostQueue", back_populates="campaign")
 
     __table_args__ = (
         Index("idx_campaigns_status", "status"),
         Index("idx_campaigns_video", "video_id"),
+        Index("idx_campaigns_niche", "niche_id"),
     )
 
 
