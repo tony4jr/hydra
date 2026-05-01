@@ -130,3 +130,20 @@ export interface NicheMessaging {
   preset_selection: string[]
   personas: NichePersona[]
 }
+
+// ─── PR-4e: Campaigns ────────────────────────────────────────────
+
+export interface NicheCampaign {
+  id: number
+  name: string | null
+  scenario: string
+  status: string
+  campaign_type: string | null
+  comment_mode: string | null
+  target_count: number | null
+  duration_days: number | null
+  start_date: string | null
+  end_date: string | null
+  created_at: string | null
+  completed_at: string | null
+}
