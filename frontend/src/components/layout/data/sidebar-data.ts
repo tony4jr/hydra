@@ -10,6 +10,8 @@ import {
   ScrollText,
   Boxes,
   Sparkles,
+  Activity,
+  AlertTriangle,
 } from 'lucide-react'
 import { type SidebarData } from '../types'
 
@@ -37,14 +39,24 @@ export const sidebarData: SidebarData = {
       title: '지금',
       items: [
         {
-          title: '대시보드',
-          url: '/',
-          icon: LayoutDashboard,
+          title: '피드',
+          url: '/feed',
+          icon: Activity,
+        },
+        {
+          title: '문제',
+          url: '/alerts',
+          icon: AlertTriangle,
         },
         {
           title: '예정',
-          url: '/tasks',
+          url: '/queue',
           icon: ListTodo,
+        },
+        {
+          title: '대시보드',
+          url: '/',
+          icon: LayoutDashboard,
         },
         {
           title: '시작하기',
