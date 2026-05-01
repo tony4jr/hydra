@@ -108,3 +108,25 @@ export interface RecentVideo {
   result_reason: string | null
   collected_at: string | null
 }
+
+// ─── PR-4d: Messaging ────────────────────────────────────────────
+
+export interface NichePersona {
+  id: string
+  name: string
+  weight: number
+  description?: string | null
+  age_range?: string | null
+  gender?: string | null
+}
+
+export interface NicheMessaging {
+  niche_id: number
+  core_message: string | null
+  tone_guide: string | null
+  target_audience: string | null
+  mention_rules: string | null
+  promotional_keywords: string[]
+  preset_selection: string[]
+  personas: NichePersona[]
+}

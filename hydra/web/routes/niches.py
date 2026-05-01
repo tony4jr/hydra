@@ -530,3 +530,104 @@ def niche_recent_videos(
             }
         )
     return out
+
+
+# ─── PR-4d: 메시지 탭 ────────────────────────────────────────────
+
+
+def _json_load(s: Optional[str], default):
+    if not s:
+        return default
+    import json
+    try:
+        return json.loads(s)
+    except Exception:
+        return default
+
+
+def _json_dump(v) -> Optional[str]:
+    import json
+    return json.dumps(v, ensure_ascii=False) if v is not None else None
+
+
+class NichePersona(BaseModel):
+    id: str  # client-generated 또는 uuid
+    name: str = Field(min_length=1, max_length=80)
+    weight: int = Field(default=1, ge=1, le=100)  # 비율
+    description: Optional[str] = None
+    age_range: Optional[str] = None
+    gender: Optional[str] = None
+
+
+class NicheMessagingUpdate(BaseModel):
+    core_message: Optional[str] = None
+    tone_guide: Optional[str] = None
+    target_audience: Optional[str] = None
+    mention_rules: Optional[str] = None
+    promotional_keywords: Optional[list[str]] = None
+    preset_selection: Optional[list[str]] = None
+
+
+@router.get("/{niche_id}/messaging")
+def get_niche_messaging(niche_id: int, db: Session = Depends(get_db)):
+    n = db.get(Niche, niche_id)
+    if n is None:
+        raise HTTPException(404, "niche not found")
+    return {
+        "niche_id": n.id,
+        "core_message": n.core_message,
+        "tone_guide": n.tone_guide,
+        "target_audience": n.target_audience,
+        "mention_rules": n.mention_rules,
+        "promotional_keywords": _json_load(n.promotional_keywords, []),
+        "preset_selection": _json_load(n.preset_selection, []),
+        "personas": _json_load(n.personas_json, []),
+    }
+
+
+@router.patch("/{niche_id}/messaging")
+def update_niche_messaging(
+    niche_id: int, data: NicheMessagingUpdate, db: Session = Depends(get_db)
+):
+    n = db.get(Niche, niche_id)
+    if n is None:
+        raise HTTPException(404, "niche not found")
+    payload = data.model_dump(exclude_unset=True)
+    if "promotional_keywords" in payload:
+        n.promotional_keywords = _json_dump(payload.pop("promotional_keywords"))
+    if "preset_selection" in payload:
+        n.preset_selection = _json_dump(payload.pop("preset_selection"))
+    for k, v in payload.items():
+        setattr(n, k, v)
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/{niche_id}/personas")
+def add_niche_persona(niche_id: int, persona: NichePersona, db: Session = Depends(get_db)):
+    n = db.get(Niche, niche_id)
+    if n is None:
+        raise HTTPException(404, "niche not found")
+    personas = _json_load(n.personas_json, [])
+    if len(personas) >= 10:
+        raise HTTPException(409, "max 10 personas per niche")
+    if any(p.get("id") == persona.id for p in personas):
+        raise HTTPException(409, f"persona id {persona.id} already exists")
+    personas.append(persona.model_dump())
+    n.personas_json = _json_dump(personas)
+    db.commit()
+    return {"ok": True, "personas": personas}
+
+
+@router.delete("/{niche_id}/personas/{persona_id}")
+def delete_niche_persona(niche_id: int, persona_id: str, db: Session = Depends(get_db)):
+    n = db.get(Niche, niche_id)
+    if n is None:
+        raise HTTPException(404, "niche not found")
+    personas = _json_load(n.personas_json, [])
+    new_list = [p for p in personas if p.get("id") != persona_id]
+    if len(new_list) == len(personas):
+        raise HTTPException(404, f"persona {persona_id} not found")
+    n.personas_json = _json_dump(new_list)
+    db.commit()
+    return {"ok": True, "personas": new_list}
