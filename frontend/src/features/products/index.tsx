@@ -1,11 +1,13 @@
 /**
  * /products — 제품 목록 (Brand list).
  *
- * PR-4a 골격. 카드 클릭 → /products/$brandId.
- * 백엔드 변경 0 (기존 /brands/api/list + PR-3c 의 useNicheCountByBrand 재사용).
+ * 카드 클릭 → /products/$brandId 디테일.
+ * 카드 안의 편집 버튼은 stopPropagation 으로 nav 차단.
+ * 편집·삭제는 BrandFormDialog (기존 /brands 페이지 패턴 재사용).
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type MouseEvent } from 'react'
 import { Link } from '@tanstack/react-router'
+import { Pencil } from 'lucide-react'
 
 import { fetchApi } from '@/lib/api'
 import { useNicheCountByBrand } from '@/hooks/use-niches'
@@ -15,25 +17,53 @@ import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { Skeleton } from '@/components/ui/skeleton'
+import { BrandFormDialog } from '@/features/brands/brand-form-dialog'
 
 interface Brand {
   id: number
   name: string
   product_category: string | null
+  core_message: string | null
+  promo_keywords: string[] | null
   status: string
+  collection_depth?: string
+  longtail_count?: number
+  preset_video_limit?: number
 }
 
 export default function ProductsPage() {
   const [brands, setBrands] = useState<Brand[]>([])
   const [loading, setLoading] = useState(true)
+  const [editBrand, setEditBrand] = useState<Brand | null>(null)
   const nicheCountByBrand = useNicheCountByBrand()
 
-  useEffect(() => {
-    fetchApi<Brand[]>('/brands/api/list')
-      .then(setBrands)
+  const loadBrands = () => {
+    setLoading(true)
+    fetchApi<Array<{ id: number; name: string; product_category: string | null; status: string }>>(
+      '/brands/api/list',
+    )
+      .then((rows) =>
+        setBrands(
+          rows.map((r) => ({
+            ...r,
+            core_message: null,
+            promo_keywords: null,
+          })),
+        ),
+      )
       .catch(() => setBrands([]))
       .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    loadBrands()
   }, [])
+
+  const openEdit = (e: MouseEvent, brand: Brand) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setEditBrand(brand)
+  }
 
   return (
     <>
@@ -74,22 +104,32 @@ export default function ProductsPage() {
                     key={brand.id}
                     to='/products/$brandId'
                     params={{ brandId: String(brand.id) }}
-                    className='bg-card border border-border rounded-xl p-5 hydra-card-hover'
+                    className='bg-card border border-border rounded-xl p-5 hydra-card-hover relative'
                   >
-                    <div className='flex items-center justify-between mb-2'>
-                      <h3 className='text-foreground font-semibold text-[16px]'>{brand.name}</h3>
-                      <div className='flex items-center gap-1.5'>
-                        {nicheCount > 0 ? (
-                          <span className='hydra-tag hydra-tag-primary'>
-                            {labels.niche} {nicheCount}개
-                          </span>
-                        ) : (
-                          <span className='hydra-tag hydra-tag-muted'>{labels.niche} 없음</span>
-                        )}
-                        {brand.product_category && (
-                          <span className='hydra-tag hydra-tag-muted'>{brand.product_category}</span>
-                        )}
-                      </div>
+                    <div className='flex items-start justify-between mb-2 gap-2'>
+                      <h3 className='text-foreground font-semibold text-[16px] truncate'>
+                        {brand.name}
+                      </h3>
+                      <button
+                        type='button'
+                        onClick={(e) => openEdit(e, brand)}
+                        aria-label='편집'
+                        className='inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors shrink-0'
+                      >
+                        <Pencil className='w-3.5 h-3.5' />
+                      </button>
+                    </div>
+                    <div className='flex flex-wrap gap-1.5 mb-3'>
+                      {nicheCount > 0 ? (
+                        <span className='hydra-tag hydra-tag-primary'>
+                          {labels.niche} {nicheCount}개
+                        </span>
+                      ) : (
+                        <span className='hydra-tag hydra-tag-muted'>{labels.niche} 없음</span>
+                      )}
+                      {brand.product_category && (
+                        <span className='hydra-tag hydra-tag-muted'>{brand.product_category}</span>
+                      )}
                     </div>
                     <p className='text-muted-foreground/60 text-[12px]'>
                       클릭해서 시장 목록 보기
@@ -101,6 +141,19 @@ export default function ProductsPage() {
           )}
         </div>
       </Main>
+
+      <BrandFormDialog
+        open={editBrand !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditBrand(null)
+        }}
+        mode='edit'
+        brand={editBrand}
+        onSuccess={() => {
+          setEditBrand(null)
+          loadBrands()
+        }}
+      />
     </>
   )
 }

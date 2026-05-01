@@ -5,10 +5,6 @@ import {
   Video,
   Monitor,
   Settings,
-  Wrench,
-  Palette,
-  ListChecks,
-  Settings2,
   Command,
   Image,
   ScrollText,
@@ -81,12 +77,8 @@ export const sidebarData: SidebarData = {
       items: [
         {
           title: '워커',
+          url: '/workers',
           icon: Monitor,
-          items: [
-            { title: '목록', url: '/workers' },
-            { title: '에러 로그', url: '/workers/errors' },
-            { title: 'IP 감시', url: '/workers/ip-monitor' },
-          ],
         },
         {
           title: '감사 로그',
@@ -95,29 +87,8 @@ export const sidebarData: SidebarData = {
         },
         {
           title: '설정',
+          url: '/settings',
           icon: Settings,
-          items: [
-            {
-              title: '일반',
-              url: '/settings',
-              icon: Wrench,
-            },
-            {
-              title: '행동 패턴',
-              url: '/settings/behavior',
-              icon: Settings2,
-            },
-            {
-              title: '프리셋',
-              url: '/settings/presets',
-              icon: ListChecks,
-            },
-            {
-              title: '외관',
-              url: '/settings/appearance',
-              icon: Palette,
-            },
-          ],
         },
       ],
     },
