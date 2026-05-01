@@ -25,3 +25,27 @@ export interface Niche {
   created_at?: string
   updated_at?: string
 }
+
+export interface NicheOverviewStats {
+  video_pool_size: number
+  keywords_count: number
+  active_campaigns: number
+  comments_7d: number
+}
+
+export interface NicheActiveCampaign {
+  id: number
+  name: string | null
+  scenario: string
+  status: string
+  target_count: number | null
+  start_date: string | null
+  end_date: string | null
+}
+
+export interface NicheOverview {
+  niche: Niche
+  stats: NicheOverviewStats
+  active_campaigns: NicheActiveCampaign[]
+  recent_alerts: unknown[]
+}

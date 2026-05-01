@@ -7,7 +7,7 @@
 import { useEffect, useState } from 'react'
 
 import { fetchApi } from '@/lib/api'
-import type { Niche } from '@/types/niche'
+import type { Niche, NicheOverview } from '@/types/niche'
 
 export function useNiches(brandId?: number) {
   const [niches, setNiches] = useState<Niche[]>([])
@@ -38,6 +38,36 @@ export function useNiches(brandId?: number) {
   }, [brandId])
 
   return { niches, loading, error }
+}
+
+export function useNicheOverview(nicheId: number | string) {
+  const [overview, setOverview] = useState<NicheOverview | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<unknown>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    fetchApi<NicheOverview>(`/api/admin/niches/${nicheId}/overview`)
+      .then((data) => {
+        if (cancelled) return
+        setOverview(data)
+        setError(null)
+      })
+      .catch((e) => {
+        if (cancelled) return
+        setOverview(null)
+        setError(e)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [nicheId])
+
+  return { overview, loading, error }
 }
 
 export function useNicheCountByBrand(): Record<number, number> {
