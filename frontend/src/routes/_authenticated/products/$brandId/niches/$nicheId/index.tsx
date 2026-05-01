@@ -1,9 +1,15 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { TabPlaceholder } from '@/features/products/niche-tabs/placeholder'
-import { labels } from '@/lib/i18n-terms'
+import { createFileRoute, useParams } from '@tanstack/react-router'
+import { OverviewTab } from '@/features/products/niche-tabs/overview'
+
+function OverviewRoute() {
+  const { nicheId } = useParams({
+    from: '/_authenticated/products/$brandId/niches/$nicheId/',
+  })
+  return <OverviewTab nicheId={nicheId} />
+}
 
 export const Route = createFileRoute(
   '/_authenticated/products/$brandId/niches/$nicheId/',
 )({
-  component: () => <TabPlaceholder tabName={labels.tabOverview} subPrId='PR-4b' />,
+  component: OverviewRoute,
 })
