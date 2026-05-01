@@ -140,3 +140,173 @@ def refresh_video_status(db: Session = Depends(get_db)):
         return {"ok": True, **result}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+# ─── PR-5a: 영상 검색 + 타임라인 ─────────────────────────────────
+
+
+from datetime import datetime, UTC
+from typing import Optional
+from fastapi import HTTPException, Query as FQuery
+from hydra.db.models import ActionLog, Campaign, Niche, Keyword
+
+
+@router.get("/api/search")
+def search_videos(
+    q: Optional[str] = None,
+    niche_id: Optional[int] = None,
+    state: Optional[str] = None,
+    tier: Optional[str] = None,
+    sort: str = "recent",
+    page: int = 1,
+    page_size: int = FQuery(default=50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    """영상 검색 + 필터 (PR-5a)."""
+    query = db.query(Video)
+    if q:
+        like = f"%{q}%"
+        query = query.filter(
+            (Video.title.ilike(like)) | (Video.channel_title.ilike(like))
+        )
+    if niche_id is not None:
+        query = query.filter(Video.niche_id == niche_id)
+    if state:
+        query = query.filter(Video.state == state)
+    if tier:
+        query = query.filter(Video.l_tier == tier)
+
+    if sort == "views":
+        query = query.order_by(Video.view_count.desc().nullslast())
+    elif sort == "fitness":
+        query = query.order_by(Video.embedding_score.desc().nullslast())
+    elif sort == "comment_count":
+        query = query.order_by(Video.comment_count.desc().nullslast())
+    else:
+        query = query.order_by(Video.collected_at.desc())
+
+    total = query.count()
+    rows = query.offset((page - 1) * page_size).limit(page_size).all()
+
+    items = [
+        {
+            "id": v.id,
+            "title": v.title,
+            "channel": v.channel_title,
+            "view_count": v.view_count,
+            "comment_count": v.comment_count,
+            "published_at": v.published_at.isoformat() if v.published_at else None,
+            "discovered_at": v.collected_at.isoformat() if v.collected_at else None,
+            "state": v.state,
+            "tier": v.l_tier,
+            "market_fitness": v.embedding_score,
+            "niche_id": v.niche_id,
+            "url": v.url,
+            "is_short": v.is_short,
+        }
+        for v in rows
+    ]
+    return {"total": total, "page": page, "page_size": page_size, "items": items}
+
+
+@router.get("/api/{video_id}/timeline")
+def video_timeline(video_id: str, db: Session = Depends(get_db)):
+    """영상 타임라인 — 기존 데이터로 최대한 복원 (lean PR-5a).
+
+    이벤트 종류:
+    - discovered (Video.collected_at)
+    - state_set (Video.state — 현재만, 변경 이력 추적 X)
+    - campaign_created (Campaign.created_at)
+    - comment_posted / reply_posted (ActionLog)
+    - blacklisted (Video.state='blacklisted', blacklist_reason)
+    """
+    v = db.get(Video, video_id)
+    if v is None:
+        raise HTTPException(404, "video not found")
+
+    niche = db.get(Niche, v.niche_id) if v.niche_id else None
+    keyword = db.get(Keyword, v.keyword_id) if v.keyword_id else None
+
+    events = []
+
+    if v.collected_at:
+        events.append({
+            "at": v.collected_at.isoformat(),
+            "kind": "discovered",
+            "actor": "system",
+            "actor_detail": f"keyword:{keyword.text}" if keyword else None,
+            "metadata": {
+                "discovered_via": v.discovered_via,
+                "discovery_keyword": v.discovery_keyword,
+            },
+        })
+
+    if v.state == "blacklisted":
+        events.append({
+            "at": v.last_action_at.isoformat() if v.last_action_at else (
+                v.collected_at.isoformat() if v.collected_at else None
+            ),
+            "kind": "rejected_filter",
+            "actor": "system",
+            "actor_detail": v.blacklist_reason,
+            "metadata": {"reason": v.blacklist_reason},
+        })
+
+    campaigns = (
+        db.query(Campaign)
+        .filter(Campaign.video_id == video_id)
+        .order_by(Campaign.created_at.asc())
+        .all()
+    )
+    for c in campaigns:
+        events.append({
+            "at": c.created_at.isoformat() if c.created_at else None,
+            "kind": "campaign_created",
+            "actor": "operator",
+            "campaign_id": c.id,
+            "campaign_name": c.name,
+            "metadata": {"scenario": c.scenario, "status": c.status},
+        })
+
+    action_rows = (
+        db.query(ActionLog)
+        .filter(ActionLog.video_id == video_id)
+        .order_by(ActionLog.created_at.asc())
+        .limit(500)
+        .all()
+    )
+    for a in action_rows:
+        kind = "comment_posted" if a.action_type in ("comment", "reply") else f"action_{a.action_type}"
+        events.append({
+            "at": a.created_at.isoformat() if a.created_at else None,
+            "kind": kind,
+            "actor": "worker",
+            "actor_detail": f"account:{a.account_id}",
+            "campaign_id": a.campaign_id,
+            "metadata": {
+                "action_type": a.action_type,
+                "is_promo": a.is_promo,
+                "status": a.status,
+                "youtube_comment_id": a.youtube_comment_id,
+            },
+        })
+
+    events.sort(key=lambda e: e["at"] or "")
+
+    return {
+        "video": {
+            "id": v.id,
+            "title": v.title,
+            "channel": v.channel_title,
+            "url": v.url,
+            "view_count": v.view_count,
+            "comment_count": v.comment_count,
+            "state": v.state,
+            "tier": v.l_tier,
+            "market_fitness": v.embedding_score,
+            "niche_id": v.niche_id,
+            "niche_name": niche.name if niche else None,
+        },
+        "events": events,
+        "upcoming": [],
+    }

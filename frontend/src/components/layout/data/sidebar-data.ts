@@ -2,6 +2,7 @@ import {
   LayoutDashboard,
   ListTodo,
   Users,
+  Video,
   Monitor,
   Settings,
   Wrench,
@@ -51,6 +52,11 @@ export const sidebarData: SidebarData = {
           title: '제품',
           url: '/products',
           icon: Boxes,
+        },
+        {
+          title: '영상',
+          url: '/videos',
+          icon: Video,
         },
         {
           title: '계정',

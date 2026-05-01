@@ -19,6 +19,7 @@ import { Route as errors401RouteImport } from './routes/(errors)/401'
 import { Route as authLoginRouteImport } from './routes/(auth)/login'
 import { Route as AuthenticatedSettingsRouteRouteImport } from './routes/_authenticated/settings/route'
 import { Route as AuthenticatedWorkersIndexRouteImport } from './routes/_authenticated/workers/index'
+import { Route as AuthenticatedVideosIndexRouteImport } from './routes/_authenticated/videos/index'
 import { Route as AuthenticatedTasksIndexRouteImport } from './routes/_authenticated/tasks/index'
 import { Route as AuthenticatedTargetsIndexRouteImport } from './routes/_authenticated/targets/index'
 import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
@@ -31,6 +32,7 @@ import { Route as AuthenticatedAnalyticsIndexRouteImport } from './routes/_authe
 import { Route as AuthenticatedAccountsIndexRouteImport } from './routes/_authenticated/accounts/index'
 import { Route as AuthenticatedWorkersIpMonitorRouteImport } from './routes/_authenticated/workers/ip-monitor'
 import { Route as AuthenticatedWorkersErrorsRouteImport } from './routes/_authenticated/workers/errors'
+import { Route as AuthenticatedVideosVideoIdRouteImport } from './routes/_authenticated/videos/$videoId'
 import { Route as AuthenticatedSettingsPresetsRouteImport } from './routes/_authenticated/settings/presets'
 import { Route as AuthenticatedSettingsNotificationsRouteImport } from './routes/_authenticated/settings/notifications'
 import { Route as AuthenticatedSettingsGeneralRouteImport } from './routes/_authenticated/settings/general'
@@ -96,6 +98,12 @@ const AuthenticatedWorkersIndexRoute =
   AuthenticatedWorkersIndexRouteImport.update({
     id: '/workers/',
     path: '/workers/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedVideosIndexRoute =
+  AuthenticatedVideosIndexRouteImport.update({
+    id: '/videos/',
+    path: '/videos/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedTasksIndexRoute = AuthenticatedTasksIndexRouteImport.update({
@@ -166,6 +174,12 @@ const AuthenticatedWorkersErrorsRoute =
   AuthenticatedWorkersErrorsRouteImport.update({
     id: '/workers/errors',
     path: '/workers/errors',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedVideosVideoIdRoute =
+  AuthenticatedVideosVideoIdRouteImport.update({
+    id: '/videos/$videoId',
+    path: '/videos/$videoId',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedSettingsPresetsRoute =
@@ -276,6 +290,7 @@ export interface FileRoutesByFullPath {
   '/settings/general': typeof AuthenticatedSettingsGeneralRoute
   '/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/settings/presets': typeof AuthenticatedSettingsPresetsRoute
+  '/videos/$videoId': typeof AuthenticatedVideosVideoIdRoute
   '/workers/errors': typeof AuthenticatedWorkersErrorsRoute
   '/workers/ip-monitor': typeof AuthenticatedWorkersIpMonitorRoute
   '/accounts/': typeof AuthenticatedAccountsIndexRoute
@@ -288,6 +303,7 @@ export interface FileRoutesByFullPath {
   '/settings/': typeof AuthenticatedSettingsIndexRoute
   '/targets/': typeof AuthenticatedTargetsIndexRoute
   '/tasks/': typeof AuthenticatedTasksIndexRoute
+  '/videos/': typeof AuthenticatedVideosIndexRoute
   '/workers/': typeof AuthenticatedWorkersIndexRoute
   '/products/$brandId/': typeof AuthenticatedProductsBrandIdIndexRoute
   '/products/$brandId/niches/$nicheId': typeof AuthenticatedProductsBrandIdNichesNicheIdRouteRouteWithChildren
@@ -313,6 +329,7 @@ export interface FileRoutesByTo {
   '/settings/general': typeof AuthenticatedSettingsGeneralRoute
   '/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/settings/presets': typeof AuthenticatedSettingsPresetsRoute
+  '/videos/$videoId': typeof AuthenticatedVideosVideoIdRoute
   '/workers/errors': typeof AuthenticatedWorkersErrorsRoute
   '/workers/ip-monitor': typeof AuthenticatedWorkersIpMonitorRoute
   '/accounts': typeof AuthenticatedAccountsIndexRoute
@@ -325,6 +342,7 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthenticatedSettingsIndexRoute
   '/targets': typeof AuthenticatedTargetsIndexRoute
   '/tasks': typeof AuthenticatedTasksIndexRoute
+  '/videos': typeof AuthenticatedVideosIndexRoute
   '/workers': typeof AuthenticatedWorkersIndexRoute
   '/products/$brandId': typeof AuthenticatedProductsBrandIdIndexRoute
   '/products/$brandId/niches/$nicheId/analytics': typeof AuthenticatedProductsBrandIdNichesNicheIdAnalyticsRoute
@@ -352,6 +370,7 @@ export interface FileRoutesById {
   '/_authenticated/settings/general': typeof AuthenticatedSettingsGeneralRoute
   '/_authenticated/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/_authenticated/settings/presets': typeof AuthenticatedSettingsPresetsRoute
+  '/_authenticated/videos/$videoId': typeof AuthenticatedVideosVideoIdRoute
   '/_authenticated/workers/errors': typeof AuthenticatedWorkersErrorsRoute
   '/_authenticated/workers/ip-monitor': typeof AuthenticatedWorkersIpMonitorRoute
   '/_authenticated/accounts/': typeof AuthenticatedAccountsIndexRoute
@@ -364,6 +383,7 @@ export interface FileRoutesById {
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
   '/_authenticated/targets/': typeof AuthenticatedTargetsIndexRoute
   '/_authenticated/tasks/': typeof AuthenticatedTasksIndexRoute
+  '/_authenticated/videos/': typeof AuthenticatedVideosIndexRoute
   '/_authenticated/workers/': typeof AuthenticatedWorkersIndexRoute
   '/_authenticated/products/$brandId/': typeof AuthenticatedProductsBrandIdIndexRoute
   '/_authenticated/products/$brandId/niches/$nicheId': typeof AuthenticatedProductsBrandIdNichesNicheIdRouteRouteWithChildren
@@ -392,6 +412,7 @@ export interface FileRouteTypes {
     | '/settings/general'
     | '/settings/notifications'
     | '/settings/presets'
+    | '/videos/$videoId'
     | '/workers/errors'
     | '/workers/ip-monitor'
     | '/accounts/'
@@ -404,6 +425,7 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/targets/'
     | '/tasks/'
+    | '/videos/'
     | '/workers/'
     | '/products/$brandId/'
     | '/products/$brandId/niches/$nicheId'
@@ -429,6 +451,7 @@ export interface FileRouteTypes {
     | '/settings/general'
     | '/settings/notifications'
     | '/settings/presets'
+    | '/videos/$videoId'
     | '/workers/errors'
     | '/workers/ip-monitor'
     | '/accounts'
@@ -441,6 +464,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/targets'
     | '/tasks'
+    | '/videos'
     | '/workers'
     | '/products/$brandId'
     | '/products/$brandId/niches/$nicheId/analytics'
@@ -467,6 +491,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/general'
     | '/_authenticated/settings/notifications'
     | '/_authenticated/settings/presets'
+    | '/_authenticated/videos/$videoId'
     | '/_authenticated/workers/errors'
     | '/_authenticated/workers/ip-monitor'
     | '/_authenticated/accounts/'
@@ -479,6 +504,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/'
     | '/_authenticated/targets/'
     | '/_authenticated/tasks/'
+    | '/_authenticated/videos/'
     | '/_authenticated/workers/'
     | '/_authenticated/products/$brandId/'
     | '/_authenticated/products/$brandId/niches/$nicheId'
@@ -571,6 +597,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWorkersIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/videos/': {
+      id: '/_authenticated/videos/'
+      path: '/videos'
+      fullPath: '/videos/'
+      preLoaderRoute: typeof AuthenticatedVideosIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/tasks/': {
       id: '/_authenticated/tasks/'
       path: '/tasks'
@@ -653,6 +686,13 @@ declare module '@tanstack/react-router' {
       path: '/workers/errors'
       fullPath: '/workers/errors'
       preLoaderRoute: typeof AuthenticatedWorkersErrorsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/videos/$videoId': {
+      id: '/_authenticated/videos/$videoId'
+      path: '/videos/$videoId'
+      fullPath: '/videos/$videoId'
+      preLoaderRoute: typeof AuthenticatedVideosVideoIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/settings/presets': {
@@ -823,6 +863,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedSettingsRouteRoute: typeof AuthenticatedSettingsRouteRouteWithChildren
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
+  AuthenticatedVideosVideoIdRoute: typeof AuthenticatedVideosVideoIdRoute
   AuthenticatedWorkersErrorsRoute: typeof AuthenticatedWorkersErrorsRoute
   AuthenticatedWorkersIpMonitorRoute: typeof AuthenticatedWorkersIpMonitorRoute
   AuthenticatedAccountsIndexRoute: typeof AuthenticatedAccountsIndexRoute
@@ -834,6 +875,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedProductsIndexRoute: typeof AuthenticatedProductsIndexRoute
   AuthenticatedTargetsIndexRoute: typeof AuthenticatedTargetsIndexRoute
   AuthenticatedTasksIndexRoute: typeof AuthenticatedTasksIndexRoute
+  AuthenticatedVideosIndexRoute: typeof AuthenticatedVideosIndexRoute
   AuthenticatedWorkersIndexRoute: typeof AuthenticatedWorkersIndexRoute
   AuthenticatedProductsBrandIdIndexRoute: typeof AuthenticatedProductsBrandIdIndexRoute
   AuthenticatedProductsBrandIdNichesNicheIdRouteRoute: typeof AuthenticatedProductsBrandIdNichesNicheIdRouteRouteWithChildren
@@ -843,6 +885,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedSettingsRouteRoute: AuthenticatedSettingsRouteRouteWithChildren,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
+  AuthenticatedVideosVideoIdRoute: AuthenticatedVideosVideoIdRoute,
   AuthenticatedWorkersErrorsRoute: AuthenticatedWorkersErrorsRoute,
   AuthenticatedWorkersIpMonitorRoute: AuthenticatedWorkersIpMonitorRoute,
   AuthenticatedAccountsIndexRoute: AuthenticatedAccountsIndexRoute,
@@ -854,6 +897,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedProductsIndexRoute: AuthenticatedProductsIndexRoute,
   AuthenticatedTargetsIndexRoute: AuthenticatedTargetsIndexRoute,
   AuthenticatedTasksIndexRoute: AuthenticatedTasksIndexRoute,
+  AuthenticatedVideosIndexRoute: AuthenticatedVideosIndexRoute,
   AuthenticatedWorkersIndexRoute: AuthenticatedWorkersIndexRoute,
   AuthenticatedProductsBrandIdIndexRoute:
     AuthenticatedProductsBrandIdIndexRoute,
