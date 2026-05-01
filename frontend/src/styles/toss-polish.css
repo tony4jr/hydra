@@ -7,27 +7,27 @@
    ============================================ */
 
 :root {
-  --font-display: 'Pretendard Variable', 'Pretendard', -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, 'JetBrains Mono', Consolas, monospace;
+  /* Note (PR-D2): --font-display / --font-mono moved to tokens-wanted.css.
+     Wanted's defs (Pretendard Variable + system-ui fallback) are now active. */
 
-  /* Spacing scale (Toss-aligned: generous, predictable) */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-8: 32px;
-  --space-10: 40px;
-  --space-12: 48px;
-  --space-16: 64px;
+  /* Spacing scale (Toss-aligned) — namespaced --toss-* (PR-D2 to avoid collision with tokens-wanted) */
+  --toss-space-1: 4px;
+  --toss-space-2: 8px;
+  --toss-space-3: 12px;
+  --toss-space-4: 16px;
+  --toss-space-5: 20px;
+  --toss-space-6: 24px;
+  --toss-space-8: 32px;
+  --toss-space-10: 40px;
+  --toss-space-12: 48px;
+  --toss-space-16: 64px;
 
   /* Shadow scale — soft, subtle */
-  --shadow-xs: 0 1px 2px 0 rgb(15 23 42 / 0.04);
-  --shadow-sm: 0 1px 3px 0 rgb(15 23 42 / 0.06), 0 1px 2px -1px rgb(15 23 42 / 0.06);
-  --shadow-md: 0 4px 6px -1px rgb(15 23 42 / 0.08), 0 2px 4px -2px rgb(15 23 42 / 0.06);
-  --shadow-lg: 0 10px 15px -3px rgb(15 23 42 / 0.1), 0 4px 6px -4px rgb(15 23 42 / 0.06);
-  --shadow-xl: 0 20px 25px -5px rgb(15 23 42 / 0.12), 0 8px 10px -6px rgb(15 23 42 / 0.06);
+  --toss-shadow-xs: 0 1px 2px 0 rgb(15 23 42 / 0.04);
+  --toss-shadow-sm: 0 1px 3px 0 rgb(15 23 42 / 0.06), 0 1px 2px -1px rgb(15 23 42 / 0.06);
+  --toss-shadow-md: 0 4px 6px -1px rgb(15 23 42 / 0.08), 0 2px 4px -2px rgb(15 23 42 / 0.06);
+  --toss-shadow-lg: 0 10px 15px -3px rgb(15 23 42 / 0.1), 0 4px 6px -4px rgb(15 23 42 / 0.06);
+  --toss-shadow-xl: 0 20px 25px -5px rgb(15 23 42 / 0.12), 0 8px 10px -6px rgb(15 23 42 / 0.06);
 
   /* Brand blue (Toss-inspired) — keep as accent on light primary */
   --hydra-blue: oklch(0.66 0.19 254);
@@ -48,7 +48,7 @@
 
 .hydra-card-hover:hover {
   transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--toss-shadow-md);
   border-color: color-mix(in oklab, var(--border) 100%, transparent);
 }
 
@@ -56,12 +56,12 @@
 .hydra-stat-card {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-6);
+  gap: var(--toss-space-2);
+  padding: var(--toss-space-6);
   background: var(--card);
   border: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-xs);
+  box-shadow: var(--toss-shadow-xs);
   transition: all var(--duration-base) var(--ease-out-cubic);
   position: relative;
   overflow: hidden;
@@ -118,7 +118,7 @@
 .hydra-page-sub {
   font-size: 14px;
   color: var(--muted-foreground);
-  margin-top: var(--space-2);
+  margin-top: var(--toss-space-2);
 }
 
 /* === Skeleton (content-aware) === */
@@ -145,8 +145,8 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: var(--space-12) var(--space-6);
-  gap: var(--space-3);
+  padding: var(--toss-space-12) var(--toss-space-6);
+  gap: var(--toss-space-3);
   border: 1px dashed color-mix(in oklab, var(--border) 80%, transparent);
   border-radius: var(--radius-lg);
   text-align: center;
@@ -155,7 +155,7 @@
 .hydra-empty-icon {
   font-size: 32px;
   opacity: 0.6;
-  margin-bottom: var(--space-1);
+  margin-bottom: var(--toss-space-1);
 }
 
 .hydra-empty-title {
@@ -219,12 +219,12 @@ button, a, input, select, textarea, [role="button"], [role="tab"] {
 .hydra-hero {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-6);
+  gap: var(--toss-space-3);
+  padding: var(--toss-space-6);
   background: var(--card);
   border: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
   border-radius: calc(var(--radius-lg) + 4px);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--toss-shadow-sm);
   position: relative;
   overflow: hidden;
 }
@@ -251,7 +251,7 @@ button, a, input, select, textarea, [role="button"], [role="tab"] {
 .hydra-hero-flex {
   display: flex;
   align-items: center;
-  gap: var(--space-6);
+  gap: var(--toss-space-6);
   flex-wrap: wrap;
 }
 
@@ -308,7 +308,7 @@ button, a, input, select, textarea, [role="button"], [role="tab"] {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-4) var(--space-5);
+  padding: var(--toss-space-4) var(--toss-space-5);
   border-bottom: 1px solid color-mix(in oklab, var(--border) 50%, transparent);
 }
 
@@ -381,7 +381,7 @@ button, a, input, select, textarea, [role="button"], [role="tab"] {
 .hydra-livebar-inner {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--toss-space-4);
   padding: 8px 16px;
   font-size: 12px;
   height: 40px;
@@ -467,7 +467,7 @@ button, a, input, select, textarea, [role="button"], [role="tab"] {
   background: var(--popover) !important;
   color: var(--popover-foreground) !important;
   border: 1px solid color-mix(in oklab, var(--border) 70%, transparent) !important;
-  box-shadow: var(--shadow-lg) !important;
+  box-shadow: var(--toss-shadow-lg) !important;
   border-radius: var(--radius-lg) !important;
   font-family: var(--font-display) !important;
 }
@@ -502,10 +502,10 @@ button, a, input, select, textarea, [role="button"], [role="tab"] {
   --hydra-blue: oklch(0.7 0.18 254);
   --hydra-blue-soft: oklch(0.28 0.07 254);
   --hydra-blue-fg: oklch(0.86 0.13 254);
-  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.3);
-  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.35), 0 1px 2px -1px rgb(0 0 0 / 0.35);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.3);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.5), 0 4px 6px -4px rgb(0 0 0 / 0.3);
+  --toss-shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+  --toss-shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.35), 0 1px 2px -1px rgb(0 0 0 / 0.35);
+  --toss-shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.3);
+  --toss-shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.5), 0 4px 6px -4px rgb(0 0 0 / 0.3);
 }
 
 /* Card subtle gradient for depth in dark mode */
@@ -535,7 +535,7 @@ button, a, input, select, textarea, [role="button"], [role="tab"] {
   display: flex;
   align-items: center;
   gap: 0;
-  margin: var(--space-2) 0 var(--space-5);
+  margin: var(--toss-space-2) 0 var(--toss-space-5);
 }
 
 .hydra-wizard-step {
@@ -619,13 +619,13 @@ button, a, input, select, textarea, [role="button"], [role="tab"] {
   font-weight: 700;
   letter-spacing: -0.015em;
   color: var(--foreground);
-  margin-bottom: var(--space-1);
+  margin-bottom: var(--toss-space-1);
 }
 
 /* === Dialog soft (refined shadcn) === */
 [data-slot="dialog-content"] {
   border-radius: calc(var(--radius-lg) + 4px) !important;
-  box-shadow: var(--shadow-xl) !important;
+  box-shadow: var(--toss-shadow-xl) !important;
   border: 1px solid color-mix(in oklab, var(--border) 70%, transparent) !important;
 }
 
@@ -797,7 +797,7 @@ button, a, input, select, textarea, [role="button"], [role="tab"] {
   border: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
   border-radius: calc(var(--radius-lg) + 4px);
   padding: 40px 32px;
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--toss-shadow-lg);
 }
 
 .hydra-login-card-head {
@@ -879,8 +879,8 @@ button, a, input, select, textarea, [role="button"], [role="tab"] {
 .hydra-fleet-card {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-4);
+  gap: var(--toss-space-2);
+  padding: var(--toss-space-4);
   background: var(--card);
   border: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
   border-radius: var(--radius-lg);
@@ -893,7 +893,7 @@ button, a, input, select, textarea, [role="button"], [role="tab"] {
 .hydra-fleet-card:hover {
   transform: translateY(-2px);
   border-color: color-mix(in oklab, var(--hydra-blue) 40%, var(--border));
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--toss-shadow-md);
 }
 
 .hydra-fleet-card[data-status="active"]   { border-left: 3px solid var(--hydra-success); }
