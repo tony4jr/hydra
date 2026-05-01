@@ -817,6 +817,38 @@ class CommentTreeSlot(Base):
     )
 
 
+# PR-8g — 댓글 실행 (실제 작성된 댓글 + 추적)
+class CommentExecution(Base):
+    __tablename__ = "comment_executions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    video_id = Column(String, ForeignKey("videos.id", ondelete="CASCADE"), nullable=False)
+    slot_id = Column(Integer, ForeignKey("comment_tree_slots.id", ondelete="SET NULL"))
+    campaign_id = Column(Integer, ForeignKey("campaigns.id", ondelete="SET NULL"))
+    worker_id = Column(Integer, ForeignKey("accounts.id"), nullable=False)
+
+    text = Column(Text, nullable=False)
+    posted_at = Column(DateTime, nullable=False)
+    youtube_comment_id = Column(String)
+
+    status = Column(String(20), default="alive", nullable=False)
+    # alive | deleted | unknown | banned
+    likes_count = Column(Integer, default=0, nullable=False)
+    last_checked_at = Column(DateTime)
+    next_check_at = Column(DateTime)
+    tracking_status = Column(String(20), default="active", nullable=False)
+    tracking_phase = Column(String(20), default="hour", nullable=False)
+
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+
+    __table_args__ = (
+        Index("ix_executions_video", "video_id"),
+        Index("ix_executions_worker", "worker_id"),
+        Index("ix_executions_next_check", "next_check_at"),
+        Index("ix_executions_status", "status", "tracking_status"),
+    )
+
+
 # PR-8f — 영상 점수 (100점 + 부스트 + 안전필터)
 class VideoScore(Base):
     __tablename__ = "video_scores"
