@@ -7,6 +7,7 @@ import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { fetchApi } from '@/lib/api'
+import { useNicheCountByBrand } from '@/hooks/use-niches'
 import { BrandFormDialog } from './brand-form-dialog'
 
 interface Brand {
@@ -21,6 +22,7 @@ interface Brand {
 export default function BrandsPage() {
   const [brands, setBrands] = useState<Brand[]>([])
   const [loading, setLoading] = useState(true)
+  const nicheCountByBrand = useNicheCountByBrand()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create')
   const [editBrand, setEditBrand] = useState<Brand | null>(null)
@@ -95,9 +97,16 @@ export default function BrandsPage() {
                 >
                   <div className='flex items-center justify-between mb-2'>
                     <h3 className='text-foreground font-semibold text-[16px]'>{brand.name}</h3>
-                    {brand.product_category && (
-                      <span className='hydra-tag hydra-tag-muted'>{brand.product_category}</span>
-                    )}
+                    <div className='flex items-center gap-1.5'>
+                      {nicheCountByBrand[brand.id] > 0 && (
+                        <span className='hydra-tag hydra-tag-primary'>
+                          시장 {nicheCountByBrand[brand.id]}개
+                        </span>
+                      )}
+                      {brand.product_category && (
+                        <span className='hydra-tag hydra-tag-muted'>{brand.product_category}</span>
+                      )}
+                    </div>
                   </div>
 
                   {brand.core_message && (
