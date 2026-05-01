@@ -22,6 +22,7 @@ import { Route as AuthenticatedWorkersIndexRouteImport } from './routes/_authent
 import { Route as AuthenticatedTasksIndexRouteImport } from './routes/_authenticated/tasks/index'
 import { Route as AuthenticatedTargetsIndexRouteImport } from './routes/_authenticated/targets/index'
 import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
+import { Route as AuthenticatedProductsIndexRouteImport } from './routes/_authenticated/products/index'
 import { Route as AuthenticatedCampaignsIndexRouteImport } from './routes/_authenticated/campaigns/index'
 import { Route as AuthenticatedBrandsIndexRouteImport } from './routes/_authenticated/brands/index'
 import { Route as AuthenticatedAvatarsIndexRouteImport } from './routes/_authenticated/avatars/index'
@@ -38,6 +39,13 @@ import { Route as AuthenticatedSettingsBehaviorRouteImport } from './routes/_aut
 import { Route as AuthenticatedSettingsAppearanceRouteImport } from './routes/_authenticated/settings/appearance'
 import { Route as AuthenticatedSettingsAccountRouteImport } from './routes/_authenticated/settings/account'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
+import { Route as AuthenticatedProductsBrandIdIndexRouteImport } from './routes/_authenticated/products/$brandId/index'
+import { Route as AuthenticatedProductsBrandIdNichesNicheIdRouteRouteImport } from './routes/_authenticated/products/$brandId/niches/$nicheId/route'
+import { Route as AuthenticatedProductsBrandIdNichesNicheIdIndexRouteImport } from './routes/_authenticated/products/$brandId/niches/$nicheId/index'
+import { Route as AuthenticatedProductsBrandIdNichesNicheIdMessagingRouteImport } from './routes/_authenticated/products/$brandId/niches/$nicheId/messaging'
+import { Route as AuthenticatedProductsBrandIdNichesNicheIdCollectionRouteImport } from './routes/_authenticated/products/$brandId/niches/$nicheId/collection'
+import { Route as AuthenticatedProductsBrandIdNichesNicheIdCampaignsRouteImport } from './routes/_authenticated/products/$brandId/niches/$nicheId/campaigns'
+import { Route as AuthenticatedProductsBrandIdNichesNicheIdAnalyticsRouteImport } from './routes/_authenticated/products/$brandId/niches/$nicheId/analytics'
 
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
@@ -106,6 +114,12 @@ const AuthenticatedSettingsIndexRoute =
     id: '/',
     path: '/',
     getParentRoute: () => AuthenticatedSettingsRouteRoute,
+  } as any)
+const AuthenticatedProductsIndexRoute =
+  AuthenticatedProductsIndexRouteImport.update({
+    id: '/products/',
+    path: '/products/',
+    getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedCampaignsIndexRoute =
   AuthenticatedCampaignsIndexRouteImport.update({
@@ -202,6 +216,48 @@ const AuthenticatedErrorsErrorRoute =
     path: '/errors/$error',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedProductsBrandIdIndexRoute =
+  AuthenticatedProductsBrandIdIndexRouteImport.update({
+    id: '/products/$brandId/',
+    path: '/products/$brandId/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedProductsBrandIdNichesNicheIdRouteRoute =
+  AuthenticatedProductsBrandIdNichesNicheIdRouteRouteImport.update({
+    id: '/products/$brandId/niches/$nicheId',
+    path: '/products/$brandId/niches/$nicheId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedProductsBrandIdNichesNicheIdIndexRoute =
+  AuthenticatedProductsBrandIdNichesNicheIdIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedProductsBrandIdNichesNicheIdRouteRoute,
+  } as any)
+const AuthenticatedProductsBrandIdNichesNicheIdMessagingRoute =
+  AuthenticatedProductsBrandIdNichesNicheIdMessagingRouteImport.update({
+    id: '/messaging',
+    path: '/messaging',
+    getParentRoute: () => AuthenticatedProductsBrandIdNichesNicheIdRouteRoute,
+  } as any)
+const AuthenticatedProductsBrandIdNichesNicheIdCollectionRoute =
+  AuthenticatedProductsBrandIdNichesNicheIdCollectionRouteImport.update({
+    id: '/collection',
+    path: '/collection',
+    getParentRoute: () => AuthenticatedProductsBrandIdNichesNicheIdRouteRoute,
+  } as any)
+const AuthenticatedProductsBrandIdNichesNicheIdCampaignsRoute =
+  AuthenticatedProductsBrandIdNichesNicheIdCampaignsRouteImport.update({
+    id: '/campaigns',
+    path: '/campaigns',
+    getParentRoute: () => AuthenticatedProductsBrandIdNichesNicheIdRouteRoute,
+  } as any)
+const AuthenticatedProductsBrandIdNichesNicheIdAnalyticsRoute =
+  AuthenticatedProductsBrandIdNichesNicheIdAnalyticsRouteImport.update({
+    id: '/analytics',
+    path: '/analytics',
+    getParentRoute: () => AuthenticatedProductsBrandIdNichesNicheIdRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
@@ -228,10 +284,18 @@ export interface FileRoutesByFullPath {
   '/avatars/': typeof AuthenticatedAvatarsIndexRoute
   '/brands/': typeof AuthenticatedBrandsIndexRoute
   '/campaigns/': typeof AuthenticatedCampaignsIndexRoute
+  '/products/': typeof AuthenticatedProductsIndexRoute
   '/settings/': typeof AuthenticatedSettingsIndexRoute
   '/targets/': typeof AuthenticatedTargetsIndexRoute
   '/tasks/': typeof AuthenticatedTasksIndexRoute
   '/workers/': typeof AuthenticatedWorkersIndexRoute
+  '/products/$brandId/': typeof AuthenticatedProductsBrandIdIndexRoute
+  '/products/$brandId/niches/$nicheId': typeof AuthenticatedProductsBrandIdNichesNicheIdRouteRouteWithChildren
+  '/products/$brandId/niches/$nicheId/analytics': typeof AuthenticatedProductsBrandIdNichesNicheIdAnalyticsRoute
+  '/products/$brandId/niches/$nicheId/campaigns': typeof AuthenticatedProductsBrandIdNichesNicheIdCampaignsRoute
+  '/products/$brandId/niches/$nicheId/collection': typeof AuthenticatedProductsBrandIdNichesNicheIdCollectionRoute
+  '/products/$brandId/niches/$nicheId/messaging': typeof AuthenticatedProductsBrandIdNichesNicheIdMessagingRoute
+  '/products/$brandId/niches/$nicheId/': typeof AuthenticatedProductsBrandIdNichesNicheIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof authLoginRoute
@@ -257,10 +321,17 @@ export interface FileRoutesByTo {
   '/avatars': typeof AuthenticatedAvatarsIndexRoute
   '/brands': typeof AuthenticatedBrandsIndexRoute
   '/campaigns': typeof AuthenticatedCampaignsIndexRoute
+  '/products': typeof AuthenticatedProductsIndexRoute
   '/settings': typeof AuthenticatedSettingsIndexRoute
   '/targets': typeof AuthenticatedTargetsIndexRoute
   '/tasks': typeof AuthenticatedTasksIndexRoute
   '/workers': typeof AuthenticatedWorkersIndexRoute
+  '/products/$brandId': typeof AuthenticatedProductsBrandIdIndexRoute
+  '/products/$brandId/niches/$nicheId/analytics': typeof AuthenticatedProductsBrandIdNichesNicheIdAnalyticsRoute
+  '/products/$brandId/niches/$nicheId/campaigns': typeof AuthenticatedProductsBrandIdNichesNicheIdCampaignsRoute
+  '/products/$brandId/niches/$nicheId/collection': typeof AuthenticatedProductsBrandIdNichesNicheIdCollectionRoute
+  '/products/$brandId/niches/$nicheId/messaging': typeof AuthenticatedProductsBrandIdNichesNicheIdMessagingRoute
+  '/products/$brandId/niches/$nicheId': typeof AuthenticatedProductsBrandIdNichesNicheIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -289,10 +360,18 @@ export interface FileRoutesById {
   '/_authenticated/avatars/': typeof AuthenticatedAvatarsIndexRoute
   '/_authenticated/brands/': typeof AuthenticatedBrandsIndexRoute
   '/_authenticated/campaigns/': typeof AuthenticatedCampaignsIndexRoute
+  '/_authenticated/products/': typeof AuthenticatedProductsIndexRoute
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
   '/_authenticated/targets/': typeof AuthenticatedTargetsIndexRoute
   '/_authenticated/tasks/': typeof AuthenticatedTasksIndexRoute
   '/_authenticated/workers/': typeof AuthenticatedWorkersIndexRoute
+  '/_authenticated/products/$brandId/': typeof AuthenticatedProductsBrandIdIndexRoute
+  '/_authenticated/products/$brandId/niches/$nicheId': typeof AuthenticatedProductsBrandIdNichesNicheIdRouteRouteWithChildren
+  '/_authenticated/products/$brandId/niches/$nicheId/analytics': typeof AuthenticatedProductsBrandIdNichesNicheIdAnalyticsRoute
+  '/_authenticated/products/$brandId/niches/$nicheId/campaigns': typeof AuthenticatedProductsBrandIdNichesNicheIdCampaignsRoute
+  '/_authenticated/products/$brandId/niches/$nicheId/collection': typeof AuthenticatedProductsBrandIdNichesNicheIdCollectionRoute
+  '/_authenticated/products/$brandId/niches/$nicheId/messaging': typeof AuthenticatedProductsBrandIdNichesNicheIdMessagingRoute
+  '/_authenticated/products/$brandId/niches/$nicheId/': typeof AuthenticatedProductsBrandIdNichesNicheIdIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -321,10 +400,18 @@ export interface FileRouteTypes {
     | '/avatars/'
     | '/brands/'
     | '/campaigns/'
+    | '/products/'
     | '/settings/'
     | '/targets/'
     | '/tasks/'
     | '/workers/'
+    | '/products/$brandId/'
+    | '/products/$brandId/niches/$nicheId'
+    | '/products/$brandId/niches/$nicheId/analytics'
+    | '/products/$brandId/niches/$nicheId/campaigns'
+    | '/products/$brandId/niches/$nicheId/collection'
+    | '/products/$brandId/niches/$nicheId/messaging'
+    | '/products/$brandId/niches/$nicheId/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -350,10 +437,17 @@ export interface FileRouteTypes {
     | '/avatars'
     | '/brands'
     | '/campaigns'
+    | '/products'
     | '/settings'
     | '/targets'
     | '/tasks'
     | '/workers'
+    | '/products/$brandId'
+    | '/products/$brandId/niches/$nicheId/analytics'
+    | '/products/$brandId/niches/$nicheId/campaigns'
+    | '/products/$brandId/niches/$nicheId/collection'
+    | '/products/$brandId/niches/$nicheId/messaging'
+    | '/products/$brandId/niches/$nicheId'
   id:
     | '__root__'
     | '/_authenticated'
@@ -381,10 +475,18 @@ export interface FileRouteTypes {
     | '/_authenticated/avatars/'
     | '/_authenticated/brands/'
     | '/_authenticated/campaigns/'
+    | '/_authenticated/products/'
     | '/_authenticated/settings/'
     | '/_authenticated/targets/'
     | '/_authenticated/tasks/'
     | '/_authenticated/workers/'
+    | '/_authenticated/products/$brandId/'
+    | '/_authenticated/products/$brandId/niches/$nicheId'
+    | '/_authenticated/products/$brandId/niches/$nicheId/analytics'
+    | '/_authenticated/products/$brandId/niches/$nicheId/campaigns'
+    | '/_authenticated/products/$brandId/niches/$nicheId/collection'
+    | '/_authenticated/products/$brandId/niches/$nicheId/messaging'
+    | '/_authenticated/products/$brandId/niches/$nicheId/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -489,6 +591,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/settings/'
       preLoaderRoute: typeof AuthenticatedSettingsIndexRouteImport
       parentRoute: typeof AuthenticatedSettingsRouteRoute
+    }
+    '/_authenticated/products/': {
+      id: '/_authenticated/products/'
+      path: '/products'
+      fullPath: '/products/'
+      preLoaderRoute: typeof AuthenticatedProductsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/campaigns/': {
       id: '/_authenticated/campaigns/'
@@ -602,6 +711,55 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedErrorsErrorRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/products/$brandId/': {
+      id: '/_authenticated/products/$brandId/'
+      path: '/products/$brandId'
+      fullPath: '/products/$brandId/'
+      preLoaderRoute: typeof AuthenticatedProductsBrandIdIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/products/$brandId/niches/$nicheId': {
+      id: '/_authenticated/products/$brandId/niches/$nicheId'
+      path: '/products/$brandId/niches/$nicheId'
+      fullPath: '/products/$brandId/niches/$nicheId'
+      preLoaderRoute: typeof AuthenticatedProductsBrandIdNichesNicheIdRouteRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/products/$brandId/niches/$nicheId/': {
+      id: '/_authenticated/products/$brandId/niches/$nicheId/'
+      path: '/'
+      fullPath: '/products/$brandId/niches/$nicheId/'
+      preLoaderRoute: typeof AuthenticatedProductsBrandIdNichesNicheIdIndexRouteImport
+      parentRoute: typeof AuthenticatedProductsBrandIdNichesNicheIdRouteRoute
+    }
+    '/_authenticated/products/$brandId/niches/$nicheId/messaging': {
+      id: '/_authenticated/products/$brandId/niches/$nicheId/messaging'
+      path: '/messaging'
+      fullPath: '/products/$brandId/niches/$nicheId/messaging'
+      preLoaderRoute: typeof AuthenticatedProductsBrandIdNichesNicheIdMessagingRouteImport
+      parentRoute: typeof AuthenticatedProductsBrandIdNichesNicheIdRouteRoute
+    }
+    '/_authenticated/products/$brandId/niches/$nicheId/collection': {
+      id: '/_authenticated/products/$brandId/niches/$nicheId/collection'
+      path: '/collection'
+      fullPath: '/products/$brandId/niches/$nicheId/collection'
+      preLoaderRoute: typeof AuthenticatedProductsBrandIdNichesNicheIdCollectionRouteImport
+      parentRoute: typeof AuthenticatedProductsBrandIdNichesNicheIdRouteRoute
+    }
+    '/_authenticated/products/$brandId/niches/$nicheId/campaigns': {
+      id: '/_authenticated/products/$brandId/niches/$nicheId/campaigns'
+      path: '/campaigns'
+      fullPath: '/products/$brandId/niches/$nicheId/campaigns'
+      preLoaderRoute: typeof AuthenticatedProductsBrandIdNichesNicheIdCampaignsRouteImport
+      parentRoute: typeof AuthenticatedProductsBrandIdNichesNicheIdRouteRoute
+    }
+    '/_authenticated/products/$brandId/niches/$nicheId/analytics': {
+      id: '/_authenticated/products/$brandId/niches/$nicheId/analytics'
+      path: '/analytics'
+      fullPath: '/products/$brandId/niches/$nicheId/analytics'
+      preLoaderRoute: typeof AuthenticatedProductsBrandIdNichesNicheIdAnalyticsRouteImport
+      parentRoute: typeof AuthenticatedProductsBrandIdNichesNicheIdRouteRoute
+    }
   }
 }
 
@@ -634,6 +792,33 @@ const AuthenticatedSettingsRouteRouteWithChildren =
     AuthenticatedSettingsRouteRouteChildren,
   )
 
+interface AuthenticatedProductsBrandIdNichesNicheIdRouteRouteChildren {
+  AuthenticatedProductsBrandIdNichesNicheIdAnalyticsRoute: typeof AuthenticatedProductsBrandIdNichesNicheIdAnalyticsRoute
+  AuthenticatedProductsBrandIdNichesNicheIdCampaignsRoute: typeof AuthenticatedProductsBrandIdNichesNicheIdCampaignsRoute
+  AuthenticatedProductsBrandIdNichesNicheIdCollectionRoute: typeof AuthenticatedProductsBrandIdNichesNicheIdCollectionRoute
+  AuthenticatedProductsBrandIdNichesNicheIdMessagingRoute: typeof AuthenticatedProductsBrandIdNichesNicheIdMessagingRoute
+  AuthenticatedProductsBrandIdNichesNicheIdIndexRoute: typeof AuthenticatedProductsBrandIdNichesNicheIdIndexRoute
+}
+
+const AuthenticatedProductsBrandIdNichesNicheIdRouteRouteChildren: AuthenticatedProductsBrandIdNichesNicheIdRouteRouteChildren =
+  {
+    AuthenticatedProductsBrandIdNichesNicheIdAnalyticsRoute:
+      AuthenticatedProductsBrandIdNichesNicheIdAnalyticsRoute,
+    AuthenticatedProductsBrandIdNichesNicheIdCampaignsRoute:
+      AuthenticatedProductsBrandIdNichesNicheIdCampaignsRoute,
+    AuthenticatedProductsBrandIdNichesNicheIdCollectionRoute:
+      AuthenticatedProductsBrandIdNichesNicheIdCollectionRoute,
+    AuthenticatedProductsBrandIdNichesNicheIdMessagingRoute:
+      AuthenticatedProductsBrandIdNichesNicheIdMessagingRoute,
+    AuthenticatedProductsBrandIdNichesNicheIdIndexRoute:
+      AuthenticatedProductsBrandIdNichesNicheIdIndexRoute,
+  }
+
+const AuthenticatedProductsBrandIdNichesNicheIdRouteRouteWithChildren =
+  AuthenticatedProductsBrandIdNichesNicheIdRouteRoute._addFileChildren(
+    AuthenticatedProductsBrandIdNichesNicheIdRouteRouteChildren,
+  )
+
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedSettingsRouteRoute: typeof AuthenticatedSettingsRouteRouteWithChildren
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
@@ -646,9 +831,12 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAvatarsIndexRoute: typeof AuthenticatedAvatarsIndexRoute
   AuthenticatedBrandsIndexRoute: typeof AuthenticatedBrandsIndexRoute
   AuthenticatedCampaignsIndexRoute: typeof AuthenticatedCampaignsIndexRoute
+  AuthenticatedProductsIndexRoute: typeof AuthenticatedProductsIndexRoute
   AuthenticatedTargetsIndexRoute: typeof AuthenticatedTargetsIndexRoute
   AuthenticatedTasksIndexRoute: typeof AuthenticatedTasksIndexRoute
   AuthenticatedWorkersIndexRoute: typeof AuthenticatedWorkersIndexRoute
+  AuthenticatedProductsBrandIdIndexRoute: typeof AuthenticatedProductsBrandIdIndexRoute
+  AuthenticatedProductsBrandIdNichesNicheIdRouteRoute: typeof AuthenticatedProductsBrandIdNichesNicheIdRouteRouteWithChildren
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -663,9 +851,14 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAvatarsIndexRoute: AuthenticatedAvatarsIndexRoute,
   AuthenticatedBrandsIndexRoute: AuthenticatedBrandsIndexRoute,
   AuthenticatedCampaignsIndexRoute: AuthenticatedCampaignsIndexRoute,
+  AuthenticatedProductsIndexRoute: AuthenticatedProductsIndexRoute,
   AuthenticatedTargetsIndexRoute: AuthenticatedTargetsIndexRoute,
   AuthenticatedTasksIndexRoute: AuthenticatedTasksIndexRoute,
   AuthenticatedWorkersIndexRoute: AuthenticatedWorkersIndexRoute,
+  AuthenticatedProductsBrandIdIndexRoute:
+    AuthenticatedProductsBrandIdIndexRoute,
+  AuthenticatedProductsBrandIdNichesNicheIdRouteRoute:
+    AuthenticatedProductsBrandIdNichesNicheIdRouteRouteWithChildren,
 }
 
 const AuthenticatedRouteRouteWithChildren =
