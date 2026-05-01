@@ -23,13 +23,16 @@ import { Route as AuthenticatedVideosIndexRouteImport } from './routes/_authenti
 import { Route as AuthenticatedTasksIndexRouteImport } from './routes/_authenticated/tasks/index'
 import { Route as AuthenticatedTargetsIndexRouteImport } from './routes/_authenticated/targets/index'
 import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
+import { Route as AuthenticatedQueueIndexRouteImport } from './routes/_authenticated/queue/index'
 import { Route as AuthenticatedProductsIndexRouteImport } from './routes/_authenticated/products/index'
 import { Route as AuthenticatedOnboardingIndexRouteImport } from './routes/_authenticated/onboarding/index'
+import { Route as AuthenticatedFeedIndexRouteImport } from './routes/_authenticated/feed/index'
 import { Route as AuthenticatedCampaignsIndexRouteImport } from './routes/_authenticated/campaigns/index'
 import { Route as AuthenticatedBrandsIndexRouteImport } from './routes/_authenticated/brands/index'
 import { Route as AuthenticatedAvatarsIndexRouteImport } from './routes/_authenticated/avatars/index'
 import { Route as AuthenticatedAuditIndexRouteImport } from './routes/_authenticated/audit/index'
 import { Route as AuthenticatedAnalyticsIndexRouteImport } from './routes/_authenticated/analytics/index'
+import { Route as AuthenticatedAlertsIndexRouteImport } from './routes/_authenticated/alerts/index'
 import { Route as AuthenticatedAccountsIndexRouteImport } from './routes/_authenticated/accounts/index'
 import { Route as AuthenticatedWorkersIpMonitorRouteImport } from './routes/_authenticated/workers/ip-monitor'
 import { Route as AuthenticatedWorkersErrorsRouteImport } from './routes/_authenticated/workers/errors'
@@ -124,6 +127,11 @@ const AuthenticatedSettingsIndexRoute =
     path: '/',
     getParentRoute: () => AuthenticatedSettingsRouteRoute,
   } as any)
+const AuthenticatedQueueIndexRoute = AuthenticatedQueueIndexRouteImport.update({
+  id: '/queue/',
+  path: '/queue/',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedProductsIndexRoute =
   AuthenticatedProductsIndexRouteImport.update({
     id: '/products/',
@@ -136,6 +144,11 @@ const AuthenticatedOnboardingIndexRoute =
     path: '/onboarding/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedFeedIndexRoute = AuthenticatedFeedIndexRouteImport.update({
+  id: '/feed/',
+  path: '/feed/',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedCampaignsIndexRoute =
   AuthenticatedCampaignsIndexRouteImport.update({
     id: '/campaigns/',
@@ -163,6 +176,12 @@ const AuthenticatedAnalyticsIndexRoute =
   AuthenticatedAnalyticsIndexRouteImport.update({
     id: '/analytics/',
     path: '/analytics/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAlertsIndexRoute =
+  AuthenticatedAlertsIndexRouteImport.update({
+    id: '/alerts/',
+    path: '/alerts/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedAccountsIndexRoute =
@@ -301,13 +320,16 @@ export interface FileRoutesByFullPath {
   '/workers/errors': typeof AuthenticatedWorkersErrorsRoute
   '/workers/ip-monitor': typeof AuthenticatedWorkersIpMonitorRoute
   '/accounts/': typeof AuthenticatedAccountsIndexRoute
+  '/alerts/': typeof AuthenticatedAlertsIndexRoute
   '/analytics/': typeof AuthenticatedAnalyticsIndexRoute
   '/audit/': typeof AuthenticatedAuditIndexRoute
   '/avatars/': typeof AuthenticatedAvatarsIndexRoute
   '/brands/': typeof AuthenticatedBrandsIndexRoute
   '/campaigns/': typeof AuthenticatedCampaignsIndexRoute
+  '/feed/': typeof AuthenticatedFeedIndexRoute
   '/onboarding/': typeof AuthenticatedOnboardingIndexRoute
   '/products/': typeof AuthenticatedProductsIndexRoute
+  '/queue/': typeof AuthenticatedQueueIndexRoute
   '/settings/': typeof AuthenticatedSettingsIndexRoute
   '/targets/': typeof AuthenticatedTargetsIndexRoute
   '/tasks/': typeof AuthenticatedTasksIndexRoute
@@ -341,13 +363,16 @@ export interface FileRoutesByTo {
   '/workers/errors': typeof AuthenticatedWorkersErrorsRoute
   '/workers/ip-monitor': typeof AuthenticatedWorkersIpMonitorRoute
   '/accounts': typeof AuthenticatedAccountsIndexRoute
+  '/alerts': typeof AuthenticatedAlertsIndexRoute
   '/analytics': typeof AuthenticatedAnalyticsIndexRoute
   '/audit': typeof AuthenticatedAuditIndexRoute
   '/avatars': typeof AuthenticatedAvatarsIndexRoute
   '/brands': typeof AuthenticatedBrandsIndexRoute
   '/campaigns': typeof AuthenticatedCampaignsIndexRoute
+  '/feed': typeof AuthenticatedFeedIndexRoute
   '/onboarding': typeof AuthenticatedOnboardingIndexRoute
   '/products': typeof AuthenticatedProductsIndexRoute
+  '/queue': typeof AuthenticatedQueueIndexRoute
   '/settings': typeof AuthenticatedSettingsIndexRoute
   '/targets': typeof AuthenticatedTargetsIndexRoute
   '/tasks': typeof AuthenticatedTasksIndexRoute
@@ -383,13 +408,16 @@ export interface FileRoutesById {
   '/_authenticated/workers/errors': typeof AuthenticatedWorkersErrorsRoute
   '/_authenticated/workers/ip-monitor': typeof AuthenticatedWorkersIpMonitorRoute
   '/_authenticated/accounts/': typeof AuthenticatedAccountsIndexRoute
+  '/_authenticated/alerts/': typeof AuthenticatedAlertsIndexRoute
   '/_authenticated/analytics/': typeof AuthenticatedAnalyticsIndexRoute
   '/_authenticated/audit/': typeof AuthenticatedAuditIndexRoute
   '/_authenticated/avatars/': typeof AuthenticatedAvatarsIndexRoute
   '/_authenticated/brands/': typeof AuthenticatedBrandsIndexRoute
   '/_authenticated/campaigns/': typeof AuthenticatedCampaignsIndexRoute
+  '/_authenticated/feed/': typeof AuthenticatedFeedIndexRoute
   '/_authenticated/onboarding/': typeof AuthenticatedOnboardingIndexRoute
   '/_authenticated/products/': typeof AuthenticatedProductsIndexRoute
+  '/_authenticated/queue/': typeof AuthenticatedQueueIndexRoute
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
   '/_authenticated/targets/': typeof AuthenticatedTargetsIndexRoute
   '/_authenticated/tasks/': typeof AuthenticatedTasksIndexRoute
@@ -426,13 +454,16 @@ export interface FileRouteTypes {
     | '/workers/errors'
     | '/workers/ip-monitor'
     | '/accounts/'
+    | '/alerts/'
     | '/analytics/'
     | '/audit/'
     | '/avatars/'
     | '/brands/'
     | '/campaigns/'
+    | '/feed/'
     | '/onboarding/'
     | '/products/'
+    | '/queue/'
     | '/settings/'
     | '/targets/'
     | '/tasks/'
@@ -466,13 +497,16 @@ export interface FileRouteTypes {
     | '/workers/errors'
     | '/workers/ip-monitor'
     | '/accounts'
+    | '/alerts'
     | '/analytics'
     | '/audit'
     | '/avatars'
     | '/brands'
     | '/campaigns'
+    | '/feed'
     | '/onboarding'
     | '/products'
+    | '/queue'
     | '/settings'
     | '/targets'
     | '/tasks'
@@ -507,13 +541,16 @@ export interface FileRouteTypes {
     | '/_authenticated/workers/errors'
     | '/_authenticated/workers/ip-monitor'
     | '/_authenticated/accounts/'
+    | '/_authenticated/alerts/'
     | '/_authenticated/analytics/'
     | '/_authenticated/audit/'
     | '/_authenticated/avatars/'
     | '/_authenticated/brands/'
     | '/_authenticated/campaigns/'
+    | '/_authenticated/feed/'
     | '/_authenticated/onboarding/'
     | '/_authenticated/products/'
+    | '/_authenticated/queue/'
     | '/_authenticated/settings/'
     | '/_authenticated/targets/'
     | '/_authenticated/tasks/'
@@ -638,6 +675,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsIndexRouteImport
       parentRoute: typeof AuthenticatedSettingsRouteRoute
     }
+    '/_authenticated/queue/': {
+      id: '/_authenticated/queue/'
+      path: '/queue'
+      fullPath: '/queue/'
+      preLoaderRoute: typeof AuthenticatedQueueIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/products/': {
       id: '/_authenticated/products/'
       path: '/products'
@@ -650,6 +694,13 @@ declare module '@tanstack/react-router' {
       path: '/onboarding'
       fullPath: '/onboarding/'
       preLoaderRoute: typeof AuthenticatedOnboardingIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/feed/': {
+      id: '/_authenticated/feed/'
+      path: '/feed'
+      fullPath: '/feed/'
+      preLoaderRoute: typeof AuthenticatedFeedIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/campaigns/': {
@@ -685,6 +736,13 @@ declare module '@tanstack/react-router' {
       path: '/analytics'
       fullPath: '/analytics/'
       preLoaderRoute: typeof AuthenticatedAnalyticsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/alerts/': {
+      id: '/_authenticated/alerts/'
+      path: '/alerts'
+      fullPath: '/alerts/'
+      preLoaderRoute: typeof AuthenticatedAlertsIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/accounts/': {
@@ -887,13 +945,16 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedWorkersErrorsRoute: typeof AuthenticatedWorkersErrorsRoute
   AuthenticatedWorkersIpMonitorRoute: typeof AuthenticatedWorkersIpMonitorRoute
   AuthenticatedAccountsIndexRoute: typeof AuthenticatedAccountsIndexRoute
+  AuthenticatedAlertsIndexRoute: typeof AuthenticatedAlertsIndexRoute
   AuthenticatedAnalyticsIndexRoute: typeof AuthenticatedAnalyticsIndexRoute
   AuthenticatedAuditIndexRoute: typeof AuthenticatedAuditIndexRoute
   AuthenticatedAvatarsIndexRoute: typeof AuthenticatedAvatarsIndexRoute
   AuthenticatedBrandsIndexRoute: typeof AuthenticatedBrandsIndexRoute
   AuthenticatedCampaignsIndexRoute: typeof AuthenticatedCampaignsIndexRoute
+  AuthenticatedFeedIndexRoute: typeof AuthenticatedFeedIndexRoute
   AuthenticatedOnboardingIndexRoute: typeof AuthenticatedOnboardingIndexRoute
   AuthenticatedProductsIndexRoute: typeof AuthenticatedProductsIndexRoute
+  AuthenticatedQueueIndexRoute: typeof AuthenticatedQueueIndexRoute
   AuthenticatedTargetsIndexRoute: typeof AuthenticatedTargetsIndexRoute
   AuthenticatedTasksIndexRoute: typeof AuthenticatedTasksIndexRoute
   AuthenticatedVideosIndexRoute: typeof AuthenticatedVideosIndexRoute
@@ -910,13 +971,16 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedWorkersErrorsRoute: AuthenticatedWorkersErrorsRoute,
   AuthenticatedWorkersIpMonitorRoute: AuthenticatedWorkersIpMonitorRoute,
   AuthenticatedAccountsIndexRoute: AuthenticatedAccountsIndexRoute,
+  AuthenticatedAlertsIndexRoute: AuthenticatedAlertsIndexRoute,
   AuthenticatedAnalyticsIndexRoute: AuthenticatedAnalyticsIndexRoute,
   AuthenticatedAuditIndexRoute: AuthenticatedAuditIndexRoute,
   AuthenticatedAvatarsIndexRoute: AuthenticatedAvatarsIndexRoute,
   AuthenticatedBrandsIndexRoute: AuthenticatedBrandsIndexRoute,
   AuthenticatedCampaignsIndexRoute: AuthenticatedCampaignsIndexRoute,
+  AuthenticatedFeedIndexRoute: AuthenticatedFeedIndexRoute,
   AuthenticatedOnboardingIndexRoute: AuthenticatedOnboardingIndexRoute,
   AuthenticatedProductsIndexRoute: AuthenticatedProductsIndexRoute,
+  AuthenticatedQueueIndexRoute: AuthenticatedQueueIndexRoute,
   AuthenticatedTargetsIndexRoute: AuthenticatedTargetsIndexRoute,
   AuthenticatedTasksIndexRoute: AuthenticatedTasksIndexRoute,
   AuthenticatedVideosIndexRoute: AuthenticatedVideosIndexRoute,
