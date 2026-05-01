@@ -49,3 +49,62 @@ export interface NicheOverview {
   active_campaigns: NicheActiveCampaign[]
   recent_alerts: unknown[]
 }
+
+// ─── PR-4c: Collection ───────────────────────────────────────────
+
+export type FlowStageName = 'discovered' | 'market_fit' | 'in_pool' | 'comment_posted'
+
+export interface FlowStage {
+  stage: FlowStageName
+  count: number
+  pass_rate: number | null
+  is_bottleneck: boolean
+}
+
+export interface CollectionFlow {
+  window_hours: number
+  threshold: number
+  stages: FlowStage[]
+}
+
+export type KeywordPolling = '5min' | '30min' | 'daily'
+
+export interface KeywordVariation {
+  id: number
+  text: string
+  status: string
+}
+
+export interface KeywordWithMetrics {
+  id: number
+  text: string
+  kind: 'positive' | 'negative'
+  polling: KeywordPolling
+  status: string
+  tier: string | null
+  variations: KeywordVariation[]
+  metrics_7d: {
+    discovered: number
+    passed_market: number
+    pass_rate: number | null
+  }
+}
+
+export type RecentVideoResult =
+  | 'passed'
+  | 'rejected_market'
+  | 'rejected_hard_block'
+  | 'rejected_other'
+
+export interface RecentVideo {
+  video_id: string
+  title: string | null
+  channel: string | null
+  view_count: number | null
+  url: string
+  keyword_matched: string | null
+  market_fitness: number | null
+  result: RecentVideoResult
+  result_reason: string | null
+  collected_at: string | null
+}
