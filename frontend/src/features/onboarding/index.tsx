@@ -12,6 +12,7 @@
  */
 import { useEffect, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
+import { X } from 'lucide-react'
 
 import { fetchApi, http } from '@/lib/api'
 import { Header } from '@/components/layout/header'
@@ -395,6 +396,9 @@ function Step3({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
+            // 한글 IME 조합 중이면 Enter 무시 (탈모 → 탈/모 분리 방지).
+            // isComposing 은 모던 브라우저, keyCode 229 는 legacy IME 호환.
+            if (e.nativeEvent.isComposing || e.keyCode === 229) return
             if (e.key === 'Enter') {
               e.preventDefault()
               tryAdd()
@@ -418,16 +422,16 @@ function Step3({
           {keywords.map((kw) => (
             <span
               key={kw}
-              className='hydra-tag hydra-tag-secondary inline-flex items-center gap-1.5'
+              className='inline-flex items-center gap-1.5 bg-secondary text-secondary-foreground rounded-md text-[13px] pl-3 pr-1 py-1'
             >
               {kw}
               <button
                 type='button'
                 onClick={() => onRemove(kw)}
-                className='text-muted-foreground hover:text-foreground'
+                className='inline-flex items-center justify-center w-[18px] h-[18px] rounded bg-foreground/[0.06] hover:bg-foreground/[0.12] transition-colors'
                 aria-label={`${kw} 삭제`}
               >
-                ✕
+                <X className='w-3 h-3' />
               </button>
             </span>
           ))}
