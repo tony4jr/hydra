@@ -280,6 +280,7 @@ class Video(Base):
     next_revisit_at = Column(DateTime)
     state = Column(String(20), default="pending")  # pending|active|paused|completed|blacklisted
     blacklist_reason = Column(String(100))
+    is_longrun = Column(Boolean, default=False, nullable=False)  # PR-8f
     top_comment_likes = Column(Integer, default=0)  # 베스트댓글 진입성 점수용
     view_count_prev_day = Column(Integer, default=0)
     views_per_hour_recent = Column(Float, default=0)
@@ -814,6 +815,24 @@ class CommentTreeSlot(Base):
         UniqueConstraint("comment_preset_id", "slot_label", name="uq_slots_preset_label"),
         Index("ix_slots_preset", "comment_preset_id"),
     )
+
+
+# PR-8f — 영상 점수 (100점 + 부스트 + 안전필터)
+class VideoScore(Base):
+    __tablename__ = "video_scores"
+
+    video_id = Column(String, ForeignKey("videos.id", ondelete="CASCADE"),
+                      primary_key=True)
+    recency_score = Column(Integer, default=0, nullable=False)
+    view_score = Column(Integer, default=0, nullable=False)
+    keyword_score = Column(Integer, default=0, nullable=False)
+    boost_favorite_channel = Column(Integer, default=0, nullable=False)
+    boost_favorite_video = Column(Integer, default=0, nullable=False)
+    total_score = Column(Integer, default=0, nullable=False)
+    safety_filter_reason = Column(String(60))
+    calculated_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+
+    __table_args__ = (Index("ix_video_scores_total", "total_score"),)
 
 
 class ProfileLock(Base):

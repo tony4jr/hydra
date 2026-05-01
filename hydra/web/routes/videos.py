@@ -310,3 +310,45 @@ def video_timeline(video_id: str, db: Session = Depends(get_db)):
         "events": events,
         "upcoming": [],
     }
+
+
+# ─── PR-8f: 점수 ─────────────────────────────────────────────────
+
+
+from hydra.db.models import VideoScore
+from hydra.services.video_score import compute_score
+
+
+@router.post("/api/{video_id}/recalc-score")
+def recalc_score(video_id: str, db: Session = Depends(get_db)):
+    v = db.get(Video, video_id)
+    if v is None:
+        raise HTTPException(404, "video not found")
+    s = compute_score(db, v)
+    db.commit()
+    return {
+        "video_id": s.video_id,
+        "total_score": s.total_score,
+        "recency_score": s.recency_score,
+        "view_score": s.view_score,
+        "keyword_score": s.keyword_score,
+        "safety_filter_reason": s.safety_filter_reason,
+    }
+
+
+@router.get("/api/{video_id}/score")
+def get_score(video_id: str, db: Session = Depends(get_db)):
+    s = db.get(VideoScore, video_id)
+    if s is None:
+        return {"video_id": video_id, "total_score": None, "calculated_at": None}
+    return {
+        "video_id": s.video_id,
+        "recency_score": s.recency_score,
+        "view_score": s.view_score,
+        "keyword_score": s.keyword_score,
+        "boost_favorite_channel": s.boost_favorite_channel,
+        "boost_favorite_video": s.boost_favorite_video,
+        "total_score": s.total_score,
+        "safety_filter_reason": s.safety_filter_reason,
+        "calculated_at": s.calculated_at.isoformat() if s.calculated_at else None,
+    }
