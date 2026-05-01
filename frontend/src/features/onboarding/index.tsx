@@ -1,8 +1,14 @@
 /**
- * /onboarding — 신규 사용자 wizard (PR-7).
+ * /onboarding — 신규 사용자 wizard (PR-7 + UX hot fix).
  *
  * 5 단계: Brand → Niche → Keyword → Market Definition → Done.
- * 진행 상태는 localStorage 에 저장 (DB 변경 0). AI helper 는 followup.
+ * 진행 상태는 localStorage 에 저장 (DB 변경 0).
+ *
+ * UX hot fix:
+ * - 진행한/현재 탭 클릭 시 해당 단계로 이동 (입력 데이터 보존)
+ * - 키워드 탭 Enter → 키워드 등록 (이전: 다음 단계 진행)
+ * - 키워드 칩 list + ✕ 삭제, 중복 무시
+ * - '다음' 버튼: 키워드 1개 이상일 때만 활성
  */
 import { useEffect, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
@@ -18,9 +24,11 @@ const STORAGE_KEY = 'hydra_onboarding_state'
 
 interface State {
   step: number
+  reachedStep: number  // 진행한 최대 단계 — 탭 클릭 가능 범위
   brandId: number | null
   nicheId: number | null
-  keyword: string
+  keywords: string[]
+  registeredKeywordIds: number[]  // 이미 백엔드에 등록된 키워드 (중복 호출 방지)
   marketDefinition: string
   brandName: string
   category: string
@@ -29,9 +37,11 @@ interface State {
 
 const DEFAULT_STATE: State = {
   step: 1,
+  reachedStep: 1,
   brandId: null,
   nicheId: null,
-  keyword: '',
+  keywords: [],
+  registeredKeywordIds: [],
   marketDefinition: '',
   brandName: '',
   category: '',
@@ -70,6 +80,16 @@ export default function OnboardingPage() {
 
   const update = (patch: Partial<State>) => setState((s) => ({ ...s, ...patch }))
 
+  const goToStep = (n: number) => {
+    if (n > state.reachedStep) return
+    setError(null)
+    update({ step: n })
+  }
+
+  const advance = (next: number) => {
+    update({ step: next, reachedStep: Math.max(state.reachedStep, next) })
+  }
+
   const submitBrand = async () => {
     if (!state.brandName.trim()) {
       setError('브랜드 이름을 입력해주세요')
@@ -78,17 +98,21 @@ export default function OnboardingPage() {
     setBusy(true)
     setError(null)
     try {
-      const b = await fetchApi<{ id: number; name: string }>('/brands/api/create', {
-        method: 'POST',
-        body: JSON.stringify({
-          name: state.brandName.trim(),
-          product_category: state.category || null,
-          core_message: state.coreMessage || null,
-        }),
-        headers: { 'Content-Type': 'application/json' },
-      })
-      update({ brandId: b.id, step: 2 })
-    } catch (e) {
+      // brandId 가 이미 있으면 재생성 X (사용자가 1번 탭으로 돌아왔다 다시 누른 경우)
+      if (state.brandId === null) {
+        const b = await fetchApi<{ id: number; name: string }>('/brands/api/create', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: state.brandName.trim(),
+            product_category: state.category || null,
+            core_message: state.coreMessage || null,
+          }),
+          headers: { 'Content-Type': 'application/json' },
+        })
+        update({ brandId: b.id })
+      }
+      advance(2)
+    } catch {
       setError('브랜드 생성에 실패했어요')
     } finally {
       setBusy(false)
@@ -100,12 +124,15 @@ export default function OnboardingPage() {
     setBusy(true)
     setError(null)
     try {
-      const n = await http.post<{ id: number }>('/api/admin/niches', {
-        brand_id: state.brandId,
-        name: `${state.brandName} 시장`,
-        description: '온보딩에서 자동 생성됨',
-      })
-      update({ nicheId: n.data.id, step: 3 })
+      if (state.nicheId === null) {
+        const n = await http.post<{ id: number }>('/api/admin/niches', {
+          brand_id: state.brandId,
+          name: `${state.brandName} 시장`,
+          description: '온보딩에서 자동 생성됨',
+        })
+        update({ nicheId: n.data.id })
+      }
+      advance(3)
     } catch {
       setError('시장 생성에 실패했어요')
     } finally {
@@ -113,20 +140,41 @@ export default function OnboardingPage() {
     }
   }
 
-  const submitKeyword = async () => {
+  const addKeyword = (text: string) => {
+    const t = text.trim()
+    if (!t) return
+    if (state.keywords.includes(t)) return
+    update({ keywords: [...state.keywords, t] })
+  }
+
+  const removeKeyword = (text: string) => {
+    update({ keywords: state.keywords.filter((k) => k !== text) })
+  }
+
+  const submitKeywords = async () => {
     if (state.nicheId === null) return
-    if (!state.keyword.trim()) {
-      setError('키워드를 입력해주세요')
+    if (state.keywords.length === 0) {
+      setError('키워드를 1개 이상 등록하세요')
       return
     }
     setBusy(true)
     setError(null)
     try {
-      await http.post(`/api/admin/niches/${state.nicheId}/keywords`, {
-        text: state.keyword.trim(),
-        polling: 'daily',
-      })
-      update({ step: 4 })
+      // 미등록 키워드만 백엔드 호출 (재진입 시 중복 호출 방지)
+      const registered = new Set(state.registeredKeywordIds)
+      const newIds: number[] = [...state.registeredKeywordIds]
+      const idxByText = new Map<string, number>()
+      state.keywords.forEach((k, i) => idxByText.set(k, i))
+      for (let i = 0; i < state.keywords.length; i++) {
+        if (registered.has(i)) continue
+        await http.post(`/api/admin/niches/${state.nicheId}/keywords`, {
+          text: state.keywords[i],
+          polling: 'daily',
+        })
+        newIds.push(i)
+      }
+      update({ registeredKeywordIds: newIds })
+      advance(4)
     } catch {
       setError('키워드 등록에 실패했어요')
     } finally {
@@ -142,7 +190,7 @@ export default function OnboardingPage() {
       await http.patch(`/api/admin/niches/${state.nicheId}`, {
         market_definition: state.marketDefinition || null,
       })
-      update({ step: 5 })
+      advance(5)
     } catch {
       setError('저장에 실패했어요')
     } finally {
@@ -182,7 +230,11 @@ export default function OnboardingPage() {
             </p>
           </div>
 
-          <Stepper current={state.step} />
+          <Stepper
+            current={state.step}
+            reached={state.reachedStep}
+            onClick={goToStep}
+          />
 
           {error && (
             <div className='bg-rose-500/10 border border-rose-400/40 rounded-md px-3 py-2 text-rose-500 text-[13px] mt-4'>
@@ -196,49 +248,58 @@ export default function OnboardingPage() {
             )}
             {state.step === 2 && <Step2 onNext={submitNiche} busy={busy} />}
             {state.step === 3 && (
-              <Step3 state={state} update={update} onNext={submitKeyword} busy={busy} />
+              <Step3
+                keywords={state.keywords}
+                onAdd={addKeyword}
+                onRemove={removeKeyword}
+                onNext={submitKeywords}
+                busy={busy}
+              />
             )}
             {state.step === 4 && (
               <Step4 state={state} update={update} onNext={submitMarketDef} busy={busy} />
             )}
             {state.step === 5 && <Step5 onFinish={finish} />}
           </div>
-
-          {state.step > 1 && state.step < 5 && (
-            <div className='mt-3 text-right'>
-              <button
-                onClick={() => update({ step: state.step - 1 })}
-                className='text-muted-foreground text-[12px] hover:underline'
-                disabled={busy}
-              >
-                ← 이전 단계
-              </button>
-            </div>
-          )}
         </div>
       </Main>
     </>
   )
 }
 
-function Stepper({ current }: { current: number }) {
+function Stepper({
+  current,
+  reached,
+  onClick,
+}: {
+  current: number
+  reached: number
+  onClick: (n: number) => void
+}) {
   return (
     <ol className='flex items-center gap-2'>
-      {STEPS.map((s) => (
-        <li
-          key={s.n}
-          className={
-            'flex-1 text-[12px] text-center py-1.5 rounded ' +
-            (s.n < current
-              ? 'bg-primary/20 text-foreground'
-              : s.n === current
-              ? 'bg-primary text-primary-foreground'
-              : 'bg-muted/30 text-muted-foreground')
-          }
-        >
-          {s.n}. {s.label}
-        </li>
-      ))}
+      {STEPS.map((s) => {
+        const isCurrent = s.n === current
+        const isCompleted = s.n < current
+        const isReachable = s.n <= reached
+        const tone = isCurrent
+          ? 'bg-primary text-primary-foreground'
+          : isCompleted
+          ? 'bg-primary/20 text-foreground hover:bg-primary/30'
+          : isReachable
+          ? 'bg-muted/40 text-foreground hover:bg-muted/60'
+          : 'bg-muted/30 text-muted-foreground/60 cursor-not-allowed'
+        const cursor = isReachable && !isCurrent ? 'cursor-pointer' : ''
+        return (
+          <li
+            key={s.n}
+            onClick={() => isReachable && onClick(s.n)}
+            className={`flex-1 text-[12px] text-center py-1.5 rounded transition-colors ${tone} ${cursor}`}
+          >
+            {s.n}. {s.label}
+          </li>
+        )
+      })}
     </ol>
   )
 }
@@ -275,7 +336,11 @@ function Step1({
         onChange={(v) => update({ coreMessage: v })}
         placeholder='예: 의학적 신뢰 + 자연 성분'
       />
-      <Button onClick={onNext} disabled={busy} className='hydra-btn-press w-full'>
+      <Button
+        onClick={onNext}
+        disabled={busy || !state.brandName.trim()}
+        className='hydra-btn-press w-full'
+      >
         {busy ? '저장 중…' : '다음'}
       </Button>
     </div>
@@ -298,30 +363,82 @@ function Step2({ onNext, busy }: { onNext: () => void; busy: boolean }) {
 }
 
 function Step3({
-  state,
-  update,
+  keywords,
+  onAdd,
+  onRemove,
   onNext,
   busy,
 }: {
-  state: State
-  update: (p: Partial<State>) => void
+  keywords: string[]
+  onAdd: (v: string) => void
+  onRemove: (v: string) => void
   onNext: () => void
   busy: boolean
 }) {
+  const [input, setInput] = useState('')
+
+  const tryAdd = () => {
+    const t = input.trim()
+    if (!t) return
+    onAdd(t)
+    setInput('')
+  }
+
   return (
     <div className='space-y-3'>
-      <h2 className='text-foreground font-semibold text-[15px]'>첫 키워드 추가</h2>
+      <h2 className='text-foreground font-semibold text-[15px]'>키워드 추가</h2>
       <p className='text-muted-foreground text-[13px]'>
-        시장이 영상을 발견하기 위한 키워드를 한 개 이상 등록하세요.
+        Enter 로 키워드를 등록하세요. 1개 이상 등록해야 다음 단계로 갈 수 있어요.
       </p>
-      <Input
-        label='키워드'
-        value={state.keyword}
-        onChange={(v) => update({ keyword: v })}
-        placeholder='예: 탈모 30대'
-      />
-      <Button onClick={onNext} disabled={busy} className='hydra-btn-press w-full'>
-        {busy ? '저장 중…' : '다음'}
+      <div className='flex gap-2'>
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              tryAdd()
+            }
+          }}
+          placeholder='예: 탈모 30대'
+          className='flex-1 bg-background border border-border rounded-md text-[13px] px-2 py-1.5'
+        />
+        <Button
+          type='button'
+          variant='outline'
+          size='sm'
+          onClick={tryAdd}
+          disabled={!input.trim()}
+        >
+          추가
+        </Button>
+      </div>
+      {keywords.length > 0 && (
+        <div className='flex flex-wrap gap-1.5'>
+          {keywords.map((kw) => (
+            <span
+              key={kw}
+              className='hydra-tag hydra-tag-secondary inline-flex items-center gap-1.5'
+            >
+              {kw}
+              <button
+                type='button'
+                onClick={() => onRemove(kw)}
+                className='text-muted-foreground hover:text-foreground'
+                aria-label={`${kw} 삭제`}
+              >
+                ✕
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <Button
+        onClick={onNext}
+        disabled={busy || keywords.length === 0}
+        className='hydra-btn-press w-full'
+      >
+        {busy ? '저장 중…' : `다음 (${keywords.length}개)`}
       </Button>
     </div>
   )
