@@ -45,6 +45,7 @@ import { Route as AuthenticatedSettingsDisplayRouteImport } from './routes/_auth
 import { Route as AuthenticatedSettingsBehaviorRouteImport } from './routes/_authenticated/settings/behavior'
 import { Route as AuthenticatedSettingsAppearanceRouteImport } from './routes/_authenticated/settings/appearance'
 import { Route as AuthenticatedSettingsAccountRouteImport } from './routes/_authenticated/settings/account'
+import { Route as AuthenticatedPresetsPresetIdRouteImport } from './routes/_authenticated/presets/$presetId'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
 import { Route as AuthenticatedProductsBrandIdIndexRouteImport } from './routes/_authenticated/products/$brandId/index'
 import { Route as AuthenticatedProductsBrandIdNichesNicheIdRouteRouteImport } from './routes/_authenticated/products/$brandId/niches/$nicheId/route'
@@ -257,6 +258,12 @@ const AuthenticatedSettingsAccountRoute =
     path: '/account',
     getParentRoute: () => AuthenticatedSettingsRouteRoute,
   } as any)
+const AuthenticatedPresetsPresetIdRoute =
+  AuthenticatedPresetsPresetIdRouteImport.update({
+    id: '/presets/$presetId',
+    path: '/presets/$presetId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedErrorsErrorRoute =
   AuthenticatedErrorsErrorRouteImport.update({
     id: '/errors/$error',
@@ -316,6 +323,7 @@ export interface FileRoutesByFullPath {
   '/500': typeof errors500Route
   '/503': typeof errors503Route
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/presets/$presetId': typeof AuthenticatedPresetsPresetIdRoute
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
   '/settings/behavior': typeof AuthenticatedSettingsBehaviorRoute
@@ -360,6 +368,7 @@ export interface FileRoutesByTo {
   '/503': typeof errors503Route
   '/': typeof AuthenticatedIndexRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/presets/$presetId': typeof AuthenticatedPresetsPresetIdRoute
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
   '/settings/behavior': typeof AuthenticatedSettingsBehaviorRoute
@@ -406,6 +415,7 @@ export interface FileRoutesById {
   '/(errors)/503': typeof errors503Route
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/_authenticated/presets/$presetId': typeof AuthenticatedPresetsPresetIdRoute
   '/_authenticated/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/_authenticated/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
   '/_authenticated/settings/behavior': typeof AuthenticatedSettingsBehaviorRoute
@@ -453,6 +463,7 @@ export interface FileRouteTypes {
     | '/500'
     | '/503'
     | '/errors/$error'
+    | '/presets/$presetId'
     | '/settings/account'
     | '/settings/appearance'
     | '/settings/behavior'
@@ -497,6 +508,7 @@ export interface FileRouteTypes {
     | '/503'
     | '/'
     | '/errors/$error'
+    | '/presets/$presetId'
     | '/settings/account'
     | '/settings/appearance'
     | '/settings/behavior'
@@ -542,6 +554,7 @@ export interface FileRouteTypes {
     | '/(errors)/503'
     | '/_authenticated/'
     | '/_authenticated/errors/$error'
+    | '/_authenticated/presets/$presetId'
     | '/_authenticated/settings/account'
     | '/_authenticated/settings/appearance'
     | '/_authenticated/settings/behavior'
@@ -842,6 +855,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsAccountRouteImport
       parentRoute: typeof AuthenticatedSettingsRouteRoute
     }
+    '/_authenticated/presets/$presetId': {
+      id: '/_authenticated/presets/$presetId'
+      path: '/presets/$presetId'
+      fullPath: '/presets/$presetId'
+      preLoaderRoute: typeof AuthenticatedPresetsPresetIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/errors/$error': {
       id: '/_authenticated/errors/$error'
       path: '/errors/$error'
@@ -961,6 +981,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedSettingsRouteRoute: typeof AuthenticatedSettingsRouteRouteWithChildren
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
+  AuthenticatedPresetsPresetIdRoute: typeof AuthenticatedPresetsPresetIdRoute
   AuthenticatedVideosVideoIdRoute: typeof AuthenticatedVideosVideoIdRoute
   AuthenticatedWorkersErrorsRoute: typeof AuthenticatedWorkersErrorsRoute
   AuthenticatedWorkersIpMonitorRoute: typeof AuthenticatedWorkersIpMonitorRoute
@@ -988,6 +1009,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedSettingsRouteRoute: AuthenticatedSettingsRouteRouteWithChildren,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
+  AuthenticatedPresetsPresetIdRoute: AuthenticatedPresetsPresetIdRoute,
   AuthenticatedVideosVideoIdRoute: AuthenticatedVideosVideoIdRoute,
   AuthenticatedWorkersErrorsRoute: AuthenticatedWorkersErrorsRoute,
   AuthenticatedWorkersIpMonitorRoute: AuthenticatedWorkersIpMonitorRoute,
