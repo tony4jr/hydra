@@ -16,6 +16,7 @@ import { fetchApi } from '@/lib/api'
 interface Brand {
   id: number
   name: string
+  product_name?: string | null
   product_category: string | null
   core_message: string | null
   promo_keywords: string[] | null
@@ -41,6 +42,7 @@ export function BrandFormDialog({
   onSuccess,
 }: BrandFormDialogProps) {
   const [name, setName] = useState('')
+  const [productName, setProductName] = useState('')
   const [category, setCategory] = useState('')
   const [coreMessage, setCoreMessage] = useState('')
   const [promoKeywords, setPromoKeywords] = useState<string[]>([])
@@ -55,6 +57,7 @@ export function BrandFormDialog({
     if (open) {
       if (mode === 'edit' && brand) {
         setName(brand.name || '')
+        setProductName(brand.product_name || '')
         setCategory(brand.product_category || '')
         setCoreMessage(brand.core_message || '')
         setPromoKeywords(brand.promo_keywords || [])
@@ -63,6 +66,7 @@ export function BrandFormDialog({
         setPresetVideoLimit(brand.preset_video_limit ?? 1)
       } else {
         setName('')
+        setProductName('')
         setCategory('')
         setCoreMessage('')
         setPromoKeywords([])
@@ -105,6 +109,7 @@ export function BrandFormDialog({
         method: 'POST',
         body: JSON.stringify({
           name: name.trim(),
+          product_name: productName.trim() || null,
           product_category: category.trim(),
           core_message: coreMessage.trim(),
           promo_keywords: promoKeywords,
@@ -160,15 +165,27 @@ export function BrandFormDialog({
           </DialogTitle>
         </DialogHeader>
         <div className='space-y-5 py-2'>
-          {/* Name */}
+          {/* Name (회사/모브랜드) */}
           <div className='mb-5'>
             <label className='text-foreground text-sm font-medium mb-1.5'>브랜드 이름</label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder='예: 모렉신'
+              placeholder='예: 트리코라'
               autoFocus
             />
+            <p className='text-muted-foreground text-xs mt-1'>회사 또는 모브랜드 이름</p>
+          </div>
+
+          {/* Product name */}
+          <div className='mb-5'>
+            <label className='text-foreground text-sm font-medium mb-1.5'>상품명</label>
+            <Input
+              value={productName}
+              onChange={(e) => setProductName(e.target.value)}
+              placeholder='예: 모렉신'
+            />
+            <p className='text-muted-foreground text-xs mt-1'>홍보할 개별 상품 (없으면 비워두세요)</p>
           </div>
 
           {/* Category */}

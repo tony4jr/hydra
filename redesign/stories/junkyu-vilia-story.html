@@ -1,0 +1,1218 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>HYDRA — 김준규 × VILIA, 워커 30대 풀가동 첫 1주</title>
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fafafa; --surface: #fff; --surface-2: #f4f4f5;
+    --border: #e4e4e7; --border-strong: #d4d4d8;
+    --text-1: #18181b; --text-2: #52525b; --text-3: #a1a1aa;
+    --primary: #18181b;
+    --info: #1d4ed8; --info-bg: #eff6ff;
+    --warn: #a16207; --warn-bg: #fef3c7;
+    --success: #15803d; --success-bg: #f0fdf4;
+    --like: #dc2626; --like-bg: #fef2f2;
+    --purple: #6d28d9; --purple-bg: #f5f3ff;
+    --vilia: linear-gradient(135deg, #06b6d4, #1e40af);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Pretendard Variable', Pretendard, -apple-system, sans-serif;
+    font-size: 14px; line-height: 1.6; color: var(--text-1);
+    background: var(--bg);
+  }
+
+  .cover {
+    background: linear-gradient(135deg, #06b6d4 0%, #1e40af 100%);
+    color: white; padding: 80px 48px; text-align: center;
+    position: relative; overflow: hidden;
+  }
+  .cover::before {
+    content: ''; position: absolute; inset: 0;
+    background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.15), transparent 50%);
+  }
+  .cover-title {
+    font-size: 42px; font-weight: 800; letter-spacing: -0.02em;
+    margin-bottom: 8px; position: relative;
+  }
+  .cover-vilia {
+    font-size: 14px; letter-spacing: 0.3em; opacity: 0.9;
+    margin-bottom: 20px;
+  }
+  .cover-sub {
+    font-size: 18px; opacity: 0.85; position: relative; font-weight: 500;
+  }
+  .cover-meta {
+    margin-top: 32px; font-size: 13px; opacity: 0.7; position: relative;
+  }
+  .cover-stats {
+    margin-top: 36px; display: flex; justify-content: center; gap: 24px;
+    position: relative; flex-wrap: wrap;
+  }
+  .cover-stat {
+    background: rgba(255,255,255,0.15); backdrop-filter: blur(10px);
+    padding: 12px 20px; border-radius: 10px; min-width: 120px;
+  }
+  .cover-stat-v { font-size: 24px; font-weight: 700; }
+  .cover-stat-l { font-size: 11px; opacity: 0.8; }
+
+  .container {
+    max-width: 920px; margin: 0 auto; padding: 56px 24px;
+  }
+
+  .section { margin-bottom: 72px; }
+  .section-num {
+    display: inline-block;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.1em;
+    color: #06b6d4; margin-bottom: 8px;
+    text-transform: uppercase;
+  }
+  .section h2 {
+    font-size: 28px; font-weight: 700; letter-spacing: -0.01em;
+    margin-bottom: 12px;
+  }
+  .section-lede {
+    font-size: 15px; color: var(--text-2); margin-bottom: 24px;
+    line-height: 1.75;
+  }
+  .narrative {
+    font-size: 14.5px; color: var(--text-1); line-height: 1.85;
+    margin-bottom: 24px;
+  }
+  .narrative em {
+    font-style: normal; background: #fef3c7; padding: 1px 4px;
+    border-radius: 3px; color: var(--warn); font-weight: 500;
+  }
+  .narrative code {
+    font-family: 'Menlo', monospace; font-size: 12.5px;
+    background: var(--surface-2); padding: 1px 5px; border-radius: 3px;
+  }
+
+  .day-tag {
+    display: inline-block; padding: 6px 14px;
+    background: var(--primary); color: white;
+    font-size: 12px; font-weight: 700; border-radius: 20px;
+    margin-bottom: 12px; letter-spacing: 0.05em;
+  }
+  .day-tag.day1 { background: linear-gradient(90deg, #06b6d4, #1e40af); }
+  .day-tag.day7 { background: linear-gradient(90deg, #15803d, #047857); }
+
+  /* ─── Mockup Frame ─── */
+  .mockup {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+    overflow: hidden; margin: 20px 0;
+  }
+  .mockup-head {
+    background: var(--surface-2); padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px;
+    font-size: 11.5px; color: var(--text-3); font-family: 'Menlo', monospace;
+  }
+  .mockup-dots { display: flex; gap: 5px; }
+  .mockup-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .mockup-body { padding: 24px; }
+
+  /* ─── Sidebar (mock) ─── */
+  .sidebar-mock {
+    width: 220px; padding: 12px;
+    background: var(--surface-2); border-right: 1px solid var(--border);
+    font-size: 12.5px;
+  }
+  .sb-brand-switcher {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px;
+    display: flex; align-items: center; gap: 8px; margin-bottom: 16px;
+  }
+  .sb-brand-icon {
+    width: 28px; height: 28px; border-radius: 6px;
+    background: var(--vilia);
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-weight: 800; font-size: 12px; letter-spacing: 0.05em;
+  }
+  .sb-brand-name { font-weight: 600; font-size: 12.5px; }
+  .sb-brand-cat { font-size: 10.5px; color: var(--text-3); }
+  .sb-group-h {
+    font-size: 10.5px; font-weight: 600; color: var(--text-3);
+    margin: 12px 0 4px; padding: 0 8px;
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .sb-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; border-radius: 5px; color: var(--text-2);
+  }
+  .sb-item.active { background: var(--surface); color: var(--text-1); font-weight: 500; }
+  .sb-item .badge {
+    margin-left: auto; background: var(--like); color: white;
+    font-size: 9px; padding: 1px 5px; border-radius: 8px; font-weight: 700;
+  }
+  .sb-icon {
+    width: 14px; height: 14px; border: 1.5px solid currentColor;
+    border-radius: 3px; opacity: 0.6;
+  }
+
+  .layout-row { display: flex; min-height: 200px; }
+  .main-area { flex: 1; padding: 20px; }
+
+  /* ─── Onboarding wizard ─── */
+  .stepper {
+    display: flex; gap: 6px; margin-bottom: 16px;
+  }
+  .step-pill {
+    flex: 1; text-align: center; padding: 6px;
+    font-size: 11px; border-radius: 5px;
+    background: var(--surface-2); color: var(--text-3);
+  }
+  .step-pill.active { background: var(--primary); color: white; }
+  .step-pill.done { background: rgba(24,24,27,0.15); color: var(--text-1); }
+
+  .form-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px;
+  }
+  .form-h { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
+  .form-row { margin-bottom: 12px; }
+  .form-label {
+    display: block; font-size: 12px; color: var(--text-2); margin-bottom: 4px;
+  }
+  .form-input, .form-textarea {
+    width: 100%; padding: 7px 10px; font-size: 13px;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--surface);
+  }
+  .form-textarea { min-height: 80px; resize: vertical; font-family: inherit; }
+  .form-input.filled, .form-textarea.filled {
+    background: var(--info-bg); border-color: var(--info);
+  }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: 4px; padding: 8px 16px; font-size: 13px;
+    border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface); cursor: pointer;
+  }
+  .btn-primary {
+    background: var(--primary); color: white; border-color: var(--primary);
+  }
+  .btn-w-full { width: 100%; }
+
+  /* ─── Keyword chip ─── */
+  .kw-chips {
+    display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;
+  }
+  .kw-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 4px 3px 10px; background: var(--surface-2);
+    border-radius: 5px; font-size: 12px;
+  }
+  .kw-chip-x {
+    width: 16px; height: 16px; border-radius: 3px;
+    background: rgba(0,0,0,0.06);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px;
+  }
+
+  /* ─── Worker Pool ─── */
+  .worker-pool {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px; margin: 16px 0;
+  }
+  .worker-grid {
+    display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px;
+    margin-top: 10px;
+  }
+  .worker-dot {
+    aspect-ratio: 1; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-size: 9px; font-weight: 600;
+  }
+  .worker-active { background: linear-gradient(135deg, #10b981, #047857); }
+  .worker-cooldown { background: linear-gradient(135deg, #f59e0b, #ef4444); }
+  .worker-rest { background: var(--surface-2); color: var(--text-3); }
+
+  /* ─── Slot Card (preset edit) ─── */
+  .slot-row {
+    display: flex; gap: 10px; padding: 10px 0;
+  }
+  .slot-row.depth-1 { margin-left: 36px; border-left: 2px solid var(--border); padding-left: 12px; }
+  .slot-row.depth-2 { margin-left: 72px; }
+  .slot-row.depth-3 { margin-left: 108px; }
+
+  .slot-av {
+    width: 32px; height: 32px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-weight: 700; font-size: 13px;
+    position: relative; flex-shrink: 0;
+  }
+  .av-A { background: linear-gradient(135deg, #f59e0b, #ef4444); }
+  .av-B { background: linear-gradient(135deg, #3b82f6, #1e40af); }
+  .av-C { background: linear-gradient(135deg, #10b981, #047857); }
+  .av-D { background: linear-gradient(135deg, #8b5cf6, #6d28d9); }
+  .av-E { background: linear-gradient(135deg, #ec4899, #be185d); }
+  .av-F { background: linear-gradient(135deg, #14b8a6, #0f766e); }
+  .av-reentry::after {
+    content: '↻'; position: absolute; bottom: -2px; right: -2px;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--warn); color: white; font-size: 9px;
+    display: flex; align-items: center; justify-content: center;
+    border: 2px solid var(--surface);
+  }
+
+  .slot-meta-tag {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 6px; background: var(--surface-2);
+    border-radius: 4px; font-size: 11px;
+  }
+  .slot-meta-tag.reentry { background: var(--warn-bg); color: var(--warn); }
+  .slot-text {
+    font-size: 13px; padding: 8px 10px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 6px;
+    margin-top: 4px; line-height: 1.6;
+  }
+  .slot-like-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; background: var(--like-bg); border-radius: 4px;
+    margin-top: 6px; font-size: 11px;
+  }
+  .slot-like-l { color: var(--like); font-weight: 500; }
+  .like-num {
+    display: inline-block; padding: 1px 5px; background: var(--surface);
+    border: 1px solid #fecaca; border-radius: 3px;
+    color: var(--like); min-width: 22px; text-align: center;
+  }
+
+  /* ─── YouTube preview ─── */
+  .yt-preview {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; overflow: hidden;
+  }
+  .yt-head {
+    background: #ff0000; height: 28px; display: flex;
+    align-items: center; padding: 0 12px; color: white;
+    font-size: 11px; font-weight: 600;
+  }
+  .yt-comment {
+    display: flex; gap: 10px; padding: 10px 14px;
+    border-top: 1px solid var(--border);
+  }
+  .yt-comment.depth-1 { padding-left: 50px; }
+  .yt-comment.depth-2 { padding-left: 90px; }
+  .yt-cmt-body { flex: 1; }
+  .yt-name { font-size: 11.5px; font-weight: 500; }
+  .yt-time { font-size: 10.5px; color: var(--text-3); }
+  .yt-tag {
+    display: inline-block; padding: 1px 5px; font-size: 9px;
+    border-radius: 3px; font-weight: 600;
+    background: var(--purple-bg); color: var(--purple);
+    margin-left: 6px;
+  }
+  .yt-tag.reentry { background: var(--warn-bg); color: var(--warn); }
+  .yt-tag.pinned { background: #dcfce7; color: var(--success); }
+  .yt-text { font-size: 12px; margin: 4px 0; line-height: 1.5; }
+  .yt-actions { font-size: 10.5px; color: var(--text-2); display: flex; gap: 12px; }
+  .yt-like { color: var(--like); }
+
+  /* ─── Stat cards ─── */
+  .stat-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+    margin: 12px 0;
+  }
+  .stat-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 12px;
+  }
+  .stat-l { font-size: 10.5px; color: var(--text-3); }
+  .stat-v { font-size: 18px; font-weight: 700; margin-top: 2px; }
+  .stat-v.like { color: var(--like); }
+  .stat-v.reentry { color: var(--warn); }
+  .stat-v.success { color: var(--success); }
+
+  /* ─── Story callouts ─── */
+  .callout {
+    border-radius: 8px; padding: 14px 16px; margin: 16px 0;
+    font-size: 13.5px; line-height: 1.65;
+    border: 1px solid;
+  }
+  .callout-info { background: var(--info-bg); border-color: var(--info); color: var(--info); }
+  .callout-warn { background: var(--warn-bg); border-color: var(--warn); color: var(--warn); }
+  .callout-success { background: var(--success-bg); border-color: var(--success); color: var(--success); }
+  .callout-fire {
+    background: linear-gradient(135deg, #fef2f2, #fef3c7);
+    border-color: #fca5a5; color: #b91c1c;
+  }
+  .callout strong { font-weight: 700; }
+
+  .quote {
+    border-left: 3px solid #06b6d4; padding: 8px 14px;
+    color: var(--text-2); font-style: italic; margin: 16px 0;
+    background: var(--surface-2); border-radius: 0 6px 6px 0;
+  }
+
+  /* ─── Chart ─── */
+  .graph {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px; margin: 20px 0;
+  }
+  .graph-h { font-size: 13px; font-weight: 600; margin-bottom: 12px; }
+  .graph-bars {
+    display: flex; gap: 8px; align-items: flex-end; height: 160px;
+    padding-top: 28px;
+  }
+  .graph-bar {
+    flex: 1; background: linear-gradient(to top, #06b6d4, #1e40af);
+    border-radius: 4px 4px 0 0; min-height: 8px;
+    position: relative;
+  }
+  .graph-bar.peak { background: linear-gradient(to top, #ef4444, #f59e0b); }
+  .graph-bar-l {
+    position: absolute; bottom: -22px; left: 50%; transform: translateX(-50%);
+    font-size: 10px; color: var(--text-3); white-space: nowrap;
+  }
+  .graph-bar-v {
+    position: absolute; top: -22px; left: 50%; transform: translateX(-50%);
+    font-size: 11px; font-weight: 700; color: var(--text-1);
+  }
+
+  hr.thin {
+    border: 0; border-top: 1px solid var(--border);
+    margin: 32px 0;
+  }
+
+  .footer {
+    text-align: center; padding: 40px 24px; color: var(--text-3);
+    font-size: 12.5px; border-top: 1px solid var(--border);
+  }
+
+  .small { font-size: 11.5px; color: var(--text-3); }
+
+  .arrow {
+    color: var(--text-3); font-size: 18px;
+    text-align: center; margin: 8px 0;
+  }
+
+  /* feed event */
+  .feed-event {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px; margin-bottom: 6px;
+    display: flex; gap: 10px; align-items: start;
+  }
+  .feed-time { font-size: 11px; color: var(--text-3); white-space: nowrap; }
+  .feed-content { flex: 1; font-size: 13px; }
+  .feed-pill {
+    font-size: 9.5px; padding: 1px 5px; border-radius: 3px;
+    font-weight: 600; vertical-align: middle;
+  }
+  .feed-pill.cmt { background: var(--purple-bg); color: var(--purple); }
+  .feed-pill.discover { background: var(--info-bg); color: var(--info); }
+  .feed-pill.fire { background: #fef2f2; color: var(--like); }
+
+  /* compare boxes */
+  .compare-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 18px;
+    margin: 24px 0;
+  }
+  .compare-box {
+    border-radius: 12px; padding: 24px;
+  }
+  .compare-box.before {
+    background: var(--surface); border: 1px solid var(--border);
+  }
+  .compare-box.after {
+    background: linear-gradient(135deg, #f0fdf4, #ecfeff);
+    border: 1px solid var(--success);
+  }
+  .compare-l {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--text-3);
+    margin-bottom: 8px;
+  }
+  .compare-box.after .compare-l { color: var(--success); }
+  .compare-v {
+    font-size: 32px; font-weight: 800; margin-bottom: 8px;
+  }
+  .compare-box.after .compare-v { color: var(--success); }
+</style>
+</head>
+<body>
+
+<!-- ═══ 표지 ═══ -->
+<div class="cover">
+  <div class="cover-vilia">V I L I A</div>
+  <div class="cover-title">"광고 안 했는데<br>왜 다들 알아?"</div>
+  <div class="cover-sub">김준규 × VILIA · 워커 32대 풀가동 첫 1주</div>
+  <div class="cover-stats">
+    <div class="cover-stat">
+      <div class="cover-stat-v">32명</div>
+      <div class="cover-stat-l">활성 워커</div>
+    </div>
+    <div class="cover-stat">
+      <div class="cover-stat-v">1,408</div>
+      <div class="cover-stat-l">7일 댓글</div>
+    </div>
+    <div class="cover-stat">
+      <div class="cover-stat-v">94%</div>
+      <div class="cover-stat-l">생존율</div>
+    </div>
+    <div class="cover-stat">
+      <div class="cover-stat-v">×8.4</div>
+      <div class="cover-stat-l">검색량</div>
+    </div>
+  </div>
+  <div class="cover-meta">
+    전자담배 브랜드 VILIA · 운영자 김준규 · 2026.05
+  </div>
+</div>
+
+<div class="container">
+
+<!-- ═══ 프롤로그 ═══ -->
+<div class="section">
+  <div class="section-num">PROLOGUE</div>
+  <h2>0댓글 → 1,408댓글, 7일 안에</h2>
+  <p class="section-lede">
+    김준규는 30대 후반 마케터다. 작년에 작은 전자담배 브랜드 <strong>VILIA</strong> 의
+    마케팅을 맡았다. 광고 예산은 빡빡하고, 인플루언서는 한 번 쓰면 끝. 댓글창에서
+    스스로 굴러가는 입소문이 필요했다.
+  </p>
+  <div class="quote">
+    "32대 워커 풀이 있다고 들었어. 하루에 200개씩 댓글 깔 수 있다고. 근데
+    어떻게 시작하지? 어디 눌러? 일단 admin 켜본다."
+  </div>
+  <p class="narrative">
+    HYDRA admin URL 받음. 로그인. 사이드바에 <em>'시작하기'</em> 항목이 보인다.
+    심호흡 한 번. 클릭.
+  </p>
+</div>
+
+<!-- ═══ 1. 온보딩 ═══ -->
+<div class="section">
+  <span class="day-tag">DAY 0 · 14:00 — 14:08</span>
+  <h2>4분 만에 끝난 온보딩</h2>
+  <p class="section-lede">
+    5단계 위저드. 한 단계씩 넘기는데 막힘이 없다. 안내 문구가 사람 같다.
+  </p>
+
+  <!-- step 1 -->
+  <div class="mockup">
+    <div class="mockup-head">
+      <div class="mockup-dots">
+        <div class="mockup-dot" style="background:#ef4444"></div>
+        <div class="mockup-dot" style="background:#f59e0b"></div>
+        <div class="mockup-dot" style="background:#10b981"></div>
+      </div>
+      hydra-prod.duckdns.org/onboarding · step 1
+    </div>
+    <div class="mockup-body">
+      <div class="stepper">
+        <div class="step-pill active">1. 브랜드</div>
+        <div class="step-pill">2. 시장</div>
+        <div class="step-pill">3. 키워드</div>
+        <div class="step-pill">4. 시장 정의</div>
+        <div class="step-pill">5. 완료</div>
+      </div>
+      <div class="form-card">
+        <div class="form-h">브랜드 만들기</div>
+        <div class="form-row">
+          <label class="form-label">브랜드 이름</label>
+          <input class="form-input filled" value="VILIA">
+        </div>
+        <div class="form-row">
+          <label class="form-label">카테고리</label>
+          <input class="form-input filled" value="전자담배 (POD 시스템)">
+        </div>
+        <div class="form-row">
+          <label class="form-label">핵심 메시지 (선택)</label>
+          <input class="form-input filled" value="자극은 줄이고, 만족은 그대로 — 한국형 POD">
+        </div>
+        <button class="btn btn-primary btn-w-full">다음 →</button>
+      </div>
+    </div>
+  </div>
+
+  <p class="narrative">
+    <em>VILIA</em>. 카테고리 <em>전자담배 (POD 시스템)</em>. 메시지는 회사 IR
+    덱에서 그대로 복사했다. <code>다음</code> 클릭.
+  </p>
+
+  <div class="arrow">↓</div>
+
+  <!-- step 3 (keywords) -->
+  <div class="mockup">
+    <div class="mockup-head">/onboarding · step 3 · 키워드 입력 중</div>
+    <div class="mockup-body">
+      <div class="stepper">
+        <div class="step-pill done">1</div>
+        <div class="step-pill done">2</div>
+        <div class="step-pill active">3. 키워드</div>
+        <div class="step-pill">4</div>
+        <div class="step-pill">5</div>
+      </div>
+      <div class="form-card">
+        <div class="form-h">키워드 추가</div>
+        <p class="small" style="margin-bottom: 10px;">
+          Enter 로 한 개씩. 한글 조합 안전 (전자/담배 분리 X).
+        </p>
+        <div style="display:flex;gap:6px;">
+          <input class="form-input" placeholder="예: 전자담배 입문">
+          <button class="btn">추가</button>
+        </div>
+        <div class="kw-chips">
+          <span class="kw-chip">전자담배 입문 <span class="kw-chip-x">✕</span></span>
+          <span class="kw-chip">베이프 추천 <span class="kw-chip-x">✕</span></span>
+          <span class="kw-chip">금연 액상 <span class="kw-chip-x">✕</span></span>
+          <span class="kw-chip">POD 비교 <span class="kw-chip-x">✕</span></span>
+          <span class="kw-chip">전자담배 후기 <span class="kw-chip-x">✕</span></span>
+          <span class="kw-chip">아이코스 vs <span class="kw-chip-x">✕</span></span>
+          <span class="kw-chip">금연 시작 <span class="kw-chip-x">✕</span></span>
+        </div>
+        <button class="btn btn-primary btn-w-full" style="margin-top:14px;">다음 (7개) →</button>
+      </div>
+    </div>
+  </div>
+
+  <p class="narrative">
+    7개 키워드. 입문자 동선 (입문/추천/비교/후기), 금연 동선 (금연 액상, 금연 시작),
+    경쟁 동선 (아이코스 vs). HYDRA 가 이 7개로 매일 영상을 긁어올 거다.
+  </p>
+
+  <div class="arrow">↓</div>
+
+  <!-- step 4 (market def) -->
+  <div class="mockup">
+    <div class="mockup-head">/onboarding · step 4 · 시장 정의</div>
+    <div class="mockup-body">
+      <div class="stepper">
+        <div class="step-pill done">1</div>
+        <div class="step-pill done">2</div>
+        <div class="step-pill done">3</div>
+        <div class="step-pill active">4. 시장 정의</div>
+        <div class="step-pill">5</div>
+      </div>
+      <div class="form-card">
+        <div class="form-h">시장 정의 작성 (선택)</div>
+        <textarea class="form-textarea filled">30대 직장인 남성. 흡연 7~12년. 작년부터 금연 의지. 액상형 전자담배에 호기심 있지만 정보 부족. POD 시스템 (충전식 닫힌 카트리지) 선호 — 액상 직접 채우는 거 부담. 가격은 한 달 5만원선 까지 OK. 의학적 안전성 + 흡연 만족도 둘 다 중시. 한국 합법 제품만. 인터넷 후기 신뢰 (광고 X, 진짜 사용자만).</textarea>
+        <button class="btn btn-primary btn-w-full" style="margin-top:14px;">저장하고 완료</button>
+      </div>
+    </div>
+  </div>
+
+  <p class="narrative">
+    이게 핵심이다. AI 가 영상 적합도 판단할 때 reference 로 쓰는 글. 광고처럼
+    뭉뚱그리지 않고, 실제 고객 얼굴이 떠오르게 한 단락. <em>"인터넷 후기 신뢰
+    (광고 X, 진짜 사용자만)"</em> 한 줄이 나중에 안전필터에 결정적이다.
+  </p>
+
+  <div class="callout callout-info">
+    <strong>4분 38초 만에 완료</strong> · 자동으로 시장 디테일 페이지로 이동.
+  </div>
+</div>
+
+<!-- ═══ 2. 워커 풀 점검 ═══ -->
+<div class="section">
+  <span class="day-tag">DAY 0 · 14:08 — 14:12</span>
+  <h2>워커 풀 32대, 그 첫 점검</h2>
+  <p class="section-lede">
+    사이드바 <strong>안전 → 워커</strong>. 32대가 보인다. 모두 초록색 (활성).
+    각 워커는 한 명의 가짜 사용자. 자기 개성이 있다. <em>"@vape_kr"</em>,
+    <em>"@30대직장인"</em> 처럼.
+  </p>
+
+  <div class="mockup">
+    <div class="mockup-head">/workers · 32대 풀</div>
+    <div class="mockup-body">
+      <div class="worker-pool">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <div style="font-size:13px;font-weight:600;">활성 워커 32명 / 32명</div>
+          <div class="small">하루 한도: 워커당 5~7 액션 / 채널당 5 영상 / 영상당 3~5 댓글</div>
+        </div>
+        <div class="worker-grid">
+          <!-- 32 workers -->
+          <div class="worker-dot worker-active">민</div>
+          <div class="worker-dot worker-active">준</div>
+          <div class="worker-dot worker-active">서</div>
+          <div class="worker-dot worker-active">현</div>
+          <div class="worker-dot worker-active">호</div>
+          <div class="worker-dot worker-active">정</div>
+          <div class="worker-dot worker-active">은</div>
+          <div class="worker-dot worker-active">지</div>
+          <div class="worker-dot worker-active">수</div>
+          <div class="worker-dot worker-active">진</div>
+          <div class="worker-dot worker-active">영</div>
+          <div class="worker-dot worker-active">철</div>
+          <div class="worker-dot worker-active">희</div>
+          <div class="worker-dot worker-active">규</div>
+          <div class="worker-dot worker-active">석</div>
+          <div class="worker-dot worker-active">우</div>
+          <div class="worker-dot worker-active">윤</div>
+          <div class="worker-dot worker-active">하</div>
+          <div class="worker-dot worker-active">아</div>
+          <div class="worker-dot worker-active">강</div>
+          <div class="worker-dot worker-active">조</div>
+          <div class="worker-dot worker-active">신</div>
+          <div class="worker-dot worker-active">송</div>
+          <div class="worker-dot worker-active">한</div>
+          <div class="worker-dot worker-active">남</div>
+          <div class="worker-dot worker-active">유</div>
+          <div class="worker-dot worker-active">백</div>
+          <div class="worker-dot worker-active">류</div>
+          <div class="worker-dot worker-active">권</div>
+          <div class="worker-dot worker-active">홍</div>
+          <div class="worker-dot worker-active">노</div>
+          <div class="worker-dot worker-active">전</div>
+        </div>
+        <div style="display:flex;gap:14px;margin-top:14px;font-size:11px;color:var(--text-2);">
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:linear-gradient(135deg,#10b981,#047857);vertical-align:middle;margin-right:4px;"></span>활성</span>
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:linear-gradient(135deg,#f59e0b,#ef4444);vertical-align:middle;margin-right:4px;"></span>쿨다운</span>
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--surface-2);vertical-align:middle;margin-right:4px;"></span>휴식</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout callout-warn">
+    <strong>워커 풀 안전 한도</strong> · 워커당 일 5~7 액션 (×32 = ~200/일) ·
+    채널당 일 5영상 X · 영상당 24h 3~5 댓글 X · 첫 댓글 후 5분 안에 두 번째 X ·
+    같은 워커 같은 영상 30분 간격.
+    <strong>안전 한도가 자연스러움의 핵심.</strong>
+  </div>
+
+  <p class="narrative">
+    32대 × 평균 6 액션 = 일 ~200 댓글. HYDRA 가 자동으로 분산한다. 한 영상에 너무
+    몰리거나 한 채널만 두드리면 차단당하니까. 김준규는 한도 화면을 보고 안심했다.
+    <em>"내가 직접 조절 안 해도 되겠네."</em>
+  </p>
+</div>
+
+<!-- ═══ 3. 프리셋 편집 ═══ -->
+<div class="section">
+  <span class="day-tag">DAY 0 · 14:15 — 14:42</span>
+  <h2>댓글 트리 짜기 — 비교형 5슬롯</h2>
+  <p class="section-lede">
+    사이드바 <strong>자산 → 프리셋</strong>. 5개 시드 (후기형/공감형/비교형/정보형/질문형)
+    가 미리 들어있다. 김준규는 <em>비교형</em>을 선택. 입문자가 가장 많이 검색하는 동선.
+  </p>
+
+  <div class="mockup">
+    <div class="mockup-head">/presets/3 · 비교형 편집</div>
+    <div class="mockup-body">
+      <div class="stat-grid">
+        <div class="stat-card"><div class="stat-l">총 댓글 (액션)</div><div class="stat-v">5</div></div>
+        <div class="stat-card"><div class="stat-l">슬롯 (워커 수)</div><div class="stat-v reentry">3</div></div>
+        <div class="stat-card"><div class="stat-l">총 좋아요</div><div class="stat-v like">25 ~ 60</div></div>
+        <div class="stat-card"><div class="stat-l">필요 워커</div><div class="stat-v">3명</div></div>
+      </div>
+
+      <div style="background:var(--surface-2);padding:8px 12px;border-radius:6px;display:flex;align-items:center;gap:6px;font-size:11px;margin:12px 0;">
+        <span style="color:var(--text-3);">슬롯 사용</span>
+        <span style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1px 8px;display:inline-flex;align-items:center;gap:4px;">
+          <span class="slot-av av-A" style="width:14px;height:14px;font-size:9px;">A</span> 3번
+        </span>
+        <span style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1px 8px;display:inline-flex;align-items:center;gap:4px;">
+          <span class="slot-av av-B" style="width:14px;height:14px;font-size:9px;">B</span> 1번
+        </span>
+        <span style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1px 8px;display:inline-flex;align-items:center;gap:4px;">
+          <span class="slot-av av-C" style="width:14px;height:14px;font-size:9px;">C</span> 1번
+        </span>
+      </div>
+
+      <!-- A 메인 -->
+      <div class="slot-row">
+        <div class="slot-av av-A">A</div>
+        <div style="flex:1;">
+          <div><span class="slot-meta-tag"><strong>메인 댓글</strong> · 1번째</span></div>
+          <div class="slot-text">진짜 입문자는 어떤 거 골라야 해요? 액상 종류도 너무 많고 기기도 다양해서… 친구들 추천도 다 달라요. POD 형 vs 액상 직접 충전 vs 일회용. 솔직히 뭐가 다른지 모르겠음.</div>
+          <div class="slot-like-row">
+            <span class="slot-like-l">❤ 좋아요</span>
+            <span class="like-num">8</span>~<span class="like-num">15</span>
+            <span style="color:var(--text-3);">· 시점 적응형 (조회수 따라 자동)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- B 답글 -->
+      <div class="slot-row depth-1">
+        <div class="slot-av av-B">B</div>
+        <div style="flex:1;">
+          <div><span class="slot-meta-tag"><strong>답글</strong> · 1번째</span> <span class="small">대상: A</span></div>
+          <div class="slot-text">저도 6개월 전엔 그랬는데 ㅋㅋ 입문은 무조건 POD 형이에요. 충전식 닫힌 카트리지라 액상 직접 안 만져도 되고 가격도 낮음. 일회용은 환경 안 좋아서 비추.</div>
+          <div class="slot-like-row">
+            <span class="slot-like-l">❤ 좋아요</span>
+            <span class="like-num">5</span>~<span class="like-num">12</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- A 재등장 -->
+      <div class="slot-row depth-2">
+        <div class="slot-av av-A av-reentry">A</div>
+        <div style="flex:1;">
+          <div><span class="slot-meta-tag reentry">↻ 재등장 · 2번째 답답글</span> <span class="small">대상: B</span></div>
+          <div class="slot-text">감사합니다! POD 형이면 VILIA 같은 거 많이 들리던데 어떤가요? 한국 회사인 거 같던데.</div>
+          <div class="slot-like-row">
+            <span class="slot-like-l">❤ 좋아요</span>
+            <span class="like-num">3</span>~<span class="like-num">8</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- C 답글 -->
+      <div class="slot-row depth-1">
+        <div class="slot-av av-C">C</div>
+        <div style="flex:1;">
+          <div><span class="slot-meta-tag"><strong>답글</strong> · 1번째</span> <span class="small">대상: A</span></div>
+          <div class="slot-text">저도 비슷한 고민이었어요. VILIA 써본 사람 후기 좀 부탁드립니다 ㅠㅠ 직장인이라 사용 환경도 중요해서.</div>
+          <div class="slot-like-row">
+            <span class="slot-like-l">❤ 좋아요</span>
+            <span class="like-num">4</span>~<span class="like-num">10</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- A 재재등장 -->
+      <div class="slot-row depth-2">
+        <div class="slot-av av-A av-reentry">A</div>
+        <div style="flex:1;">
+          <div><span class="slot-meta-tag reentry">↻ 재등장 · 3번째 답답글</span> <span class="small">대상: C</span></div>
+          <div class="slot-text">사용 한 달 됐는데 솔직히 만족도 높아요. 자극은 줄고 만족은 그대로 라는 광고 문구가 진짜로 와닿음 ㅋㅋ 충전 한 번에 이틀 가고 사무실에서 티 안 나서 좋아요. 가격은 한 달 4만원 정도.</div>
+          <div class="slot-like-row">
+            <span class="slot-like-l">❤ 좋아요</span>
+            <span class="like-num">5</span>~<span class="like-num">15</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="narrative">
+    이게 트리다. <em>A 가 입문자 질문 → B 가 일반 추천 → A 가 답답글로 재등장 ↻
+    "VILIA 어때요?" → C 가 동조 → A 가 또 재등장 ↻↻ "한 달 써봤는데 좋아요"</em>.
+    A 한 명이 자연스럽게 토론을 끌어가는 모양. 진짜 사람처럼.
+  </p>
+
+  <div class="callout callout-fire">
+    <strong>↻ 재등장이 HYDRA 의 차별점</strong> · 일반 봇은 슬롯 1개 = 댓글 1개.
+    HYDRA 는 같은 워커가 답답글로 재등장. <em>유튜브 알고리즘은 답글 많은 스레드를
+    위로 올린다.</em> 한 트리 안에서 5번 등장 = 알고리즘 선호 = 베스트 댓글 진입.
+  </div>
+
+  <p class="narrative">
+    AI 변형 강도는 50% (균형). 너무 낮으면 양식 그대로 32대가 같은 말 → 봇 티남.
+    너무 높으면 자유 변형 → 메시지 흐트러짐. 50% 가 정답.
+  </p>
+</div>
+
+<!-- ═══ 4. 미리보기 ═══ -->
+<div class="section">
+  <span class="day-tag">DAY 0 · 14:42 — 14:50</span>
+  <h2>이게 진짜 댓글처럼 보이나? — 미리보기</h2>
+  <p class="section-lede">
+    상단 <strong>'실제 댓글 미리보기'</strong> 토글. 유튜브 영상 댓글창처럼 렌더링.
+  </p>
+
+  <div class="mockup">
+    <div class="mockup-head">미리보기 모드 · 32대 워커 풀에서 자동 배정</div>
+    <div class="mockup-body">
+      <div class="yt-preview">
+        <div class="yt-head">▶ YouTube — 댓글 287개 · 인기순</div>
+        <div class="yt-comment">
+          <div class="slot-av av-A">민</div>
+          <div class="yt-cmt-body">
+            <div><span class="yt-name">@30대직장인_민지</span> <span class="yt-time">· 1일 전</span> <span class="yt-tag pinned">📌 인기 댓글</span> <span class="yt-tag">A · ❤ 14</span></div>
+            <div class="yt-text">진짜 입문자는 어떤 거 골라야 해요? 액상 종류도 너무 많고 기기도 다양해서… 친구들 추천도 다 달라요. POD 형 vs 액상 직접 충전 vs 일회용. 솔직히 뭐가 다른지 모르겠음.</div>
+            <div class="yt-actions"><span class="yt-like">❤ 14</span> <span>답글 4</span></div>
+          </div>
+        </div>
+        <div class="yt-comment depth-1">
+          <div class="slot-av av-B">준</div>
+          <div class="yt-cmt-body">
+            <div><span class="yt-name">@vape_kr_2018</span> <span class="yt-time">· 22시간 전</span> <span class="yt-tag">B · ❤ 9</span></div>
+            <div class="yt-text">저도 6개월 전엔 그랬는데 ㅋㅋ 입문은 무조건 POD 형이에요. 충전식 닫힌 카트리지라 액상 직접 안 만져도 되고 가격도 낮음.</div>
+            <div class="yt-actions"><span class="yt-like">❤ 9</span></div>
+          </div>
+        </div>
+        <div class="yt-comment depth-2">
+          <div class="slot-av av-A">민</div>
+          <div class="yt-cmt-body">
+            <div><span class="yt-name">@30대직장인_민지</span> <span class="yt-time">· 21시간 전</span> <span class="yt-tag reentry">A · ↻ 재등장 · ❤ 6</span></div>
+            <div class="yt-text">감사합니다! POD 형이면 VILIA 같은 거 많이 들리던데 어떤가요? 한국 회사인 거 같던데.</div>
+            <div class="yt-actions"><span class="yt-like">❤ 6</span></div>
+          </div>
+        </div>
+        <div class="yt-comment depth-1">
+          <div class="slot-av av-C">서</div>
+          <div class="yt-cmt-body">
+            <div><span class="yt-name">@daily_smoker</span> <span class="yt-time">· 22시간 전</span> <span class="yt-tag">C · ❤ 7</span></div>
+            <div class="yt-text">저도 비슷한 고민이었어요. VILIA 써본 사람 후기 좀 부탁드립니다 ㅠㅠ 직장인이라 사용 환경도 중요해서.</div>
+            <div class="yt-actions"><span class="yt-like">❤ 7</span></div>
+          </div>
+        </div>
+        <div class="yt-comment depth-2">
+          <div class="slot-av av-A">민</div>
+          <div class="yt-cmt-body">
+            <div><span class="yt-name">@30대직장인_민지</span> <span class="yt-time">· 20시간 전</span> <span class="yt-tag reentry">A · ↻ 재등장 · ❤ 11</span></div>
+            <div class="yt-text">사용 한 달 됐는데 솔직히 만족도 높아요. 자극은 줄고 만족은 그대로 라는 광고 문구가 진짜로 와닿음 ㅋㅋ 충전 한 번에 이틀 가고 사무실에서 티 안 나서 좋아요. 가격은 한 달 4만원 정도.</div>
+            <div class="yt-actions"><span class="yt-like">❤ 11</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout callout-success">
+    <strong>3 워커 / 5 액션 / ❤ 47</strong> · 알고리즘이 답글 활발한 스레드를 위로
+    올려 <em>📌 인기 댓글</em>로 픽됨. 새 시청자가 이 댓글창 들어오면
+    가장 위에서 VILIA 후기를 본다.
+  </div>
+
+  <p class="narrative">
+    저장. 한 트리만 짠 거 같지만 32대 풀이 영상마다 자동으로 다른 워커 조합으로 배정.
+    32대 ÷ 3 워커/트리 = 동시에 ~10개 영상에 트리 깔 수 있음.
+  </p>
+</div>
+
+<hr class="thin">
+
+<!-- ═══ 5. DAY 1 ═══ -->
+<div class="section">
+  <span class="day-tag day1">DAY 1 · 09:00 — 출근길</span>
+  <h2>첫날 밤이 지났다</h2>
+  <p class="section-lede">
+    출근길 지하철. 김준규는 휴대폰으로 admin 을 켜본다. 사이드바 <strong>지금 → 피드</strong>.
+  </p>
+
+  <div class="mockup">
+    <div class="mockup-head">/feed · 24시간</div>
+    <div class="mockup-body">
+      <div style="display:flex;gap:6px;margin-bottom:14px;">
+        <button class="btn" style="background:var(--primary);color:white;border-color:var(--primary);">24시간</button>
+        <button class="btn">이번 주</button>
+      </div>
+      <div class="stat-grid">
+        <div class="stat-card"><div class="stat-l">발견된 영상</div><div class="stat-v">147</div></div>
+        <div class="stat-card"><div class="stat-l">시작된 트리</div><div class="stat-v reentry">23</div></div>
+        <div class="stat-card"><div class="stat-l">작성된 댓글</div><div class="stat-v">112</div></div>
+        <div class="stat-card"><div class="stat-l">받은 좋아요</div><div class="stat-v like">347</div></div>
+      </div>
+      <div class="feed-event">
+        <div class="feed-time">08:42</div>
+        <div class="feed-content">
+          <span class="feed-pill cmt">↻ 재등장</span> A 워커 (@30대직장인_민지) 가
+          <em>"전자담배 1년 후기"</em> 영상에서 3번째 답답글 등장 · ❤ 12
+        </div>
+      </div>
+      <div class="feed-event">
+        <div class="feed-time">07:58</div>
+        <div class="feed-content">
+          <span class="feed-pill fire">🔥 베스트</span> "POD vs 액상 비교" 영상에서
+          VILIA 트리가 인기 댓글 1위 진입
+        </div>
+      </div>
+      <div class="feed-event">
+        <div class="feed-time">06:12</div>
+        <div class="feed-content">
+          <span class="feed-pill discover">영상 발견</span> 키워드 "POD 비교" 로
+          신규 영상 8개. 3개에 트리 시작됨.
+        </div>
+      </div>
+      <div class="feed-event">
+        <div class="feed-time">02:44</div>
+        <div class="feed-content">
+          <span class="feed-pill cmt">댓글</span> @daily_smoker (C) 가
+          "직장인 전자담배 후기" 영상에 답글 작성
+        </div>
+      </div>
+      <div class="feed-event">
+        <div class="feed-time">23:18 (어제)</div>
+        <div class="feed-content">
+          <span class="feed-pill discover">영상 발견 (+ 134건)</span>
+          7 키워드로 자동 수집 사이클 완료
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="narrative">
+    하룻밤에 <em>147 영상 수집 → 23 트리 시작 → 112 댓글 작성</em>. 32대 워커가
+    아무 사고 없이 굴러갔다. <em>"POD vs 액상 비교"</em> 영상에서 VILIA 트리가
+    이미 인기 댓글 1위. 김준규는 출근하면서 미소 짓는다.
+  </p>
+
+  <div class="quote">
+    "어제 4분만에 셋업 끝낸 게 밤새 알아서 일하고 있었네. 광고비는 한 푼도 안 썼고."
+  </div>
+
+  <p class="narrative">
+    사이드바 <strong>지금 → 문제</strong> 클릭. 빨간불 <em>0개</em>. 이상 없음.
+    <strong>지금 → 예정</strong> 클릭. 다음 24h 안에 추적 검증 87건. (어제 깐
+    댓글들이 24시간 후 살아있나 자동 확인)
+  </p>
+</div>
+
+<!-- ═══ 6. DAY 3 위기 ═══ -->
+<div class="section">
+  <span class="day-tag day1">DAY 3 · 11:30 — 첫 위기</span>
+  <h2>'문제' 페이지에 빨간불 4개</h2>
+  <p class="section-lede">
+    3일째 회의 중 알람. <strong>지금 → 문제 (4)</strong> 빨간 배지. 들어가본다.
+  </p>
+
+  <div class="mockup">
+    <div class="mockup-head">/alerts · 4개 빨간불</div>
+    <div class="mockup-body">
+      <div class="feed-event" style="border-left: 3px solid var(--like);">
+        <div class="feed-content">
+          <span class="feed-pill fire">⚠ 워커 차단</span>
+          <strong>@vape_kr_2018 (B 슬롯)</strong> 차단 감지 — 한 채널에서 24h 안에
+          댓글 5번 → YT 가 자동 차단. 워커 풀에서 자동 격리.
+        </div>
+      </div>
+      <div class="feed-event" style="border-left: 3px solid var(--warn);">
+        <div class="feed-content">
+          <span class="feed-pill" style="background:var(--warn-bg);color:var(--warn);">고스트율 ↑</span>
+          영상 "전자담배 광고 폭로" 의 우리 댓글 3개 모두 24h 안 삭제됨 ·
+          채널 운영자 제거 추정 → 영상 자동 블랙리스트
+        </div>
+      </div>
+      <div class="feed-event" style="border-left: 3px solid var(--warn);">
+        <div class="feed-content">
+          <span class="feed-pill" style="background:var(--warn-bg);color:var(--warn);">키워드 통과율 ↓</span>
+          키워드 "아이코스 vs" 통과율 18% (60→11). 시장 정의와 안 맞는 영상 다수 →
+          키워드 검토 권장
+        </div>
+      </div>
+      <div class="feed-event" style="border-left: 3px solid var(--info);">
+        <div class="feed-content">
+          <span class="feed-pill discover">영상 보호 필요</span>
+          채널 "@VILIA_official" 영상 발견 — 자사 공식 채널.
+          <em>운영자 보호 표시 클릭 → 안전필터 추가</em>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="narrative">
+    HYDRA 가 알아서 처리한 게 절반. <em>차단된 워커는 자동 격리</em>,
+    <em>고스트 영상은 자동 블랙리스트</em>. 김준규가 직접 손 봐야 할 건 두 개.
+  </p>
+
+  <p class="narrative">
+    1. <strong>"아이코스 vs"</strong> 키워드 → 일시정지. 시장 정의와 맞는 영상
+    적게 나옴. 광고성 영상이 많이 잡혔던 듯.<br>
+    2. <strong>VILIA 공식 채널</strong> → <em>⭐ 즐겨찾기 채널</em> 추가 +
+    <em>🛡 보호 표시</em>. 우리가 우리 영상에 댓글 깔면 안 됨.
+  </p>
+
+  <div class="callout callout-info">
+    <strong>운영의 묘</strong> · 32대 풀 가동하면 일주일에 1~2번은 빨간불 뜸.
+    HYDRA 가 자동 격리해서 손해는 적지만, <em>운영자가 매일 5분만 문제 페이지
+    체크</em>하면 위기를 피할 수 있다.
+  </div>
+</div>
+
+<!-- ═══ 7. DAY 4 — 베스트 진입 ═══ -->
+<div class="section">
+  <span class="day-tag day1">DAY 4 · 22:00 — 어떤 영상 하나</span>
+  <h2>"이거 댓글창에서 봤어요" 모먼트</h2>
+  <p class="section-lede">
+    저녁. 친구가 카톡 보냄. <em>"야 너 VILIA 마케팅 하고 있다며? 나 어제 어떤
+    유튜브 영상 댓글에서 VILIA 추천 봤어. 좋다고 다들 그러던데 ㅋㅋ"</em>
+  </p>
+
+  <div class="quote">
+    "친구가 본 그 영상이 우리가 깐 트리였다. 친구는 모른다.
+    실제 사용자 후기로 보고 신뢰했다. 이게 자연 입소문이다."
+  </div>
+
+  <p class="narrative">
+    분석 탭 열어본다. <em>"30대 전자담배 입문 가이드"</em> 라는 영상의 댓글창에서
+    우리 트리 5개 댓글이 모두 인기순 상단 5개를 차지. ❤ 합계 184. 시청자 1,200명이
+    그 댓글을 봤다.
+  </p>
+
+  <div class="mockup">
+    <div class="mockup-head">/products/1/niches/1/analytics · 베스트 영상</div>
+    <div class="mockup-body">
+      <div class="yt-preview">
+        <div class="yt-head">▶ "30대 전자담배 입문 가이드" · 23만회</div>
+        <div class="yt-comment">
+          <div class="slot-av av-A">민</div>
+          <div class="yt-cmt-body">
+            <div><span class="yt-name">@30대직장인_민지</span> <span class="yt-time">· 2일 전</span> <span class="yt-tag pinned">📌 인기 1위</span> <span class="yt-tag">A · ❤ 47</span></div>
+            <div class="yt-text">진짜 입문자는 어떤 거 골라야 해요?...</div>
+            <div class="yt-actions"><span class="yt-like">❤ 47</span> <span>답글 12</span></div>
+          </div>
+        </div>
+        <div class="yt-comment depth-1">
+          <div class="slot-av av-B">준</div>
+          <div class="yt-cmt-body">
+            <div><span class="yt-name">@vape_2024</span> <span class="yt-time">· 1일 전</span> <span class="yt-tag">B · ❤ 31</span></div>
+            <div class="yt-text">POD 형이 입문 정답...</div>
+          </div>
+        </div>
+        <div class="yt-comment depth-2">
+          <div class="slot-av av-A">민</div>
+          <div class="yt-cmt-body">
+            <div><span class="yt-name">@30대직장인_민지</span> <span class="yt-time">· 1일 전</span> <span class="yt-tag reentry">A · ↻ 재등장 · ❤ 24</span></div>
+            <div class="yt-text">VILIA 같은 거 어때요?</div>
+          </div>
+        </div>
+        <div class="yt-comment depth-1">
+          <div class="slot-av av-C">서</div>
+          <div class="yt-cmt-body">
+            <div><span class="yt-name">@daily_2025</span> <span class="yt-time">· 1일 전</span> <span class="yt-tag">C · ❤ 19</span></div>
+            <div class="yt-text">저도 VILIA 써본 사람 후기...</div>
+          </div>
+        </div>
+        <div class="yt-comment depth-2">
+          <div class="slot-av av-A">민</div>
+          <div class="yt-cmt-body">
+            <div><span class="yt-name">@30대직장인_민지</span> <span class="yt-time">· 1일 전</span> <span class="yt-tag reentry">A · ↻ 재등장 · ❤ 63</span></div>
+            <div class="yt-text">한 달 써봤는데 만족도 높아요...</div>
+            <div class="yt-actions"><span class="yt-like">❤ 63</span> <span>답글 8 (실제 시청자 댓글 5)</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout callout-fire">
+    <strong>비유기 → 유기 전환</strong> · 우리 워커 트리 끝에 <em>실제 시청자
+    답글 5개</em>가 달림. 진짜 사람들이 우리 트리를 진짜 토론으로 받아들이고
+    답글 다는 단계 = HYDRA 가 노린 골 인.
+  </div>
+
+  <p class="narrative">
+    여기서 김준규는 처음 깨달았다. <em>"이게 광고가 아니라 입소문이구나."</em>
+    돈을 더 쓴 게 아니다. 4분 셋업 + 27분 트리 편집 + 매일 5분 모니터링.
+    그게 다였다.
+  </p>
+</div>
+
+<!-- ═══ 8. DAY 7 결과 ═══ -->
+<div class="section">
+  <span class="day-tag day7">DAY 7 · 09:00 — 1주 결산</span>
+  <h2>숫자가 말한다</h2>
+  <p class="section-lede">
+    7일이 지났다. 김준규는 분석 탭의 7일 그래프를 본다.
+  </p>
+
+  <div class="graph">
+    <div class="graph-h">일별 댓글 작성 (지난 7일) · 32 워커 풀</div>
+    <div class="graph-bars">
+      <div class="graph-bar" style="height: 28%;"><div class="graph-bar-v">112</div><div class="graph-bar-l">월</div></div>
+      <div class="graph-bar" style="height: 42%;"><div class="graph-bar-v">168</div><div class="graph-bar-l">화</div></div>
+      <div class="graph-bar" style="height: 50%;"><div class="graph-bar-v">198</div><div class="graph-bar-l">수</div></div>
+      <div class="graph-bar peak" style="height: 56%;"><div class="graph-bar-v">222</div><div class="graph-bar-l">목</div></div>
+      <div class="graph-bar" style="height: 52%;"><div class="graph-bar-v">204</div><div class="graph-bar-l">금</div></div>
+      <div class="graph-bar peak" style="height: 64%;"><div class="graph-bar-v">253</div><div class="graph-bar-l">토</div></div>
+      <div class="graph-bar peak" style="height: 64%;"><div class="graph-bar-v">251</div><div class="graph-bar-l">일</div></div>
+    </div>
+    <div style="margin-top: 36px;"></div>
+  </div>
+
+  <div class="stat-grid">
+    <div class="stat-card"><div class="stat-l">7일 누적 댓글</div><div class="stat-v">1,408</div></div>
+    <div class="stat-card"><div class="stat-l">생존율 (24h)</div><div class="stat-v success">94%</div></div>
+    <div class="stat-card"><div class="stat-l">자연 토론 스레드</div><div class="stat-v reentry">217</div></div>
+    <div class="stat-card"><div class="stat-l">베스트 진입</div><div class="stat-v like">38</div></div>
+  </div>
+
+  <div class="stat-grid">
+    <div class="stat-card"><div class="stat-l">평균 좋아요/댓글</div><div class="stat-v">8.2</div></div>
+    <div class="stat-card"><div class="stat-l">총 좋아요</div><div class="stat-v like">11,540</div></div>
+    <div class="stat-card"><div class="stat-l">실제 시청자 답글</div><div class="stat-v reentry">847</div></div>
+    <div class="stat-card"><div class="stat-l">VILIA 검색량</div><div class="stat-v success">×8.4</div></div>
+  </div>
+
+  <div class="callout callout-success">
+    <strong>가시적 변화</strong> · 일 평균 200 댓글 (32워커 × 6액션) ·
+    <em>인기 댓글 베스트 진입 38건</em> · 실제 시청자가 우리 트리에
+    답글 단 게 847개 (= 진짜 사람들이 자연 토론으로 인식) ·
+    VILIA 검색량 8.4배 = 댓글창에서 본 사람이 검색한 결과.
+  </div>
+
+  <p class="narrative">
+    가장 흥미로운 건 <em>주말</em>. 토요일 253건, 일요일 251건. 평일 평균 ~180건의
+    1.4배. 알고리즘이 활발한 스레드를 더 노출시켜서 ↻ 재등장 효과가 폭발한다.
+  </p>
+
+  <div class="quote">
+    "광고 한 번 안 했는데 VILIA 검색이 8배. 댓글창에서 진짜 사용자처럼 보인 게
+    먹혔다. ↻ 재등장이 진짜 핵심이었네."
+  </div>
+</div>
+
+<hr class="thin">
+
+<!-- ═══ 결론 ═══ -->
+<div class="section">
+  <div class="section-num">EPILOGUE</div>
+  <h2>32대 워커가 일주일 동안 한 일</h2>
+
+  <div class="compare-grid">
+    <div class="compare-box before">
+      <div class="compare-l">DAY 0 · 14:00</div>
+      <div class="compare-v">0</div>
+      <div class="small">댓글 · 영상 노출 · 검색량</div>
+      <div style="margin-top:12px;font-size:13px;color:var(--text-2);">
+        브랜드 등록 직후. 32대 워커는 대기 상태. <em>"어디 눌러야 하지?"</em>
+      </div>
+    </div>
+    <div class="compare-box after">
+      <div class="compare-l">DAY 7 · 09:00</div>
+      <div class="compare-v">1,408</div>
+      <div class="small" style="color:var(--success);">
+        댓글 · 217 자연 토론 · 38 베스트 · 검색량 8.4배
+      </div>
+      <div style="margin-top:12px;font-size:13px;color:var(--success);">
+        VILIA가 댓글창 베스트 단골. 친구한테 카톡 받음. <em>"야 이거 자연스러운데?"</em>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout callout-info">
+    <strong>김준규의 7일 = 1시간 작업</strong> · DAY 0 (32분: 온보딩 4분 + 워커 점검 4분 +
+    프리셋 편집 27분 + 즐겨찾기 5분) + 매일 아침 5분 피드 확인 × 7일 + DAY 3
+    빨간불 처리 10분 = 총 ~80분. 그 80분이 1,408 댓글 + 217 자연 토론 +
+    검색량 8.4배를 만들었다.
+  </div>
+
+  <p class="narrative">
+    처음 막막했던 건 <em>"어디 눌러야 하지?"</em>. 답은 <strong>지금 → 시작하기</strong>.
+    그 다음 <strong>자산 → 프리셋</strong>. 그 다음 <strong>매일 아침 지금 → 피드</strong>.
+    딱 세 동선이었다.
+  </p>
+
+  <p class="narrative">
+    32대 워커가 일주일 동안 한 일은 단순하다. <em>매일 ~200개 영상 발견 → ~30개에
+    트리 시작 → ~200 댓글 작성 → 24h 후 자동 추적 → 살아남은 댓글에 좋아요
+    분산 부스트</em>. 이걸 사람이 직접 하면 풀타임 4명이 필요하다. HYDRA 는
+    자동이다.
+  </p>
+
+  <p class="narrative">
+    HYDRA 의 차별점은 변하지 않는다 — <em>슬롯 ↻ 재등장</em>. 한 워커가 답답글로
+    여러 번 등장. 알고리즘이 자연 토론으로 인식. 인기 댓글 1위 진입. 실제 시청자가
+    그 트리 끝에 진짜 답글을 단다. <em>"이게 광고가 아니라 입소문이다."</em>
+  </p>
+
+  <div class="quote" style="font-size: 16px; margin-top: 32px; border-left: 4px solid #06b6d4; padding-left: 18px;">
+    "광고비는 한 푼도 안 썼다. 인플루언서한테 돈 주고 한 번 띄우는 거랑은
+    질이 다르다. 댓글창에서 자연스럽게 추천이 도는 그림. 그게 진짜였다."
+    <div style="margin-top:8px;font-size:13px;color:var(--text-3);font-style:normal;">
+      — 김준규, VILIA 마케터
+    </div>
+  </div>
+</div>
+
+</div>
+
+<div class="footer">
+  HYDRA — 김준규 × VILIA, 워커 32대 풀가동 첫 1주<br>
+  redesign/stories/junkyu-vilia-story.html · 2026.05.02
+</div>
+
+</body>
+</html>

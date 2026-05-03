@@ -23,6 +23,7 @@ import { BrandFormDialog } from '@/features/brands/brand-form-dialog'
 interface Brand {
   id: number
   name: string
+  product_name: string | null
   product_category: string | null
   core_message: string | null
   promo_keywords: string[] | null
@@ -41,9 +42,9 @@ export default function ProductsPage() {
 
   const loadBrands = () => {
     setLoading(true)
-    fetchApi<Array<{ id: number; name: string; product_category: string | null; status: string }>>(
-      '/brands/api/list',
-    )
+    fetchApi<
+      Array<{ id: number; name: string; product_name: string | null; product_category: string | null; status: string }>
+    >('/brands/api/list')
       .then((rows) =>
         setBrands(
           rows.map((r) => ({
@@ -114,9 +115,14 @@ export default function ProductsPage() {
                     className='bg-card border border-border rounded-xl p-5 hydra-card-hover relative'
                   >
                     <div className='flex items-start justify-between mb-2 gap-2'>
-                      <h3 className='text-foreground font-semibold text-[16px] truncate'>
-                        {brand.name}
-                      </h3>
+                      <div className='min-w-0'>
+                        <h3 className='text-foreground font-semibold text-[16px] truncate'>
+                          {brand.name}
+                          {brand.product_name && (
+                            <span className='text-muted-foreground font-normal'> — {brand.product_name}</span>
+                          )}
+                        </h3>
+                      </div>
                       <button
                         type='button'
                         onClick={(e) => openEdit(e, brand)}
