@@ -17,6 +17,7 @@ router = APIRouter()
 
 class BrandCreate(BaseModel):
     name: str
+    product_name: str | None = None
     product_category: str | None = None
     core_message: str | None = None
     brand_story: str | None = None
@@ -36,7 +37,7 @@ class BrandCreate(BaseModel):
 def list_brands(db: Session = Depends(get_db)):
     brands = db.query(Brand).filter(Brand.status != "deleted").all()
     return [
-        {"id": b.id, "name": b.name, "category": b.product_category, "status": b.status}
+        {"id": b.id, "name": b.name, "product_name": b.product_name, "category": b.product_category, "status": b.status}
         for b in brands
     ]
 
@@ -45,6 +46,7 @@ def list_brands(db: Session = Depends(get_db)):
 def create_brand(data: BrandCreate, db: Session = Depends(get_db)):
     brand = Brand(
         name=data.name,
+        product_name=data.product_name,
         product_category=data.product_category,
         core_message=data.core_message,
         brand_story=data.brand_story,
@@ -120,7 +122,7 @@ def get_brand(brand_id: int, db: Session = Depends(get_db)):
         .all()
     )
     return {
-        "id": b.id, "name": b.name, "category": b.product_category,
+        "id": b.id, "name": b.name, "product_name": b.product_name, "category": b.product_category,
         "core_message": b.core_message, "brand_story": b.brand_story,
         "target_keywords": json.loads(b.target_keywords or "[]"),
         "allowed_keywords": json.loads(b.allowed_keywords or "[]"),
@@ -163,6 +165,8 @@ def update_brand(brand_id: int, data: BrandCreate, db: Session = Depends(get_db)
     if not b:
         return {"error": "not found"}
     b.name = data.name or b.name
+    if data.product_name is not None:
+        b.product_name = data.product_name
     b.product_category = data.product_category or b.product_category
     b.core_message = data.core_message or b.core_message
     b.brand_story = data.brand_story or b.brand_story
@@ -207,7 +211,7 @@ def update_brand_field(brand_id: int, data: BrandFieldUpdate, db: Session = Depe
         "ingredients", "selling_points", "mention_rules",
     }
     text_fields = {
-        "name", "product_category", "core_message", "brand_story",
+        "name", "product_name", "product_category", "core_message", "brand_story",
         "tone_guide", "target_audience", "status",
     }
 

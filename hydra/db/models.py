@@ -78,6 +78,7 @@ class Brand(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=False)
+    product_name = Column(String)  # 상품명 (예: 모렉신). brand.name 은 회사/모브랜드 (예: 트리코라).
     product_category = Column(String)
     core_message = Column(Text)
     brand_story = Column(Text)

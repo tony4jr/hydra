@@ -31,6 +31,9 @@ export function ScopeBar() {
         className='font-medium text-foreground hover:underline'
       >
         {activeBrand.name}
+        {activeBrand.product_name && (
+          <span className='text-muted-foreground font-normal'> — {activeBrand.product_name}</span>
+        )}
       </Link>
       {activeBrand.product_category && (
         <>

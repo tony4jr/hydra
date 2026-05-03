@@ -13,6 +13,7 @@ const STORAGE_KEY = 'hydra_active_brand_id'
 export interface ActiveBrand {
   id: number
   name: string
+  product_name: string | null
   product_category: string | null
 }
 
