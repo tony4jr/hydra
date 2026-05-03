@@ -7,6 +7,7 @@
 import { Link, useParams } from '@tanstack/react-router'
 
 import { useNiches } from '@/hooks/use-niches'
+import { useSyncActiveBrand } from '@/hooks/use-sync-active-brand'
 import { labels } from '@/lib/i18n-terms'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
@@ -17,6 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 export default function BrandDetailPage() {
   const { brandId } = useParams({ from: '/_authenticated/products/$brandId/' })
   const brandIdNum = Number(brandId)
+  useSyncActiveBrand(brandIdNum)
   const { niches, loading } = useNiches(brandIdNum)
 
   return (
@@ -37,6 +39,26 @@ export default function BrandDetailPage() {
             <p className='hydra-page-sub'>
               브랜드의 시장을 선택해 5탭 (개요·수집·메시지·캠페인·분석) 으로 이동합니다
             </p>
+            <div className='mt-3 flex flex-wrap gap-2 text-[12px]'>
+              <Link
+                to='/targets'
+                className='rounded-md border border-border px-2.5 py-1 hover:bg-muted/50'
+              >
+                영상 풀 · 수집 →
+              </Link>
+              <Link
+                to='/campaigns'
+                className='rounded-md border border-border px-2.5 py-1 hover:bg-muted/50'
+              >
+                캠페인 →
+              </Link>
+              <Link
+                to='/tasks'
+                className='rounded-md border border-border px-2.5 py-1 hover:bg-muted/50'
+              >
+                작업 큐 →
+              </Link>
+            </div>
           </div>
 
           {loading ? (
