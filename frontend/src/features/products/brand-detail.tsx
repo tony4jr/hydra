@@ -1,7 +1,7 @@
 /**
- * /products/$brandId — Brand 디테일 (Niche 리스트).
+ * /brands/$brandId — Brand 디테일 (Niche 리스트).
  *
- * PR-4a 골격. Niche 카드 클릭 → /products/$brandId/niches/$nicheId.
+ * PR-4a 골격. Niche 카드 클릭 → /brands/$brandId/niches/$nicheId.
  * 백엔드: PR-3b 의 /api/admin/niches?brand_id=X 사용.
  */
 import { Link, useParams } from '@tanstack/react-router'
@@ -16,7 +16,7 @@ import { ThemeSwitch } from '@/components/theme-switch'
 import { Skeleton } from '@/components/ui/skeleton'
 
 export default function BrandDetailPage() {
-  const { brandId } = useParams({ from: '/_authenticated/products/$brandId/' })
+  const { brandId } = useParams({ from: '/_authenticated/brands/$brandId/' })
   const brandIdNum = Number(brandId)
   useSyncActiveBrand(brandIdNum)
   const { niches, loading } = useNiches(brandIdNum)
@@ -32,7 +32,7 @@ export default function BrandDetailPage() {
       <Main>
         <div>
           <div className='mb-5'>
-            <Link to='/products' className='text-muted-foreground text-[12px] hover:underline'>
+            <Link to='/brands' className='text-muted-foreground text-[12px] hover:underline'>
               ← {labels.pageProducts}
             </Link>
             <h1 className='hydra-page-h mt-1'>{labels.niche} 목록</h1>
@@ -79,7 +79,7 @@ export default function BrandDetailPage() {
               {niches.map((niche) => (
                 <Link
                   key={niche.id}
-                  to='/products/$brandId/niches/$nicheId'
+                  to='/brands/$brandId/niches/$nicheId'
                   params={{ brandId, nicheId: String(niche.id) }}
                   className='bg-card border border-border rounded-xl p-5 hydra-card-hover'
                 >

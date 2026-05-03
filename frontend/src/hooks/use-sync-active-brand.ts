@@ -4,7 +4,7 @@ import { useActiveBrand } from '@/lib/active-brand'
 /**
  * URL의 brandId를 활성 브랜드로 동기화.
  *
- * 브랜드 스코프 페이지(/products/$brandId, /products/$brandId/niches/...) 진입 시,
+ * 브랜드 스코프 페이지(/brands/$brandId, /brands/$brandId/niches/...) 진입 시,
  * ScopeBar/사이드바가 가리키는 활성 브랜드와 URL이 어긋나지 않도록 맞춰줌.
  */
 export function useSyncActiveBrand(brandId: number | null | undefined) {

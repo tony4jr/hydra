@@ -1,13 +1,13 @@
 /**
- * /products — 제품 목록 (Brand list).
+ * /brands — 제품 목록 (Brand list).
  *
- * 카드 클릭 → /products/$brandId 디테일.
+ * 카드 클릭 → /brands/$brandId 디테일.
  * 카드 안의 편집 버튼은 stopPropagation 으로 nav 차단.
  * 편집·삭제는 BrandFormDialog (기존 /brands 페이지 패턴 재사용).
  */
 import { useEffect, useState, type MouseEvent } from 'react'
 import { Link } from '@tanstack/react-router'
-import { Pencil } from 'lucide-react'
+import { Pencil, Plus } from 'lucide-react'
 
 import { fetchApi } from '@/lib/api'
 import { useNicheCountByBrand } from '@/hooks/use-niches'
@@ -16,6 +16,7 @@ import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { BrandFormDialog } from '@/features/brands/brand-form-dialog'
 
@@ -35,6 +36,7 @@ export default function ProductsPage() {
   const [brands, setBrands] = useState<Brand[]>([])
   const [loading, setLoading] = useState(true)
   const [editBrand, setEditBrand] = useState<Brand | null>(null)
+  const [createOpen, setCreateOpen] = useState(false)
   const nicheCountByBrand = useNicheCountByBrand()
 
   const loadBrands = () => {
@@ -75,11 +77,16 @@ export default function ProductsPage() {
       </Header>
       <Main>
         <div>
-          <div className='mb-5'>
-            <h1 className='hydra-page-h'>{labels.pageProducts}</h1>
-            <p className='hydra-page-sub'>
-              브랜드와 시장을 한눈에 보고 상세 페이지로 이동하세요
-            </p>
+          <div className='mb-5 flex flex-wrap items-start justify-between gap-2'>
+            <div>
+              <h1 className='hydra-page-h'>{labels.pageProducts}</h1>
+              <p className='hydra-page-sub'>
+                브랜드와 시장을 한눈에 보고 상세 페이지로 이동하세요
+              </p>
+            </div>
+            <Button onClick={() => setCreateOpen(true)} className='hydra-btn-press'>
+              <Plus className='mr-2 h-4 w-4' /> 브랜드 추가
+            </Button>
           </div>
 
           {loading ? (
@@ -90,10 +97,10 @@ export default function ProductsPage() {
             </div>
           ) : brands.length === 0 ? (
             <div className='bg-card border border-border rounded-xl py-16 text-center'>
-              <p className='text-muted-foreground text-[14px] mb-1'>등록된 브랜드가 없어요</p>
-              <p className='text-muted-foreground/60 text-[12px]'>
-                브랜드 페이지에서 추가하세요
-              </p>
+              <p className='text-muted-foreground text-[14px] mb-3'>등록된 브랜드가 없어요</p>
+              <Button onClick={() => setCreateOpen(true)} className='hydra-btn-press'>
+                <Plus className='mr-2 h-4 w-4' /> 첫 브랜드 추가
+              </Button>
             </div>
           ) : (
             <div className='grid gap-3 md:grid-cols-2 lg:grid-cols-3'>
@@ -102,7 +109,7 @@ export default function ProductsPage() {
                 return (
                   <Link
                     key={brand.id}
-                    to='/products/$brandId'
+                    to='/brands/$brandId'
                     params={{ brandId: String(brand.id) }}
                     className='bg-card border border-border rounded-xl p-5 hydra-card-hover relative'
                   >
@@ -151,6 +158,17 @@ export default function ProductsPage() {
         brand={editBrand}
         onSuccess={() => {
           setEditBrand(null)
+          loadBrands()
+        }}
+      />
+
+      <BrandFormDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        mode='create'
+        brand={null}
+        onSuccess={() => {
+          setCreateOpen(false)
           loadBrands()
         }}
       />

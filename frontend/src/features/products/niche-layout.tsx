@@ -1,5 +1,5 @@
 /**
- * /products/$brandId/niches/$nicheId — 시장 5탭 layout.
+ * /brands/$brandId/niches/$nicheId — 시장 5탭 layout.
  *
  * PR-4a 골격. Outlet 으로 5탭 콘텐츠 렌더 (overview/collection/messaging/campaigns/analytics).
  * 각 탭 콘텐츠는 placeholder, 후속 sub-PR (4b~f) 에서 채움.
@@ -33,11 +33,11 @@ const TABS: TabDef[] = [
 
 export default function NicheLayout() {
   const { brandId, nicheId } = useParams({
-    from: '/_authenticated/products/$brandId/niches/$nicheId',
+    from: '/_authenticated/brands/$brandId/niches/$nicheId',
   })
   useSyncActiveBrand(Number(brandId))
   const location = useLocation()
-  const base = `/products/${brandId}/niches/${nicheId}`
+  const base = `/brands/${brandId}/niches/${nicheId}`
   const activeSuffix = location.pathname.replace(base, '') || ''
 
   const [niche, setNiche] = useState<Niche | null>(null)
@@ -62,7 +62,7 @@ export default function NicheLayout() {
         <div>
           <div className='mb-5'>
             <Link
-              to='/products/$brandId'
+              to='/brands/$brandId'
               params={{ brandId }}
               className='text-muted-foreground text-[12px] hover:underline'
             >
