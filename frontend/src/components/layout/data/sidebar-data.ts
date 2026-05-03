@@ -6,7 +6,6 @@ import {
   Monitor,
   Settings,
   Command,
-  Image,
   ScrollText,
   Boxes,
   Sparkles,
@@ -67,7 +66,7 @@ export const sidebarData: SidebarData = {
       ],
     },
     {
-      title: '자산',
+      title: '운영',
       items: [
         {
           title: '브랜드',
@@ -75,24 +74,24 @@ export const sidebarData: SidebarData = {
           icon: Boxes,
         },
         {
-          title: '영상',
-          url: '/videos',
-          icon: Video,
-        },
-        {
           title: '프리셋',
           url: '/presets',
           icon: ListChecks,
         },
         {
-          title: '계정',
+          title: '영상',
+          url: '/videos',
+          icon: Video,
+        },
+      ],
+    },
+    {
+      title: '계정',
+      items: [
+        {
+          title: '계정 · 아바타',
           url: '/accounts',
           icon: Users,
-        },
-        {
-          title: '아바타',
-          url: '/avatars',
-          icon: Image,
         },
       ],
     },

@@ -12,6 +12,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { FleetView } from './components/fleet-view'
+import { AvatarManager } from '@/features/avatars/avatar-manager'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
@@ -344,6 +345,7 @@ export default function AccountsPage() {
               <TabsTrigger value='identity'>본인 인증 {stats.identity_challenge > 0 && <span className='ml-1 text-rose-500'>{stats.identity_challenge}</span>}</TabsTrigger>
               <TabsTrigger value='problem'>문제 계정</TabsTrigger>
               <TabsTrigger value='monitoring'>모니터링</TabsTrigger>
+              <TabsTrigger value='avatars'>아바타</TabsTrigger>
             </TabsList>
 
             <TabsContent value='fleet' className='mt-4'>
@@ -477,6 +479,10 @@ export default function AccountsPage() {
 
             <TabsContent value='problem' className='mt-4'>
               {renderTable(problemAccounts)}
+            </TabsContent>
+
+            <TabsContent value='avatars' className='mt-4'>
+              <AvatarManager />
             </TabsContent>
 
             <TabsContent value='monitoring' className='mt-4'>

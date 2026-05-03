@@ -163,27 +163,32 @@ export function BrandFormDialog({
           {/* Name */}
           <div className='mb-5'>
             <label className='text-foreground text-sm font-medium mb-1.5'>브랜드 이름</label>
-            <p className='text-muted-foreground text-xs mb-2'>홍보할 브랜드나 제품의 이름</p>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder='예: 모렉신'
+              autoFocus
             />
           </div>
 
           {/* Category */}
           <div className='mb-5'>
             <label className='text-foreground text-sm font-medium mb-1.5'>카테고리</label>
-            <p className='text-muted-foreground text-xs mb-2'>어떤 종류의 제품인가요?</p>
             <Input
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              placeholder='예: 건강기능식품, 화장품, IT서비스'
+              placeholder='예: 탈모영양제, 화장품, IT서비스'
             />
           </div>
 
-          {/* Core Message */}
-          <div className='mb-5'>
+          {mode === 'create' && (
+            <p className='text-muted-foreground text-xs'>
+              나머지 설정 (메시지·수집 정책·키워드)은 브랜드 생성 후 타겟 단위로 설정합니다.
+            </p>
+          )}
+
+          {/* Core Message — edit only */}
+          {mode === 'edit' && <div className='mb-5'>
             <label className='text-foreground text-sm font-medium mb-1.5'>핵심 메시지</label>
             <p className='text-muted-foreground text-xs mb-2'>댓글에서 자연스럽게 전달할 셀링 포인트</p>
             <Textarea
@@ -192,10 +197,10 @@ export function BrandFormDialog({
               placeholder='예: 케라틴 직접 보충으로 모발 성장 촉진, 해외 논문 검증'
               rows={3}
             />
-          </div>
+          </div>}
 
-          {/* 수집 정책 */}
-          <div className='mb-5 rounded-lg border border-border p-3 space-y-3 bg-muted/20'>
+          {/* 수집 정책 — edit only */}
+          {mode === 'edit' && <div className='mb-5 rounded-lg border border-border p-3 space-y-3 bg-muted/20'>
             <div className='flex items-center justify-between'>
               <span className='text-foreground text-sm font-medium'>영상 수집 정책</span>
               <span className='text-muted-foreground text-[11px]'>운영 중 변경 가능</span>
@@ -248,10 +253,10 @@ export function BrandFormDialog({
                 <p className='text-muted-foreground text-[10px] mt-0.5'>같은 영상×프리셋 7일 내 ≤N</p>
               </div>
             </div>
-          </div>
+          </div>}
 
-          {/* Promo Keywords (Tag Input) */}
-          <div className='mb-5'>
+          {/* Promo Keywords — edit only */}
+          {mode === 'edit' && <div className='mb-5'>
             <label className='text-foreground text-sm font-medium mb-1.5'>홍보 키워드</label>
             <p className='text-muted-foreground text-xs mb-2'>댓글에 녹일 핵심 키워드를 입력하고 Enter</p>
             <div className='rounded-lg border border-border bg-background p-2 min-h-[42px]'>
@@ -278,7 +283,7 @@ export function BrandFormDialog({
                 className='border-0 p-0 h-7 shadow-none focus-visible:ring-0'
               />
             </div>
-          </div>
+          </div>}
         </div>
 
         <DialogFooter className='flex !justify-between'>
