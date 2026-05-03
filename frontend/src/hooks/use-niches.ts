@@ -13,6 +13,7 @@ export function useNiches(brandId?: number) {
   const [niches, setNiches] = useState<Niche[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<unknown>(null)
+  const [version, setVersion] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -35,9 +36,9 @@ export function useNiches(brandId?: number) {
     return () => {
       cancelled = true
     }
-  }, [brandId])
+  }, [brandId, version])
 
-  return { niches, loading, error }
+  return { niches, loading, error, refresh: () => setVersion((v) => v + 1) }
 }
 
 export function useNicheOverview(nicheId: number | string) {
