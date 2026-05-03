@@ -3,13 +3,13 @@ import { CollectionTab } from '@/features/products/niche-tabs/collection'
 
 function CollectionRoute() {
   const { nicheId } = useParams({
-    from: '/_authenticated/products/$brandId/niches/$nicheId/collection',
+    from: '/_authenticated/brands/$brandId/niches/$nicheId/collection',
   })
   return <CollectionTab nicheId={nicheId} />
 }
 
 export const Route = createFileRoute(
-  '/_authenticated/products/$brandId/niches/$nicheId/collection',
+  '/_authenticated/brands/$brandId/niches/$nicheId/collection',
 )({
   component: CollectionRoute,
 })

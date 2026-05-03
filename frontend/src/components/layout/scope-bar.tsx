@@ -26,7 +26,7 @@ export function ScopeBar() {
   return (
     <div className='border-b border-border bg-muted/20 px-4 py-2 text-[12px] text-muted-foreground flex items-center gap-2'>
       <Link
-        to='/products/$brandId'
+        to='/brands/$brandId'
         params={{ brandId: String(activeBrand.id) }}
         className='font-medium text-foreground hover:underline'
       >

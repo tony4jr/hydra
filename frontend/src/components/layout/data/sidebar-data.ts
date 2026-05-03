@@ -71,7 +71,7 @@ export const sidebarData: SidebarData = {
       items: [
         {
           title: '브랜드',
-          url: '/products',
+          url: '/brands',
           icon: Boxes,
         },
         {

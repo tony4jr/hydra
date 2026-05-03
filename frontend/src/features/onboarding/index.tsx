@@ -203,14 +203,14 @@ export default function OnboardingPage() {
     localStorage.removeItem(STORAGE_KEY)
     if (state.brandId && state.nicheId) {
       navigate({
-        to: '/products/$brandId/niches/$nicheId',
+        to: '/brands/$brandId/niches/$nicheId',
         params: {
           brandId: String(state.brandId),
           nicheId: String(state.nicheId),
         },
       })
     } else {
-      navigate({ to: '/products' })
+      navigate({ to: '/brands' })
     }
   }
 
