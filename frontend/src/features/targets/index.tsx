@@ -26,6 +26,7 @@ import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { fetchApi } from '@/lib/api'
+import { useActiveBrand } from '@/lib/active-brand'
 import { useCountUp } from '@/hooks/use-count-up'
 import { VideoPoolPanel } from './video-pool-panel'
 import { KeywordPollingPanel } from './keyword-polling-panel'
@@ -111,9 +112,10 @@ export default function TargetsPage() {
   const [campaignFilter, setCampaignFilter] = useState('all')
   const perPage = 20
 
-  // Brand 선택 + 수집 상태
+  // Brand 선택 + 수집 상태 — 활성 브랜드 컨텍스트와 동기화
+  const { activeBrand, setActiveBrandId } = useActiveBrand()
   const [brands, setBrands] = useState<BrandRow[]>([])
-  const [selectedBrand, setSelectedBrand] = useState<number | null>(null)
+  const [selectedBrand, setSelectedBrand] = useState<number | null>(activeBrand?.id ?? null)
   const [status, setStatus] = useState<CollectionStatus | null>(null)
   const [collectStarting, setCollectStarting] = useState(false)
   const [dailyTriggerLoading, setDailyTriggerLoading] = useState(false)
@@ -135,10 +137,22 @@ export default function TargetsPage() {
         // 두 가지 형식 모두 처리 (배열 직접 또는 {items: [...]})
         const items: BrandRow[] = Array.isArray(d) ? d : (d.items || [])
         setBrands(items)
-        if (items.length > 0) setSelectedBrand(items[0].id)
+        // 활성 브랜드가 있으면 그걸로, 없으면 첫 번째로
+        if (items.length > 0 && selectedBrand === null) {
+          setSelectedBrand(activeBrand?.id ?? items[0].id)
+        }
       })
       .catch(() => {})
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeBrand?.id])
+
+  // 페이지 내에서 브랜드 바꾸면 전역 컨텍스트도 갱신
+  useEffect(() => {
+    if (selectedBrand && selectedBrand !== activeBrand?.id) {
+      setActiveBrandId(selectedBrand)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBrand])
 
   // 선택된 brand 의 수집 상태 폴링
   useEffect(() => {
@@ -217,8 +231,8 @@ export default function TargetsPage() {
         <div >
           <div className='mb-5 flex flex-wrap items-center justify-between gap-2'>
             <div>
-              <h1 className='hydra-page-h'>타겟</h1>
-              <p className='hydra-page-sub'>수집된 영상 목록 확인 및 관리</p>
+              <h1 className='hydra-page-h'>영상 풀 · 수집</h1>
+              <p className='hydra-page-sub'>활성 브랜드의 영상 풀 / 수집 정책 / 신규 갱신</p>
             </div>
             <div className='flex gap-2'>
               {campaigns.length > 0 && (

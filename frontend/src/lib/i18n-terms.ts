@@ -93,7 +93,7 @@ export const labels = {
 
   // 페이지명
   pageHome: '운영 현황',
-  pageProducts: '제품 목록',
+  pageProducts: '브랜드 목록',
   pageNiche: '타겟',
   pageCampaigns: '캠페인',
   pageVideos: '영상',
@@ -104,7 +104,11 @@ export const labels = {
   pageSettings: '시스템 설정',
 
   // 도메인 핵심 용어 (운영자 멘탈모델)
+  // 계층: 브랜드(brand) → 타겟(niche) → 오디언스(target_audience)
+  // 예) 브랜드="탈모케어", 타겟="산후"/"남성", 오디언스="출산 후 6~24개월 여성"
+  brand: '브랜드',
   niche: '타겟',
+  audience: '오디언스',
   marketDefinition: '시장 정의',         // ← embedding_reference_text 의 UI 라벨
   marketFitness: '시장 적합도',          // ← embedding_score 의 UI 라벨
   collectionFunnel: '수집 흐름',

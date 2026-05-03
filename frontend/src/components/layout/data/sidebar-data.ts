@@ -70,7 +70,7 @@ export const sidebarData: SidebarData = {
       title: '자산',
       items: [
         {
-          title: '타겟',
+          title: '브랜드',
           url: '/products',
           icon: Boxes,
         },

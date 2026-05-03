@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react'
 import { Link, Outlet, useLocation, useParams } from '@tanstack/react-router'
 
+import { useSyncActiveBrand } from '@/hooks/use-sync-active-brand'
 import { fetchApi } from '@/lib/api'
 import { labels } from '@/lib/i18n-terms'
 import type { Niche } from '@/types/niche'
@@ -34,6 +35,7 @@ export default function NicheLayout() {
   const { brandId, nicheId } = useParams({
     from: '/_authenticated/products/$brandId/niches/$nicheId',
   })
+  useSyncActiveBrand(Number(brandId))
   const location = useLocation()
   const base = `/products/${brandId}/niches/${nicheId}`
   const activeSuffix = location.pathname.replace(base, '') || ''

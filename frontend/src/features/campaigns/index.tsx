@@ -7,6 +7,7 @@ import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { fetchApi } from '@/lib/api'
+import { useActiveBrand } from '@/lib/active-brand'
 import { useCountUp } from '@/hooks/use-count-up'
 import { CampaignCreateDialog } from './campaign-create-dialog'
 import { DirectCampaignDialog } from './direct-campaign-dialog'
@@ -52,11 +53,13 @@ function CampaignStatCard({ label, value }: { label: string; value: number }) {
 }
 
 export default function CampaignsPage() {
+  const { activeBrand } = useActiveBrand()
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [loading, setLoading] = useState(true)
   const [createOpen, setCreateOpen] = useState(false)
   const [directOpen, setDirectOpen] = useState(false)
   const [detailId, setDetailId] = useState<number | null>(null)
+  const [scopeAll, setScopeAll] = useState(false)
 
   const loadCampaigns = () => {
     setLoading(true)
@@ -70,9 +73,12 @@ export default function CampaignsPage() {
     loadCampaigns()
   }, [])
 
-  const inProgress = campaigns.filter(c => c.status === 'in_progress').length
-  const completed = campaigns.filter(c => c.status === 'completed').length
-  const total = campaigns.length
+  const scoped = scopeAll || !activeBrand
+    ? campaigns
+    : campaigns.filter((c) => c.brand_name === activeBrand.name)
+  const inProgress = scoped.filter(c => c.status === 'in_progress').length
+  const completed = scoped.filter(c => c.status === 'completed').length
+  const total = scoped.length
 
   return (
     <>
@@ -88,7 +94,17 @@ export default function CampaignsPage() {
             <div>
               <h1 className='hydra-page-h'>캠페인</h1>
               <p className='hydra-page-sub'>
-                어디에, 어떻게, 얼마나 작업할지 관리하세요
+                {scopeAll || !activeBrand
+                  ? '전체 브랜드 캠페인'
+                  : `${activeBrand.name} 캠페인 (${total}건)`}
+                {' · '}
+                <button
+                  type='button'
+                  onClick={() => setScopeAll(s => !s)}
+                  className='underline hover:text-foreground'
+                >
+                  {scopeAll ? '활성 브랜드만 보기' : '전체 브랜드 보기'}
+                </button>
               </p>
             </div>
             <div className='flex gap-2'>
@@ -114,7 +130,7 @@ export default function CampaignsPage() {
                 <Skeleton key={i} className='h-28 rounded-xl' />
               ))}
             </div>
-          ) : campaigns.length === 0 ? (
+          ) : scoped.length === 0 ? (
             <div className='hydra-empty'>
               <div className='hydra-empty-icon'>📋</div>
               <div className='hydra-empty-title'>아직 캠페인이 없어요</div>
@@ -132,7 +148,7 @@ export default function CampaignsPage() {
             </div>
           ) : (
             <div className='space-y-3'>
-              {campaigns.map(c => {
+              {scoped.map(c => {
                 const progress = c.total_tasks && c.total_tasks > 0
                   ? Math.round((c.completed_tasks ?? 0) / c.total_tasks * 100) : 0
                 return (
