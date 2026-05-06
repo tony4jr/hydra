@@ -328,6 +328,8 @@ class Campaign(Base):
     campaign_type = Column(String, default="scenario")
     comment_mode = Column(String, default="ai_auto")
     preset_id = Column(Integer, ForeignKey("presets.id"))
+    # 슬롯 트리 댓글 프리셋 직접 연결 (s7t8slotengine)
+    comment_preset_id = Column(Integer, ForeignKey("comment_presets.id", ondelete="SET NULL"))
     user_id = Column(Integer)
 
     # D 단계(외부 고객 포털) 대비

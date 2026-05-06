@@ -53,8 +53,17 @@ def upgrade() -> None:
     op.create_index('idx_tasks_slot', 'tasks', ['slot_id'])
     op.create_index('idx_tasks_parent', 'tasks', ['parent_task_id'])
 
+    # 3) 캠페인 ↔ 댓글 프리셋 직접 연결 (Niche 우회 외 다이렉트 매핑 허용)
+    op.add_column(
+        'campaigns',
+        sa.Column('comment_preset_id', sa.Integer,
+                  sa.ForeignKey('comment_presets.id', ondelete='SET NULL'),
+                  nullable=True),
+    )
+
 
 def downgrade() -> None:
+    op.drop_column('campaigns', 'comment_preset_id')
     op.drop_index('idx_tasks_parent', table_name='tasks')
     op.drop_index('idx_tasks_slot', table_name='tasks')
     op.drop_column('tasks', 'parent_task_id')

@@ -3,7 +3,7 @@ import re
 import random
 from datetime import datetime, timedelta, UTC
 from sqlalchemy.orm import Session
-from hydra.db.models import Brand, Campaign, Task, Preset, Video
+from hydra.db.models import Brand, Campaign, CommentPreset, Task, Preset, Video
 
 
 def create_campaign_with_tasks(
@@ -13,8 +13,13 @@ def create_campaign_with_tasks(
     preset_code: str,
     campaign_type: str = "scenario",
     comment_mode: str = "ai_auto",
+    comment_preset_id: int | None = None,
 ) -> Campaign:
-    """캠페인 생성 + 프리셋 기반 태스크 자동 분해."""
+    """캠페인 생성 + 프리셋 기반 태스크 자동 분해.
+
+    comment_preset_id 가 지정되면 슬롯 트리 엔진(slot_engine) 으로 분기.
+    그렇지 않으면 레거시 Preset.steps JSON 기반.
+    """
     preset = db.query(Preset).filter(Preset.code == preset_code).first()
     if not preset:
         raise ValueError(f"Preset '{preset_code}' not found")
@@ -26,10 +31,25 @@ def create_campaign_with_tasks(
         campaign_type=campaign_type,
         comment_mode=comment_mode,
         preset_id=preset.id,
+        comment_preset_id=comment_preset_id,
         status="planning",
     )
     db.add(campaign)
     db.flush()
+
+    # 슬롯 트리 분기 — Phase B
+    if comment_preset_id is not None:
+        cp = db.get(CommentPreset, comment_preset_id)
+        if cp is None:
+            raise ValueError(f"CommentPreset {comment_preset_id} not found")
+        from hydra.services.slot_engine import create_campaign_with_slot_tasks
+        create_campaign_with_slot_tasks(
+            db, campaign=campaign, comment_preset=cp, video_id=video_id,
+        )
+        campaign.status = "in_progress"
+        db.commit()
+        db.refresh(campaign)
+        return campaign
 
     steps = json.loads(preset.steps)
     base_time = datetime.now(UTC)
