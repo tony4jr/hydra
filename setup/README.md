@@ -19,9 +19,13 @@ Authorization: Bearer <admin JWT>
 ## 2. 워커 PC 에서 PowerShell(관리자) 실행
 
 ```powershell
-iwr -Uri https://hydra-prod.duckdns.org/api/workers/setup.ps1 -OutFile setup.ps1
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force; `
+iwr -Uri https://hydra-prod.duckdns.org/api/workers/setup.ps1 -OutFile setup.ps1; `
 .\setup.ps1 -Token 'ENROLLMENT_JWT' -ServerUrl 'https://hydra-prod.duckdns.org'
 ```
+
+> 어드민 UI 가 이 형식으로 한 줄짜리 install_command 를 발급합니다 — 그대로 붙여넣으면 끝.
+> `Set-ExecutionPolicy ... -Scope Process` 는 이 창에서만 적용되고 창 닫히면 원복됩니다.
 
 설치 단계 (약 10~20분):
 1. Chocolatey

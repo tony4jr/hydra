@@ -57,7 +57,10 @@ def create_enrollment(
     if not server_url:
         raise HTTPException(500, "SERVER_URL not configured")
 
+    # 처음 설치하는 PC 는 ExecutionPolicy 가 Restricted 라 .ps1 실행 거부됨 →
+    # Process scope 로 Bypass (창 닫으면 원복) 를 명령에 포함시켜 한 줄로 동작.
     install_command = (
+        "Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force; "
         f"iwr -Uri {server_url}/api/workers/setup.ps1 -OutFile setup.ps1; "
         f".\\setup.ps1 -Token '{token}' -ServerUrl '{server_url}'"
     )
