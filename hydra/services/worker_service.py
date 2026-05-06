@@ -32,7 +32,7 @@ def heartbeat(db: Session, worker: Worker, version: str = None, os_type: str = N
         worker.os_type = os_type
     db.commit()
 
-def check_stale_workers(db: Session, timeout_seconds: int = 60):
+def check_stale_workers(db: Session, timeout_seconds: int = 90):
     cutoff = datetime.now(UTC) - timedelta(seconds=timeout_seconds)
     stale = db.query(Worker).filter(
         Worker.status == "online",
