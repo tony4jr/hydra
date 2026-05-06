@@ -495,6 +495,22 @@ class SystemConfig(Base):
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
 
+class YouTubeApiKey(Base):
+    """YouTube Data API v3 키 풀. 어드민이 무한 추가, 라운드로빈+할당량 기반 선택."""
+    __tablename__ = "youtube_api_keys"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    key = Column(String, nullable=False, unique=True)
+    label = Column(String)
+    status = Column(String, nullable=False, default="active")  # active|exhausted|disabled
+    quota_used_today = Column(Integer, nullable=False, default=0)
+    quota_limit = Column(Integer, nullable=False, default=10000)
+    last_used_at = Column(DateTime)
+    last_reset_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    exhausted_at = Column(DateTime)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+
 class ErrorLog(Base):
     __tablename__ = "error_log"
 

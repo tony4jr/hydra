@@ -20,7 +20,7 @@ from hydra.web.routes import accounts, brands, campaigns, dashboard, keywords, v
 from hydra.web.routes import (
     admin_auth, admin_workers, admin_avatars, admin_deploy, admin_audit,
     admin_accounts, admin_tasks, admin_adspower, admin_collection, admin_video_pool,
-    admin_pipeline,
+    admin_pipeline, admin_youtube_keys,
     avatar_serving, worker_api, tasks_api,
     analytics,
 )
@@ -92,6 +92,7 @@ app.include_router(campaign_videos.router, prefix="/api/campaigns", tags=["campa
 app.include_router(keywords.router, prefix="/keywords", tags=["keywords"], dependencies=_ADMIN_DEPS)
 app.include_router(videos.router, prefix="/videos", tags=["videos"], dependencies=_ADMIN_DEPS)
 app.include_router(settings.router, prefix="/settings", tags=["settings"], dependencies=_ADMIN_DEPS)
+app.include_router(admin_youtube_keys.router, prefix="/api/admin/youtube-keys", tags=["admin-youtube-keys"], dependencies=_ADMIN_DEPS)
 app.include_router(pools.router, prefix="/pools", tags=["pools"], dependencies=_ADMIN_DEPS)
 app.include_router(logs.router, prefix="/logs", tags=["logs"], dependencies=_ADMIN_DEPS)
 app.include_router(system.router, prefix="/system", tags=["system"], dependencies=_ADMIN_DEPS)

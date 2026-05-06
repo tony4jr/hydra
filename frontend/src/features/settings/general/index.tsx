@@ -6,10 +6,10 @@ import { Separator } from '@/components/ui/separator'
 import { ContentSection } from '../components/content-section'
 import { fetchApi } from '@/lib/api'
 import { toast } from 'sonner'
+import { YouTubeKeyPool } from './youtube-key-pool'
 
 interface ApiSettings {
   claude_api_key?: string
-  youtube_api_key?: string
   captcha_api_key?: string
   telegram_bot_token?: string
   telegram_chat_id?: string
@@ -122,17 +122,16 @@ export function SettingsGeneral() {
               <MaskedInput id='claude-key' value={settings.claude_api_key || ''} onChange={v => update('claude_api_key', v)} placeholder='sk-ant-...' />
             </div>
             <div className='mb-5'>
-              <label className='text-foreground text-sm font-medium mb-1.5'>YouTube API Key</label>
-              <p className='text-muted-foreground text-xs mb-2'>영상 검색 및 수집에 사용되는 YouTube Data API 키</p>
-              <MaskedInput id='youtube-key' value={settings.youtube_api_key || ''} onChange={v => update('youtube_api_key', v)} placeholder='AIza...' />
-            </div>
-            <div className='mb-5'>
               <label className='text-foreground text-sm font-medium mb-1.5'>2Captcha API Key</label>
               <p className='text-muted-foreground text-xs mb-2'>캡챠 자동 풀이에 사용되는 2Captcha API 키</p>
               <MaskedInput id='captcha-key' value={settings.captcha_api_key || ''} onChange={v => update('captcha_api_key', v)} />
             </div>
           </div>
         </div>
+
+        <Separator />
+
+        <YouTubeKeyPool />
 
         <Separator />
 
