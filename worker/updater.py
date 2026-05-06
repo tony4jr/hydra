@@ -146,6 +146,24 @@ def perform_update(repo_dir: str | None = None) -> None:
         sys.exit(1)
 
     # prev == remote 인 경우 위에서 return 함 → 여기까지 오면 실제 업데이트 성공.
+    # AtStartup 트리거만으로는 정상 종료(exit 0) 후 Task Scheduler 가 자동 재기동
+    # 안 함. 종료 직전에 detached PowerShell 로 Start-ScheduledTask 예약 →
+    # 본 프로세스 종료 후 ~3초 뒤 Task Scheduler 가 새 인스턴스 띄움.
+    try:
+        DETACHED_PROCESS = 0x00000008
+        CREATE_NEW_PROCESS_GROUP = 0x00000200
+        subprocess.Popen(
+            [
+                "powershell.exe", "-NoProfile", "-WindowStyle", "Hidden",
+                "-Command",
+                "Start-Sleep -Seconds 3; Start-ScheduledTask -TaskName HydraWorker",
+            ],
+            creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+            close_fds=True,
+        )
+        log.info("updater: scheduled self-restart via Task Scheduler")
+    except Exception as e:
+        log.error("updater: failed to schedule self-restart: %s", e)
     sys.exit(0)
 
 

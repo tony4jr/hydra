@@ -129,9 +129,19 @@ $action = New-ScheduledTaskAction `
     -Execute $wrapperCmd `
     -Argument $wrapperArgs `
     -WorkingDirectory $InstallPath
-$trigger = New-ScheduledTaskTrigger -AtStartup
+# 트리거 두 개:
+#   1) AtStartup — 부팅 시 시작
+#   2) 1분마다 반복 — 어떤 이유로든 워커가 죽어있으면 자동 부활.
+#      MultipleInstances=IgnoreNew 라 이미 실행 중이면 no-op (중복 안 뜸).
+$triggerStartup = New-ScheduledTaskTrigger -AtStartup
+$triggerWatchdog = New-ScheduledTaskTrigger `
+    -Once -At (Get-Date).AddMinutes(1) `
+    -RepetitionInterval (New-TimeSpan -Minutes 1) `
+    -RepetitionDuration (New-TimeSpan -Days 36500)
+$trigger = @($triggerStartup, $triggerWatchdog)
 $settings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+    -MultipleInstances IgnoreNew `
     -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
 $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -RunLevel Highest
 Register-ScheduledTask -TaskName "HydraWorker" `
