@@ -113,16 +113,6 @@ $enc = [System.Security.Cryptography.ProtectedData]::Protect(
 # 평문은 즉시 제거
 Remove-Variable envContent, plain -ErrorAction SilentlyContinue
 
-# ─── 7a. 수동 사전 작업 안내 (AdsPower 브라우저 커널) ───
-Write-Host "" -ForegroundColor Yellow
-Write-Host "========== 워커 세팅 완료 전 수동 작업 ==========" -ForegroundColor Cyan
-Write-Host " AdsPower 앱을 열고:" -ForegroundColor Yellow
-Write-Host "   프로필 > 편집 > 브라우저 코어 > 모든 Chrome 버전 다운로드" -ForegroundColor Yellow
-Write-Host " (이 워커가 사용할 프로필의 커널을 전부 받아둬야" -ForegroundColor Yellow
-Write-Host "  첫 태스크 실행 시 download 대기로 실패하지 않음)" -ForegroundColor Yellow
-Write-Host "=================================================" -ForegroundColor Cyan
-Write-Host ""
-
 # ─── 8. Task Scheduler 등록 ───
 Write-Host "[8/8] Task Scheduler 등록..." -ForegroundColor Yellow
 # 로그 디렉토리
@@ -148,18 +138,43 @@ Register-ScheduledTask -TaskName "HydraWorker" `
     -Action $action -Trigger $trigger `
     -Settings $settings -Principal $principal -Force | Out-Null
 
+# ─── 9. 자동 시작 ───
+Write-Host ""
+Write-Host "[9/9] 워커 자동 시작..." -ForegroundColor Yellow
+try {
+    Start-ScheduledTask -TaskName "HydraWorker"
+    Start-Sleep -Seconds 2
+    $info = Get-ScheduledTaskInfo -TaskName "HydraWorker"
+    Write-Host "  → 시작됨 (LastRunTime: $($info.LastRunTime))" -ForegroundColor Green
+} catch {
+    Write-Host "  → 자동 시작 실패: $_" -ForegroundColor Red
+    Write-Host "    수동으로: Start-ScheduledTask -TaskName HydraWorker" -ForegroundColor Yellow
+}
+
 Write-Host ""
 Write-Host "Setup complete." -ForegroundColor Green
 Write-Host "  - secrets: $InstallPath\secrets.enc (DPAPI/LocalMachine)"
-Write-Host "  - Task:    HydraWorker (재부팅 시 자동 시작)"
+Write-Host "  - Task:    HydraWorker (자동 시작됨, 재부팅 시 자동 재시작)"
 if ($DryRun) {
     Write-Host "  - Mode:    DRY-RUN (실 행동 없음, 신호 루프만)" -ForegroundColor Yellow
 } else {
     Write-Host "  - Mode:    LIVE (실제 YouTube 액션 수행)" -ForegroundColor Magenta
 }
+
+# ─── 사전 수동 작업 안내 (마지막에 큰 박스로) ───
 Write-Host ""
-Write-Host "지금 바로 시작하려면:"
-Write-Host "  Start-ScheduledTask -TaskName HydraWorker" -ForegroundColor Cyan
+Write-Host "============================================================" -ForegroundColor Yellow
+Write-Host "           >> 첫 태스크 실행 전 수동 작업 필요 <<" -ForegroundColor Yellow
+Write-Host "============================================================" -ForegroundColor Yellow
+Write-Host "  AdsPower 앱을 열고:" -ForegroundColor Yellow
+Write-Host "    프로필 > 편집 > 브라우저 코어 > 모든 Chrome 버전 다운로드" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "로그 보려면:"
-Write-Host "  Get-ScheduledTaskInfo -TaskName HydraWorker"
+Write-Host "  이 워커가 사용할 프로필의 커널을 전부 받아둬야" -ForegroundColor Yellow
+Write-Host "  첫 태스크 실행 시 download 대기로 실패하지 않습니다." -ForegroundColor Yellow
+Write-Host "============================================================" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "로그 실시간 보기:"
+Write-Host "  Get-Content $InstallPath\logs\worker-*.log -Tail 30 -Wait" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "Task 상태:"
+Write-Host "  Get-ScheduledTaskInfo -TaskName HydraWorker" -ForegroundColor Cyan
