@@ -784,9 +784,16 @@ class Task(Base):
     # D 단계(외부 고객 포털) 대비
     customer_id = Column(Integer, nullable=True)
 
+    # 슬롯 트리 프리셋 연결 (s7t8slotengine)
+    slot_id = Column(Integer, ForeignKey("comment_tree_slots.id", ondelete="SET NULL"), nullable=True)
+    slot_label = Column(String(4), nullable=True)
+    parent_task_id = Column(Integer, ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True)
+
     worker = relationship("Worker", back_populates="tasks")
     campaign = relationship("Campaign")
     account = relationship("Account")
+    slot = relationship("CommentTreeSlot")
+    parent_task = relationship("Task", remote_side="Task.id")
 
     __table_args__ = (
         Index("idx_tasks_status", "status"),
@@ -794,6 +801,8 @@ class Task(Base):
         Index("idx_tasks_priority_status", "priority", "status"),
         Index("idx_tasks_scheduled", "scheduled_at"),
         Index("idx_tasks_created_at", "created_at"),
+        Index("idx_tasks_slot", "slot_id"),
+        Index("idx_tasks_parent", "parent_task_id"),
     )
 
 
@@ -850,6 +859,10 @@ class CommentTreeSlot(Base):
     like_min = Column(Integer, default=0, nullable=False)
     like_max = Column(Integer, default=0, nullable=False)
     like_distribution = Column(String(10), default="adaptive", nullable=False)
+
+    # 같은 프리셋 안 다른 슬롯의 라벨. 지정 시 이 슬롯은 그 라벨 슬롯과 동일 계정으로 실행.
+    # F5 흐름의 D=B 같은 자기 답글 패턴.
+    same_account_as_slot_label = Column(String(4), nullable=True)
 
     comment_preset = relationship("CommentPreset", back_populates="slots")
 
