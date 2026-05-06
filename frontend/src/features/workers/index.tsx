@@ -9,6 +9,7 @@ import {
   Pencil,
   Play,
   Plus,
+  Trash2,
   type LucideIcon,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -109,6 +110,25 @@ export default function WorkersPage() {
       await fetchApi(`/api/workers/${id}/resume`, { method: 'POST' })
       loadWorkers()
     } catch (e) { toast.error("오류", { description: e instanceof Error ? e.message : String(e) }) }
+  }
+
+  const handleDelete = async (worker: Worker) => {
+    const ok = confirm(
+      `워커 "${worker.name}" 을(를) 삭제하시겠습니까?\n\n` +
+      `· 과거 태스크 이력은 보존됩니다 (worker_id 만 해제).\n` +
+      `· 이 워커의 명령/에러 로그는 함께 삭제됩니다.\n` +
+      `· 실행 중인 태스크가 있으면 거부됩니다.`,
+    )
+    if (!ok) return
+    try {
+      await fetchApi(`/api/admin/workers/${worker.id}`, { method: 'DELETE' })
+      toast.success(`워커 삭제됨: ${worker.name}`)
+      loadWorkers()
+    } catch (e) {
+      toast.error('삭제 실패', {
+        description: e instanceof Error ? e.message : String(e),
+      })
+    }
   }
 
   const sendCommand = async (workerId: number, command: string) => {
@@ -276,6 +296,14 @@ export default function WorkersPage() {
                           <DropdownMenuItem onClick={() => sendCommand(worker.id, 'stop_all_browsers')}>모든 브라우저 종료</DropdownMenuItem>
                           <DropdownMenuItem onClick={() => sendCommand(worker.id, 'update_adspower_patch')}>AdsPower 패치 업데이트</DropdownMenuItem>
                           <DropdownMenuItem onClick={() => sendCommand(worker.id, 'refresh_fingerprint')}>FP 재생성</DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => handleDelete(worker)}
+                            className='text-destructive focus:text-destructive'
+                          >
+                            <Trash2 className='mr-2 h-3.5 w-3.5' />
+                            워커 삭제
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
