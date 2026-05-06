@@ -89,7 +89,7 @@ class BackgroundScheduler:
         """워커 상태 체크 — 오프라인 감지."""
         db = SessionLocal()
         try:
-            stale = check_stale_workers(db, timeout_seconds=60)
+            stale = check_stale_workers(db, timeout_seconds=90)
             for worker in stale:
                 await alert_worker_disconnected(worker.name)
         finally:

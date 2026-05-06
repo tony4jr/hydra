@@ -164,11 +164,11 @@ class WorkerApp:
                     except Exception as e:
                         print(f"[Worker] command {cmd.get('id')} crash: {e}")
         except Exception as e:
-            # sleep 없이 return 하면 while 루프가 즉시 재진입 → 초당 수십 번 spam.
-            # 네트워크 일시 장애 시 exponential backoff 대신 heartbeat_interval 대기.
+            # 서버 재시작/일시 장애 시 빠르게 복구. 30초가 아닌 5초 retry —
+            # systemctl restart hydra-server 가 5~10초 다운인데 30초 기다리면
+            # 서버가 stale_timeout (90s) 으로 offline 마킹할 위험.
+            # 5초 retry 면 서버 살아나는 즉시 워커 자동 재연결.
             print(f"[Worker] Heartbeat failed: {e}")
-            # 리포트 (서버 도달 가능하면) — heartbeat 자체가 실패한 시점이라
-            # report_error 도 실패할 수 있지만 내부에서 조용히 삼킴.
             import traceback as _tb
             self.client.report_error(
                 kind="heartbeat_fail",
@@ -176,7 +176,7 @@ class WorkerApp:
                 traceback=_tb.format_exc(),
                 context={"server_url": config.server_url},
             )
-            await asyncio.sleep(config.heartbeat_interval)
+            await asyncio.sleep(5)
             return
 
         # M1-11: paused 면 fetch 스킵
