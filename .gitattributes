@@ -1,0 +1,6 @@
+# 윈도우 cmd 가 LF 만 있는 .bat 을 한 덩어리로 잘못 파싱하는 문제 방지.
+# 모든 환경에서 CRLF 로 체크아웃 + 커밋되도록 강제.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+# PowerShell 도 CRLF 권장
+*.ps1 text eol=crlf
