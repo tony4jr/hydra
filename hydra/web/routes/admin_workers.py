@@ -203,10 +203,13 @@ def delete_worker(
 ):
     """워커 삭제. 실행 중인 태스크가 있으면 거부.
 
-    같이 삭제: WorkerCommand, WorkerError (운영 산출물).
-    Task 는 worker_id 를 NULL 로 (historical 보존).
+    같이 삭제: WorkerCommand, WorkerError, ProfileLock (운영 산출물/ephemeral).
+    NULL 로 보존: Task, AccountProfileHistory, ExecutionLog (historical).
     """
-    from hydra.db.models import WorkerCommand, WorkerError
+    from hydra.db.models import (
+        WorkerCommand, WorkerError, ProfileLock,
+        AccountProfileHistory, ExecutionLog,
+    )
     db = _db_session.SessionLocal()
     try:
         w = db.get(Worker, worker_id)
@@ -225,20 +228,32 @@ def delete_worker(
                 "완료 또는 실패 처리 후 다시 시도하세요.",
             )
 
-        # 과거 태스크는 보존 — worker_id NULL
+        worker_name = w.name
+
+        # 이력 보존 — worker_id NULL
         db.query(Task).filter(Task.worker_id == worker_id).update(
             {Task.worker_id: None}, synchronize_session=False,
         )
-        # 운영 산출물은 워커와 함께 삭제
+        db.query(AccountProfileHistory).filter(
+            AccountProfileHistory.worker_id == worker_id
+        ).update({AccountProfileHistory.worker_id: None}, synchronize_session=False)
+        db.query(ExecutionLog).filter(ExecutionLog.worker_id == worker_id).update(
+            {ExecutionLog.worker_id: None}, synchronize_session=False,
+        )
+        # 운영 산출물 / ephemeral lock 은 함께 삭제
         db.query(WorkerCommand).filter(WorkerCommand.worker_id == worker_id).delete(
             synchronize_session=False,
         )
         db.query(WorkerError).filter(WorkerError.worker_id == worker_id).delete(
             synchronize_session=False,
         )
+        db.query(ProfileLock).filter(ProfileLock.worker_id == worker_id).delete(
+            synchronize_session=False,
+        )
+
         db.delete(w)
         db.commit()
-        return {"ok": True, "deleted_worker_id": worker_id, "name": w.name}
+        return {"ok": True, "deleted_worker_id": worker_id, "name": worker_name}
     finally:
         db.close()
 
