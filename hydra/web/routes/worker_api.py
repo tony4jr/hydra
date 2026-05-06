@@ -57,13 +57,16 @@ def serve_setup_ps1() -> Response:
 def serve_install_bat() -> Response:
     """더블클릭 설치 런처 — UAC 자동 + 토큰 GUI 입력창 + setup.ps1 호출.
 
-    .bat 은 ANSI(cp949) 가 기본 — 한글이 들어가면 깨지므로 cp949 로 인코딩해서 서빙.
+    cmd.exe 가 LF 만으로는 라인을 잘못 파싱 → CRLF 강제.
+    파일 내용은 ASCII 만 사용 (Korean 안내는 PowerShell InputBox 가 처리).
     """
     if not _INSTALL_BAT.is_file():
         raise HTTPException(500, "install bat missing")
     text = _INSTALL_BAT.read_text(encoding="utf-8")
+    # LF → CRLF 정규화 (Mac/Linux 에서 작성된 파일이 cmd 에서 깨지지 않도록)
+    text = text.replace("\r\n", "\n").replace("\n", "\r\n")
     return Response(
-        text.encode("cp949", errors="replace"),
+        text.encode("ascii", errors="replace"),
         media_type="application/octet-stream",
         headers={"Content-Disposition": 'attachment; filename="install-worker.bat"'},
     )
