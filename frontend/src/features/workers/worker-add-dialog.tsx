@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Copy, Check } from 'lucide-react'
+import { Copy, Check, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -102,30 +102,69 @@ export function WorkerAddDialog({
         </DialogHeader>
 
         {result ? (
-          <div className='space-y-3'>
-            <div className='rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground'>
-              <p className='mb-1'>
-                1. 워커 PC에서 <strong>관리자 PowerShell</strong> 실행
-              </p>
-              <p>2. 아래 명령을 붙여넣고 Enter</p>
+          <div className='space-y-4'>
+            <div className='rounded-md border bg-emerald-500/5 border-emerald-500/30 p-3'>
+              <div className='flex items-center justify-between mb-2'>
+                <p className='font-semibold text-sm'>방법 A · 더블클릭 (권장)</p>
+                <span className='text-[11px] text-muted-foreground'>PowerShell 몰라도 OK</span>
+              </div>
+              <ol className='text-xs text-muted-foreground space-y-1 mb-3 list-decimal list-inside'>
+                <li>아래 버튼으로 install-worker.bat 다운로드</li>
+                <li>토큰을 복사 (아래 박스 옆 복사 버튼)</li>
+                <li>다운로드한 .bat 파일 더블클릭 → UAC "예" → 토큰 붙여넣기</li>
+              </ol>
+              <Button
+                variant='outline'
+                size='sm'
+                className='w-full'
+                onClick={() => {
+                  window.location.href = '/api/workers/install-worker.bat'
+                }}
+              >
+                <Download className='h-3.5 w-3.5 mr-1.5' />
+                install-worker.bat 다운로드
+              </Button>
+              <div className='mt-2 relative rounded-md border bg-muted/50 p-2'>
+                <code className='pr-9 block font-mono text-[10px] break-all text-muted-foreground'>
+                  {result.enrollment_token}
+                </code>
+                <Button
+                  variant='ghost'
+                  size='sm'
+                  className='absolute top-1 right-1 h-6 w-6 p-0'
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(result.enrollment_token)
+                    toast.success('토큰 복사됨')
+                  }}
+                  aria-label='토큰 복사'
+                >
+                  <Copy className='h-3 w-3' />
+                </Button>
+              </div>
             </div>
 
-            <div className='relative rounded-md border bg-muted/50 p-3'>
-              <pre className='pr-12 whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed'>
-                {result.install_command}
-              </pre>
-              <Button
-                variant='secondary'
-                size='sm'
-                className='absolute top-2 right-2'
-                onClick={handleCopy}
-              >
-                {copied ? (
-                  <Check className='h-3.5 w-3.5' />
-                ) : (
-                  <Copy className='h-3.5 w-3.5' />
-                )}
-              </Button>
+            <div className='rounded-md border bg-muted/30 p-3'>
+              <p className='font-semibold text-sm mb-2'>방법 B · PowerShell 한 줄</p>
+              <p className='text-xs text-muted-foreground mb-2'>
+                관리자 PowerShell 에 아래 명령 붙여넣기.
+              </p>
+              <div className='relative rounded-md border bg-muted/50 p-3'>
+                <pre className='pr-12 whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed'>
+                  {result.install_command}
+                </pre>
+                <Button
+                  variant='secondary'
+                  size='sm'
+                  className='absolute top-2 right-2'
+                  onClick={handleCopy}
+                >
+                  {copied ? (
+                    <Check className='h-3.5 w-3.5' />
+                  ) : (
+                    <Copy className='h-3.5 w-3.5' />
+                  )}
+                </Button>
+              </div>
             </div>
 
             <p className='text-xs text-muted-foreground'>
