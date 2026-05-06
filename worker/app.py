@@ -148,6 +148,10 @@ class WorkerApp:
             if srv_key and _os.environ.get("ADSPOWER_API_KEY") != srv_key:
                 _os.environ["ADSPOWER_API_KEY"] = srv_key
 
+            # Verbose 디버그 모드 — 어드민이 켜면 INFO+ 로그가 서버로 push 됨.
+            from worker.log_shipper import set_verbose_mode
+            set_verbose_mode(bool(hb.get("verbose_mode")))
+
             # 어드민이 발행한 원격 명령 처리 (heartbeat 응답에 같이 옴)
             pending = hb.get("pending_commands") or []
             if pending:

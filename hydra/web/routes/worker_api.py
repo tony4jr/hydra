@@ -190,6 +190,8 @@ class HeartbeatResponse(BaseModel):
     adspower_api_key: str | None = None
     # 어드민이 발행한 대기 중 명령들 (최대 10개, FIFO)
     pending_commands: list[PendingCommand] = []
+    # Verbose 디버그 모드 — True 면 워커가 INFO+ 로그를 /log-tail 로 push.
+    verbose_mode: bool = False
 
 
 # ───────────── error report ─────────────
@@ -449,7 +451,58 @@ def heartbeat_v2(
             },
             adspower_api_key=ads_key,
             pending_commands=pending,
+            verbose_mode=bool(w.verbose_mode),
         )
+    finally:
+        db.close()
+
+
+# ───────────── log tail (verbose 모드 일상 활동 push) ─────────────
+
+class LogTailEntry(BaseModel):
+    occurred_at: datetime
+    level: str = Field(..., min_length=1, max_length=16)
+    logger_name: str | None = Field(None, max_length=128)
+    message: str = Field(..., min_length=1, max_length=2000)
+
+
+class LogTailRequest(BaseModel):
+    entries: list[LogTailEntry] = Field(..., max_length=200)
+
+
+@router.post("/log-tail")
+def report_log_tail(
+    req: LogTailRequest,
+    worker: Worker = Depends(worker_auth),
+) -> dict:
+    """워커 → 서버 INFO+ 활동 로그 batch push (verbose_mode 켜진 워커만).
+
+    verbose_mode 가 OFF 인데 들어오면 무시 (저장 X). 개별 행은 최대 2000자.
+    """
+    from hydra.db.models import WorkerLogTail
+    db = _db_session.SessionLocal()
+    try:
+        w = db.get(Worker, worker.id)
+        if not w or not w.verbose_mode:
+            return {"ok": True, "stored": 0, "verbose_off": True}
+
+        now = datetime.now(UTC)
+        stored = 0
+        for e in req.entries:
+            occurred = e.occurred_at
+            if occurred.tzinfo is None:
+                occurred = occurred.replace(tzinfo=UTC)
+            db.add(WorkerLogTail(
+                worker_id=w.id,
+                occurred_at=occurred,
+                received_at=now,
+                level=e.level.upper()[:16],
+                logger_name=(e.logger_name or "")[:128] or None,
+                message=e.message[:2000],
+            ))
+            stored += 1
+        db.commit()
+        return {"ok": True, "stored": stored}
     finally:
         db.close()
 

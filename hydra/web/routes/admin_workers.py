@@ -91,6 +91,7 @@ class WorkerOut(BaseModel):
     current_task: Optional[CurrentTaskInfo] = None  # M2.1-5
     paused_reason: Optional[str] = None  # T7 Circuit Breaker 정보
     consecutive_failures: int = 0
+    verbose_mode: bool = False
 
 
 def _worker_to_out(w: Worker, current_task: Optional[Task] = None) -> WorkerOut:
@@ -117,6 +118,7 @@ def _worker_to_out(w: Worker, current_task: Optional[Task] = None) -> WorkerOut:
         current_task=ct,
         paused_reason=w.paused_reason,
         consecutive_failures=w.consecutive_failures or 0,
+        verbose_mode=bool(w.verbose_mode),
     )
 
 
@@ -145,6 +147,7 @@ class WorkerPatch(BaseModel):
     status: Optional[str] = None  # online|offline|paused
     adspower_api_key: Optional[str] = None  # 평문 입력, 서버에서 Fernet 암호화 저장
                                             # 빈 문자열 "" 은 제거 의미
+    verbose_mode: Optional[bool] = None  # INFO+ 로그 push 토글
 
 
 @router.patch("/{worker_id}", response_model=WorkerOut)
@@ -186,6 +189,8 @@ def update_worker(
                 w.adspower_api_key_enc = None
             else:
                 w.adspower_api_key_enc = crypto.encrypt(req.adspower_api_key)
+        if req.verbose_mode is not None:
+            w.verbose_mode = bool(req.verbose_mode)
 
         db.commit()
         db.refresh(w)
@@ -438,6 +443,53 @@ def list_commands(
                 result=c.result, error_message=c.error_message,
             ))
         return out
+    finally:
+        db.close()
+
+
+# ───────────── 라이브 로그 (verbose mode 으로 푸시된 INFO+) ─────────────
+class LogTailEntryOut(BaseModel):
+    id: int
+    occurred_at: str
+    received_at: str
+    level: str
+    logger_name: Optional[str] = None
+    message: str
+
+
+@router.get("/{worker_id}/log-tail")
+def get_log_tail(
+    worker_id: int,
+    _session: dict = Depends(admin_session),
+    limit: int = 200,
+    after_id: Optional[int] = None,
+) -> list[LogTailEntryOut]:
+    """워커가 verbose_mode 로 푸시한 INFO+ 로그.
+
+    after_id: 폴링 시 이전 마지막 id 보다 큰 것만 (incremental fetch).
+    """
+    from hydra.db.models import WorkerLogTail
+    limit = max(1, min(limit, 1000))
+    db = _db_session.SessionLocal()
+    try:
+        if db.get(Worker, worker_id) is None:
+            raise HTTPException(404, "worker not found")
+        q = db.query(WorkerLogTail).filter(WorkerLogTail.worker_id == worker_id)
+        if after_id is not None:
+            q = q.filter(WorkerLogTail.id > after_id)
+        rows = q.order_by(WorkerLogTail.id.desc()).limit(limit).all()
+        rows = list(reversed(rows))  # 시간 오름차순
+        return [
+            LogTailEntryOut(
+                id=r.id,
+                occurred_at=r.occurred_at.isoformat(),
+                received_at=r.received_at.isoformat(),
+                level=r.level,
+                logger_name=r.logger_name,
+                message=r.message,
+            )
+            for r in rows
+        ]
     finally:
         db.close()
 

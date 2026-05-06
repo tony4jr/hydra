@@ -9,6 +9,7 @@ import {
   Pencil,
   Play,
   Plus,
+  Terminal,
   Trash2,
   type LucideIcon,
 } from 'lucide-react'
@@ -27,6 +28,7 @@ import { fetchApi } from '@/lib/api'
 import { useCountUp } from '@/hooks/use-count-up'
 import { WorkerAddDialog } from './worker-add-dialog'
 import { WorkerEditDialog } from './worker-edit-dialog'
+import { WorkerDebugDrawer } from './worker-debug-drawer'
 
 interface Worker {
   id: number
@@ -42,6 +44,7 @@ interface Worker {
   allowed_task_types?: string[]
   paused_reason?: string | null
   consecutive_failures?: number
+  verbose_mode?: boolean
   current_task?: {
     id: number
     task_type: string
@@ -66,6 +69,7 @@ function SummaryCard({ label, value, sub, icon: Icon }: { label: string; value: 
 export default function WorkersPage() {
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [editWorker, setEditWorker] = useState<Worker | null>(null)
+  const [debugWorker, setDebugWorker] = useState<Worker | null>(null)
   const [workers, setWorkers] = useState<Worker[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -297,6 +301,11 @@ export default function WorkersPage() {
                           <DropdownMenuItem onClick={() => sendCommand(worker.id, 'update_adspower_patch')}>AdsPower 패치 업데이트</DropdownMenuItem>
                           <DropdownMenuItem onClick={() => sendCommand(worker.id, 'refresh_fingerprint')}>FP 재생성</DropdownMenuItem>
                           <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => setDebugWorker(worker)}>
+                            <Terminal className='mr-2 h-3.5 w-3.5' />
+                            라이브 디버그
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
                           <DropdownMenuItem
                             onClick={() => handleDelete(worker)}
                             className='text-destructive focus:text-destructive'
@@ -348,6 +357,21 @@ export default function WorkersPage() {
             : null
         }
         onSaved={loadWorkers}
+      />
+      <WorkerDebugDrawer
+        worker={
+          debugWorker
+            ? {
+                id: debugWorker.id,
+                name: debugWorker.name,
+                status: debugWorker.status,
+                verbose_mode: !!debugWorker.verbose_mode,
+              }
+            : null
+        }
+        open={debugWorker !== null}
+        onOpenChange={(v) => !v && setDebugWorker(null)}
+        onUpdated={loadWorkers}
       />
     </>
   )

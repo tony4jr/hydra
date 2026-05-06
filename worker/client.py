@@ -180,6 +180,20 @@ class ServerClient:
         except Exception:
             pass
 
+    def report_log_tail(self, entries: list[dict]) -> None:
+        """verbose_mode 일 때 INFO+ 활동 로그 batch push. 조용히 실패."""
+        if not entries:
+            return
+        try:
+            self._request(
+                "POST", "/api/workers/log-tail",
+                headers=self.headers,
+                json={"entries": entries},
+                timeout=10,
+            )
+        except Exception:
+            pass
+
     def report_error_with_screenshot(
         self,
         kind: str,
