@@ -137,7 +137,7 @@ $triggerStartup = New-ScheduledTaskTrigger -AtStartup
 $triggerWatchdog = New-ScheduledTaskTrigger `
     -Once -At (Get-Date).AddMinutes(1) `
     -RepetitionInterval (New-TimeSpan -Minutes 1) `
-    -RepetitionDuration (New-TimeSpan -Days 36500)
+    -RepetitionDuration (New-TimeSpan -Days 9999)
 $trigger = @($triggerStartup, $triggerWatchdog)
 $settings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
