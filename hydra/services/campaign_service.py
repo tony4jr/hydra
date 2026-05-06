@@ -197,7 +197,15 @@ def generate_campaign_texts(
     결과를 각 태스크의 payload에 text 필드로 추가.
     """
     campaign = db.get(Campaign, campaign_id)
-    if not campaign or not campaign.preset_id:
+    if not campaign:
+        return []
+
+    # 슬롯 트리 분기 — Phase C
+    if campaign.comment_preset_id is not None:
+        from hydra.ai.agents.slot_agent import generate_texts_for_campaign
+        return generate_texts_for_campaign(db, campaign_id=campaign_id)
+
+    if not campaign.preset_id:
         return []
 
     preset = db.get(Preset, campaign.preset_id)

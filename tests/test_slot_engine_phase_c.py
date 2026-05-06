@@ -1,0 +1,261 @@
+"""Phase C — 슬롯 기반 AI 텍스트 생성.
+
+generate_comment_for_task / generate_texts_for_campaign 의
+프롬프트 구성 + parent 맥락 주입 + payload 갱신 검증.
+"""
+import json
+from unittest.mock import patch
+
+from hydra.ai.agents.slot_agent import (
+    _build_slot_system_prompt,
+    _build_slot_user_message,
+    generate_comment_for_task,
+    generate_texts_for_campaign,
+    _validator,
+)
+from hydra.db.models import (
+    Account, Brand, Campaign, CommentPreset, CommentTreeSlot, Task, Video,
+)
+from hydra.services.slot_engine import create_campaign_with_slot_tasks
+
+
+def _make_seed(db):
+    """공통 시드: 브랜드 + 5계정 + F5 프리셋 + 캠페인."""
+    brand = Brand(
+        name="모렉신",
+        product_category="탈모 영양제",
+        core_message="머리카락 80%가 케라틴 — 직접 보충",
+        tone_guide="과장 없이 실사용 후기",
+        banned_keywords=json.dumps(["일라스틴", "최고", "강추"]),
+    )
+    db.add(brand); db.flush()
+
+    accts = []
+    for i in range(5):
+        a = Account(gmail=f"a{i}@t", password="x", status="active",
+                    persona=json.dumps({
+                        "age": 30 + i, "gender": "여",
+                        "region": "서울", "occupation": "직장인",
+                        "speech_style": "친근한 존댓말",
+                    }))
+        db.add(a); accts.append(a)
+    db.flush()
+
+    p = CommentPreset(name="F5", is_global=False)
+    db.add(p); db.flush()
+    db.add_all([
+        CommentTreeSlot(
+            comment_preset_id=p.id, slot_label="A", position=1,
+            text_template="산후 5개월인데 머리 너무 빠져요 ㅠㅠ",
+            length="medium", emoji="sometimes",
+            ai_variation=50, like_min=0, like_max=0,
+            like_distribution="adaptive",
+        ),
+        CommentTreeSlot(
+            comment_preset_id=p.id, slot_label="B", reply_to_slot_label="A", position=2,
+            text_template="저도 그시기에 케라틴 영양제로 좋아졌어요",
+            length="medium", emoji="sometimes",
+            ai_variation=50, like_min=0, like_max=0,
+            like_distribution="adaptive",
+        ),
+        CommentTreeSlot(
+            comment_preset_id=p.id, slot_label="C", reply_to_slot_label="B", position=3,
+            text_template="@B 어떤거 드세요?",
+            length="short", emoji="often",
+            ai_variation=30, like_min=0, like_max=0,
+            like_distribution="adaptive",
+        ),
+        CommentTreeSlot(
+            comment_preset_id=p.id, slot_label="D", reply_to_slot_label="C", position=4,
+            text_template="@C 모렉신이라고 검색해보세요",
+            length="medium", emoji="sometimes",
+            ai_variation=50, like_min=0, like_max=0,
+            like_distribution="adaptive",
+            same_account_as_slot_label="B",
+        ),
+    ])
+    db.commit(); db.refresh(p)
+
+    video = Video(id="v_test", url="https://youtube.com/v/v_test",
+                  title="산후 100일 머리관리", description="산후탈모 V-log")
+    db.add(video); db.flush()
+
+    campaign = Campaign(brand_id=brand.id, status="planning",
+                        scenario="test", comment_preset_id=p.id, video_id="v_test")
+    db.add(campaign); db.flush()
+
+    create_campaign_with_slot_tasks(
+        db, campaign=campaign, comment_preset=p, video_id="v_test",
+    )
+    db.commit()
+    return brand, p, campaign
+
+
+def test_system_prompt_contains_slot_metadata():
+    brand = {"name": "모렉신", "product_category": "탈모 영양제",
+             "core_message": "케라틴", "tone_guide": "자연스럽게"}
+    slot = CommentTreeSlot(
+        slot_label="B", position=2, text_template="저도 효과 봤어요",
+        length="medium", emoji="sometimes",
+        ai_variation=50, like_min=0, like_max=0,
+        like_distribution="adaptive",
+    )
+    persona = {"age": 33, "gender": "여", "region": "부산",
+               "occupation": "직장인", "speech_style": "편한 존댓말"}
+    sys = _build_slot_system_prompt(brand, slot, persona)
+    assert "모렉신" in sys
+    assert "케라틴" in sys
+    assert "33세" in sys
+    assert "참고 템플릿" in sys
+    assert "저도 효과 봤어요" in sys
+
+
+def test_user_message_includes_parent_context():
+    slot = CommentTreeSlot(
+        slot_label="B", reply_to_slot_label="A", position=2,
+        text_template="", length="medium", emoji="sometimes",
+        ai_variation=50, like_min=0, like_max=0,
+        like_distribution="adaptive",
+    )
+    user = _build_slot_user_message(
+        {"title": "산후 V-log"}, slot,
+        parent_text="머리 너무 빠져요 ㅠㅠ",
+        sibling_texts=[],
+    )
+    assert "산후 V-log" in user
+    assert "머리 너무 빠져요" in user
+    assert "답글" in user
+
+
+def test_user_message_for_main_slot_has_no_parent():
+    slot = CommentTreeSlot(
+        slot_label="A", reply_to_slot_label=None, position=1,
+        text_template="", length="medium", emoji="sometimes",
+        ai_variation=50, like_min=0, like_max=0,
+        like_distribution="adaptive",
+    )
+    user = _build_slot_user_message({"title": "v"}, slot, None, [])
+    assert "메인 댓글" in user
+    assert "답글" not in user
+
+
+def test_validator_catches_banned_and_ad_patterns():
+    # OK
+    assert _validator("케라틴 영양제 좋네요", ["일라스틴"]) == []
+    # banned
+    issues = _validator("일라스틴 좋아요", ["일라스틴"])
+    assert any("일라스틴" in i for i in issues)
+    # ad pattern
+    issues2 = _validator("지금 구매하세요!!", [])
+    assert any("ad pattern" in i for i in issues2)
+    # too short
+    assert any("too short" in i for i in _validator("a", []))
+
+
+def test_generate_comment_dry_run_produces_marker(db_session):
+    brand, p, camp = _make_seed(db_session)
+    tasks = (db_session.query(Task)
+             .filter(Task.campaign_id == camp.id, Task.slot_id.isnot(None))
+             .order_by(Task.id).all())
+    a_task = next(t for t in tasks if t.slot_label == "A")
+    text = generate_comment_for_task(db_session, task=a_task, dry_run=True)
+    assert "[DRY-RUN]" in text
+    assert "slot=A" in text
+
+
+def test_generate_texts_for_campaign_fills_payload(db_session):
+    brand, p, camp = _make_seed(db_session)
+
+    fake_outputs = {
+        "A": "산후 100일인데 머리 너무 빠져요 ㅠㅠ 영상 보고 위로받아요",
+        "B": "저도 그시기에 케라틴 영양제로 좋아졌어요",
+        "C": "어떤거 드세요?? 알려주세요!!",
+        "D": "모렉신이라고 한번 검색해보세요 :)",
+    }
+
+    def fake_call(*args, **kwargs):
+        # system prompt 안에 들어간 슬롯 라벨로 구분
+        sys = kwargs.get("system", "")
+        for label, out in fake_outputs.items():
+            if f"슬롯 라벨: {label}" in sys:
+                return out
+        # fallback: user message 의 부모 텍스트로 구분
+        msg = kwargs.get("user_message", "")
+        if "메인 댓글" in msg:
+            return fake_outputs["A"]
+        if "산후 100일" in msg or "위로" in msg:  # B가 A에 답
+            return fake_outputs["B"]
+        if "케라틴 영양제로 좋아졌어요" in msg:  # C가 B에 답
+            return fake_outputs["C"]
+        return fake_outputs["D"]  # D가 C에 답
+
+    with patch("hydra.ai.agents.slot_agent.call_claude", side_effect=fake_call):
+        results = generate_texts_for_campaign(db_session, campaign_id=camp.id)
+
+    assert len(results) == 4
+    by_label = {r["slot_label"]: r for r in results}
+    for label in "ABCD":
+        assert by_label[label]["text"]
+
+    # payload 에 text 가 박혔는지
+    a_task = (db_session.query(Task)
+              .filter(Task.campaign_id == camp.id, Task.slot_label == "A")
+              .first())
+    payload = json.loads(a_task.payload)
+    assert payload["text"]
+    assert payload["ai_pending"] is False
+    assert payload["ai_generated"] is True
+
+
+def test_parent_text_passed_to_child(db_session):
+    """B 가 생성될 때 A 의 텍스트가 system/user 어딘가에 들어갔는지."""
+    brand, p, camp = _make_seed(db_session)
+
+    captured = {"calls": []}
+
+    def fake_call(*args, **kwargs):
+        captured["calls"].append({
+            "system": kwargs.get("system", ""),
+            "user": kwargs.get("user_message", ""),
+        })
+        # A 는 메인, 나머지는 답글 — 길이 다양화
+        return f"댓글-{len(captured['calls'])}"
+
+    with patch("hydra.ai.agents.slot_agent.call_claude", side_effect=fake_call):
+        generate_texts_for_campaign(db_session, campaign_id=camp.id)
+
+    # 첫 호출 (A): parent 없음
+    assert "부모 댓글" not in captured["calls"][0]["user"]
+    # 두 번째 호출 (B): A 의 텍스트가 부모로 들어가야
+    assert "댓글-1" in captured["calls"][1]["user"]
+    assert "부모 댓글" in captured["calls"][1]["user"]
+    # 세 번째 (C): B 의 텍스트가 부모
+    assert "댓글-2" in captured["calls"][2]["user"]
+
+
+def test_d_slot_uses_same_persona_as_b(db_session):
+    """D 슬롯은 B 와 같은 account → 같은 persona 가 system 에 들어가야."""
+    brand, p, camp = _make_seed(db_session)
+
+    captured_personas = []
+
+    def fake_call(*args, **kwargs):
+        sys = kwargs.get("system", "")
+        # 페르소나 블록 첫 줄 (- {age}세 {gender}) 추출
+        in_persona = False
+        for line in sys.splitlines():
+            if line.startswith("페르소나:"):
+                in_persona = True
+                continue
+            if in_persona and line.startswith("- ") and "세" in line:
+                captured_personas.append(line)
+                break
+        return "ok"
+
+    with patch("hydra.ai.agents.slot_agent.call_claude", side_effect=fake_call):
+        generate_texts_for_campaign(db_session, campaign_id=camp.id)
+
+    # B 와 D 의 페르소나 라인이 같아야 (같은 account_id 라서)
+    # 호출 순서: A, B, C, D
+    assert captured_personas[1] == captured_personas[3], \
+        f"B persona != D persona — same_account_as 미적용. b={captured_personas[1]}, d={captured_personas[3]}"
