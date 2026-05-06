@@ -18,49 +18,55 @@ from hydra.core.config import settings
 from hydra.core.logger import get_logger
 from hydra.core.enums import VideoStatus, VideoPriority
 from hydra.db.models import Video, Keyword
+from hydra.db.session import SessionLocal
+from hydra.collection import youtube_keys as _yt_keys
 
 log = get_logger("collection")
 
-# API key rotation state
-_key_index = 0
+# 호출 비용 (YouTube Data API v3 quota cost)
+COST_SEARCH = 100
+COST_VIDEOS = 1
 
 
-def _load_keys_from_db() -> list[str]:
-    """system_config 테이블에서 youtube_api_key 읽기 (어드민 UI 가 저장한 곳)."""
+def _pick_key():
+    """현재 활성 키 1개 + id 반환. 없으면 .env fallback (id=None)."""
+    db = SessionLocal()
     try:
-        from hydra.db.session import SessionLocal
-        from hydra.db.models import SystemConfig
-        db = SessionLocal()
-        try:
-            rows = db.query(SystemConfig).filter(
-                SystemConfig.key.in_([
-                    "youtube_api_key", "youtube_api_key_1", "youtube_api_key_2",
-                ])
-            ).all()
-            return [r.value for r in rows if r.value]
-        finally:
-            db.close()
-    except Exception:
-        return []
+        row = _yt_keys.pick_active_key(db)
+        if row:
+            return row.id, row.key
+    finally:
+        db.close()
+    # Fallback: .env (개발/초기 부트용)
+    env_keys = settings.youtube_api_keys
+    if env_keys:
+        return None, env_keys[0]
+    raise RuntimeError("No YouTube API keys configured (admin pool empty, .env empty)")
 
 
 def _get_youtube_service():
-    """Build YouTube service with key rotation.
-    우선순위: DB (어드민 UI 저장) > .env (settings).
-    """
-    global _key_index
-    keys = _load_keys_from_db() or settings.youtube_api_keys
-    if not keys:
-        raise RuntimeError("No YouTube API keys configured (DB system_config or .env)")
-    key = keys[_key_index % len(keys)]
+    _, key = _pick_key()
     return build("youtube", "v3", developerKey=key)
 
 
-def _rotate_key():
-    """Switch to next API key on quota error."""
-    global _key_index
-    _key_index += 1
-    log.info(f"Rotated to YouTube API key index {_key_index}")
+def _record_usage(key_id: int | None, cost: int):
+    if key_id is None:
+        return
+    db = SessionLocal()
+    try:
+        _yt_keys.mark_used(db, key_id, cost)
+    finally:
+        db.close()
+
+
+def _record_exhausted(key_id: int | None):
+    if key_id is None:
+        return
+    db = SessionLocal()
+    try:
+        _yt_keys.mark_exhausted(db, key_id)
+    finally:
+        db.close()
 
 
 def _parse_duration(iso_duration: str) -> int:
@@ -86,7 +92,8 @@ def search_videos(
         published_after: ISO 8601 (예: "2020-01-01T00:00:00Z") — 이 시점 이후만.
         published_before: ISO 8601 — 이 시점 이전만.
     """
-    yt = _get_youtube_service()
+    key_id, key = _pick_key()
+    yt = build("youtube", "v3", developerKey=key)
     results = []
     next_page = None
 
@@ -110,9 +117,12 @@ def search_videos(
                 maxResults=min(50, max_results - len(results)),
                 pageToken=next_page,
             ).execute()
+            _record_usage(key_id, COST_SEARCH)
         except Exception as e:
             if "quotaExceeded" in str(e):
-                _rotate_key()
+                _record_exhausted(key_id)
+                key_id, key = _pick_key()
+                yt = build("youtube", "v3", developerKey=key)
                 continue
             raise
 
@@ -136,7 +146,8 @@ def search_videos(
 
 def enrich_videos(video_ids: list[str]) -> dict[str, dict]:
     """Fetch detailed metadata for video IDs (batch of 50)."""
-    yt = _get_youtube_service()
+    key_id, key = _pick_key()
+    yt = build("youtube", "v3", developerKey=key)
     enriched = {}
 
     for i in range(0, len(video_ids), 50):
@@ -146,9 +157,12 @@ def enrich_videos(video_ids: list[str]) -> dict[str, dict]:
                 id=",".join(batch),
                 part="contentDetails,statistics,status",
             ).execute()
+            _record_usage(key_id, COST_VIDEOS)
         except Exception as e:
             if "quotaExceeded" in str(e):
-                _rotate_key()
+                _record_exhausted(key_id)
+                key_id, key = _pick_key()
+                yt = build("youtube", "v3", developerKey=key)
                 continue
             raise
 
