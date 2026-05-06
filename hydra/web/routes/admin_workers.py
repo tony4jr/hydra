@@ -196,6 +196,53 @@ def update_worker(
         db.close()
 
 
+@router.delete("/{worker_id}")
+def delete_worker(
+    worker_id: int,
+    _session: dict = Depends(admin_session),
+):
+    """워커 삭제. 실행 중인 태스크가 있으면 거부.
+
+    같이 삭제: WorkerCommand, WorkerError (운영 산출물).
+    Task 는 worker_id 를 NULL 로 (historical 보존).
+    """
+    from hydra.db.models import WorkerCommand, WorkerError
+    db = _db_session.SessionLocal()
+    try:
+        w = db.get(Worker, worker_id)
+        if w is None:
+            raise HTTPException(404, "worker not found")
+
+        running = (
+            db.query(Task)
+            .filter(Task.worker_id == worker_id, Task.status == "running")
+            .first()
+        )
+        if running is not None:
+            raise HTTPException(
+                409,
+                f"실행 중인 태스크(id={running.id}, type={running.task_type})가 있습니다. "
+                "완료 또는 실패 처리 후 다시 시도하세요.",
+            )
+
+        # 과거 태스크는 보존 — worker_id NULL
+        db.query(Task).filter(Task.worker_id == worker_id).update(
+            {Task.worker_id: None}, synchronize_session=False,
+        )
+        # 운영 산출물은 워커와 함께 삭제
+        db.query(WorkerCommand).filter(WorkerCommand.worker_id == worker_id).delete(
+            synchronize_session=False,
+        )
+        db.query(WorkerError).filter(WorkerError.worker_id == worker_id).delete(
+            synchronize_session=False,
+        )
+        db.delete(w)
+        db.commit()
+        return {"ok": True, "deleted_worker_id": worker_id, "name": w.name}
+    finally:
+        db.close()
+
+
 # ───────────── worker errors listing ─────────────
 class WorkerErrorOut(BaseModel):
     id: int
