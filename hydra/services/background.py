@@ -23,6 +23,7 @@ class BackgroundScheduler:
             "phase1_poll_5min": 300,          # 5분
             "phase1_poll_30min": 1800,        # 30분
             "phase1_poll_daily": 86400,       # 1일 (03:00 KST)
+            "worker_log_tail_cleanup": 3600,  # 1시간마다 24h 초과분 정리
         }
         self._last_run = {}
 
@@ -63,6 +64,26 @@ class BackgroundScheduler:
                 await self._phase1_poll('30min')
             elif task_name == "phase1_poll_daily":
                 await self._phase1_poll('daily')
+            elif task_name == "worker_log_tail_cleanup":
+                await self._cleanup_worker_log_tail()
+
+    async def _cleanup_worker_log_tail(self):
+        """worker_log_tail 24시간 초과분 삭제. 무한 누적 방지."""
+        from datetime import timedelta
+        from hydra.db.models import WorkerLogTail
+        db = SessionLocal()
+        try:
+            cutoff = datetime.now(UTC) - timedelta(hours=24)
+            deleted = (
+                db.query(WorkerLogTail)
+                .filter(WorkerLogTail.received_at < cutoff)
+                .delete(synchronize_session=False)
+            )
+            db.commit()
+            if deleted:
+                print(f"[Scheduler] worker_log_tail cleanup: {deleted} rows removed")
+        finally:
+            db.close()
 
     async def _check_workers(self):
         """워커 상태 체크 — 오프라인 감지."""

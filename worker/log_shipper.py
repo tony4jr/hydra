@@ -28,6 +28,21 @@ _QUEUE_MAX = 200
 _BATCH_INTERVAL = 5.0  # 초
 _MIN_LEVEL = logging.WARNING
 
+# Verbose mode (INFO+ → /log-tail) 전역 토글. 어드민이 켜면 heartbeat 응답으로 True.
+_verbose_enabled = False
+_VERBOSE_QUEUE_MAX = 500
+_VERBOSE_BATCH_INTERVAL = 8.0  # 초
+
+
+def set_verbose_mode(enabled: bool) -> None:
+    """heartbeat 응답으로 토글. 워커 app 이 매 heartbeat 마다 호출."""
+    global _verbose_enabled
+    _verbose_enabled = bool(enabled)
+
+
+def is_verbose() -> bool:
+    return _verbose_enabled
+
 
 class ServerLogHandler(logging.Handler):
     """WARNING 이상을 내부 큐에 적재. 드롭 정책: 큐 꽉 차면 새 건 버림 (silent)."""
@@ -89,6 +104,59 @@ class _Shipper(threading.Thread):
                 pass  # report_error 자체가 조용히 실패하도록 설계됐지만 한번 더 방어
 
 
+class VerboseLogHandler(logging.Handler):
+    """INFO+ 를 verbose 큐에 적재. _verbose_enabled OFF 면 무시 (큐 안 채움)."""
+
+    def __init__(self, q: queue.Queue) -> None:
+        super().__init__(level=logging.INFO)
+        self._q = q
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if not _verbose_enabled:
+            return
+        try:
+            from datetime import datetime, timezone
+            msg = self.format(record)
+            self._q.put_nowait({
+                "occurred_at": datetime.fromtimestamp(record.created, timezone.utc).isoformat(),
+                "level": record.levelname,
+                "logger_name": record.name[:128],
+                "message": msg[:2000],
+            })
+        except queue.Full:
+            pass
+        except Exception:
+            pass
+
+
+class _VerboseShipper(threading.Thread):
+    """verbose 큐 → /log-tail batch POST."""
+
+    def __init__(self, client: "ServerClient", q: queue.Queue) -> None:
+        super().__init__(daemon=True, name="verbose-log-shipper")
+        self._client = client
+        self._q = q
+        self._stop = threading.Event()
+
+    def run(self) -> None:
+        while not self._stop.is_set():
+            time.sleep(_VERBOSE_BATCH_INTERVAL)
+            self._flush()
+
+    def _flush(self) -> None:
+        batch: list[dict] = []
+        while not self._q.empty() and len(batch) < 200:
+            try:
+                batch.append(self._q.get_nowait())
+            except queue.Empty:
+                break
+        if batch:
+            try:
+                self._client.report_log_tail(batch)
+            except Exception:
+                pass
+
+
 def install_log_shipping(client: "ServerClient") -> None:
     """루트 로거에 핸들러 부착 + 백그라운드 shipper 시작 + sys.excepthook 도 덮어씀."""
     q: queue.Queue = queue.Queue(maxsize=_QUEUE_MAX)
@@ -99,6 +167,17 @@ def install_log_shipping(client: "ServerClient") -> None:
 
     shipper = _Shipper(client, q)
     shipper.start()
+
+    # Verbose (INFO+) shipper — verbose_mode OFF 면 큐가 채워지지 않아 idle.
+    vq: queue.Queue = queue.Queue(maxsize=_VERBOSE_QUEUE_MAX)
+    vhandler = VerboseLogHandler(vq)
+    vhandler.setFormatter(logging.Formatter("%(message)s"))
+    logging.getLogger().addHandler(vhandler)
+    # 루트 로거가 INFO+ 받도록 보장 (이미 그렇다면 무해)
+    if logging.getLogger().level > logging.INFO or logging.getLogger().level == logging.NOTSET:
+        logging.getLogger().setLevel(logging.INFO)
+    vshipper = _VerboseShipper(client, vq)
+    vshipper.start()
 
     # 미처 잡히지 않은 예외 → 서버로 + 기존 동작도 유지
     orig_excepthook = sys.excepthook

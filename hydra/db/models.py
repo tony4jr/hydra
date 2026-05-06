@@ -495,6 +495,29 @@ class SystemConfig(Base):
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
 
+class WorkerLogTail(Base):
+    """워커 → 서버 일상 활동 로그 (INFO+). verbose_mode 켜졌을 때만 push.
+
+    24시간 정리 (background scheduler). worker_errors 와 분리:
+    - worker_errors: WARNING+ 영구 보존 (이슈 트래킹)
+    - worker_log_tail: INFO+ 단기 보존 (라이브 디버깅)
+    """
+    __tablename__ = "worker_log_tail"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    worker_id = Column(Integer, ForeignKey("workers.id"), nullable=False)
+    occurred_at = Column(DateTime, nullable=False)
+    received_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+    level = Column(String(16), nullable=False)  # DEBUG|INFO|WARNING|ERROR|CRITICAL
+    logger_name = Column(String(128))
+    message = Column(Text, nullable=False)
+
+    __table_args__ = (
+        Index("idx_wlogtail_worker_time", "worker_id", "received_at"),
+        Index("idx_wlogtail_received", "received_at"),
+    )
+
+
 class YouTubeApiKey(Base):
     """YouTube Data API v3 키 풀. 어드민이 무한 추가, 라운드로빈+할당량 기반 선택."""
     __tablename__ = "youtube_api_keys"
@@ -726,6 +749,8 @@ class Worker(Base):
     consecutive_failures = Column(Integer, nullable=False, default=0, server_default='0')
     last_failure_at = Column(DateTime, nullable=True)
     paused_reason = Column(String(255), nullable=True)  # circuit-breaker / manual / emergency-stop
+    # Verbose 디버그 모드 — 켜면 워커가 INFO 레벨 로그도 서버로 푸시. 평소엔 OFF (트래픽 절약).
+    verbose_mode = Column(Boolean, nullable=False, default=False, server_default='0')
 
     tasks = relationship("Task", back_populates="worker")
 
