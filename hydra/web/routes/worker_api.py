@@ -405,7 +405,10 @@ def heartbeat_v2(
         w = db.get(Worker, worker.id)
         w.last_heartbeat = datetime.now(UTC)
         w.current_version = req.version
-        w.status = "online"
+        # 어드민이 수동으로 일시정지(paused) 한 경우엔 status 유지 — 재개 누를 때까지 sticky.
+        # offline → online 복귀만 자동 처리.
+        if w.status != "paused":
+            w.status = "online"
         w.health_snapshot = json.dumps(req.model_dump(), ensure_ascii=False)
         db.commit()
 

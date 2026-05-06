@@ -42,8 +42,17 @@ def heartbeat(body: HeartbeatRequest, x_worker_token: str = Header(...), db: Ses
 @router.get("/")
 def list_workers(db: Session = Depends(db_dependency)):
     from hydra.db.models import Worker
+    from datetime import timezone
     workers = db.query(Worker).all()
-    return [{"id": w.id, "name": w.name, "status": w.status, "last_heartbeat": w.last_heartbeat, "current_version": w.current_version, "os_type": w.os_type} for w in workers]
+    def _utc(dt):
+        if dt is None:
+            return None
+        return (dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt).isoformat()
+    return [{
+        "id": w.id, "name": w.name, "status": w.status,
+        "last_heartbeat": _utc(w.last_heartbeat),
+        "current_version": w.current_version, "os_type": w.os_type,
+    } for w in workers]
 
 
 @router.post("/{worker_id}/pause")

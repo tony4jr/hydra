@@ -11,7 +11,12 @@ PREPARATION_TYPES = {"login", "channel_setup", "warmup", "onboard"}
 
 
 def fetch_tasks(db: Session, worker: Worker, limit: int = 5) -> list[Task]:
-    """Worker에게 배정할 태스크 가져오기 (프로필 잠금 + 역할 필터링)."""
+    """Worker에게 배정할 태스크 가져오기 (프로필 잠금 + 역할 필터링).
+
+    Paused 워커는 즉시 빈 리스트 반환 — 어드민이 재개(resume) 누를 때까지 작업 X.
+    """
+    if worker.status == "paused":
+        return []
     now = datetime.now(UTC)
     priority_order = case(
         (Task.priority == "urgent", 0),

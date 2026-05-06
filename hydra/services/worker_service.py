@@ -23,7 +23,9 @@ def register_worker(db: Session, name: str) -> tuple[Worker, str]:
 
 def heartbeat(db: Session, worker: Worker, version: str = None, os_type: str = None):
     worker.last_heartbeat = datetime.now(UTC)
-    worker.status = "online"
+    # paused 는 sticky — 어드민 재개 누르기 전까지 유지.
+    if worker.status != "paused":
+        worker.status = "online"
     if version:
         worker.current_version = version
     if os_type:
