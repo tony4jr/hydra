@@ -95,7 +95,7 @@ export default function WorkersPage() {
 
   useEffect(() => {
     loadWorkers()
-    const id = setInterval(loadWorkers, 3_000)
+    const id = setInterval(loadWorkers, 20_000)
     return () => clearInterval(id)
   }, [])
 

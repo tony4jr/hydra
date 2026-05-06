@@ -94,6 +94,20 @@ class WorkerOut(BaseModel):
     verbose_mode: bool = False
 
 
+def _as_utc(dt: Optional[datetime]) -> Optional[datetime]:
+    """tz-naive datetime 을 UTC 로 가정하고 tz-aware 화. JSON 직렬화 시 +00:00 붙어
+    프론트에서 KST 등 사용자 로케일로 정확히 변환됨.
+
+    DB 컬럼이 DateTime (timezone=False) 이라 항상 naive 로 돌아오는데, 우리는
+    datetime.now(UTC) 로만 저장하므로 UTC 라고 단언해도 안전.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt
+
+
 def _worker_to_out(w: Worker, current_task: Optional[Task] = None) -> WorkerOut:
     try:
         types = json.loads(w.allowed_task_types or '["*"]')
@@ -106,15 +120,15 @@ def _worker_to_out(w: Worker, current_task: Optional[Task] = None) -> WorkerOut:
         ct = CurrentTaskInfo(
             id=current_task.id,
             task_type=current_task.task_type,
-            started_at=current_task.started_at,
+            started_at=_as_utc(current_task.started_at),
         )
     return WorkerOut(
         id=w.id, name=w.name, status=w.status,
-        last_heartbeat=w.last_heartbeat,
+        last_heartbeat=_as_utc(w.last_heartbeat),
         current_version=w.current_version, os_type=w.os_type,
         allow_preparation=w.allow_preparation, allow_campaign=w.allow_campaign,
         allowed_task_types=[str(t) for t in types],
-        enrolled_at=w.enrolled_at,
+        enrolled_at=_as_utc(w.enrolled_at),
         current_task=ct,
         paused_reason=w.paused_reason,
         consecutive_failures=w.consecutive_failures or 0,
