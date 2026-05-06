@@ -29,6 +29,7 @@ router = APIRouter()
 
 
 _SETUP_PS1 = _Path(__file__).resolve().parents[3] / "setup" / "hydra-worker-setup.ps1"
+_INSTALL_BAT = _Path(__file__).resolve().parents[3] / "setup" / "install-worker.bat"
 
 
 def _sha256_hex(s: str) -> str:
@@ -49,6 +50,22 @@ def serve_setup_ps1() -> Response:
     return Response(
         bom + _SETUP_PS1.read_bytes(),
         media_type="text/plain; charset=utf-8",
+    )
+
+
+@router.get("/install-worker.bat")
+def serve_install_bat() -> Response:
+    """더블클릭 설치 런처 — UAC 자동 + 토큰 GUI 입력창 + setup.ps1 호출.
+
+    .bat 은 ANSI(cp949) 가 기본 — 한글이 들어가면 깨지므로 cp949 로 인코딩해서 서빙.
+    """
+    if not _INSTALL_BAT.is_file():
+        raise HTTPException(500, "install bat missing")
+    text = _INSTALL_BAT.read_text(encoding="utf-8")
+    return Response(
+        text.encode("cp949", errors="replace"),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": 'attachment; filename="install-worker.bat"'},
     )
 
 
