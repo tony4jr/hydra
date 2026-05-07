@@ -185,3 +185,47 @@ def test_invalid_same_account_label_raises(db_session):
         create_campaign_with_slot_tasks(
             db_session, campaign=c, comment_preset=p, video_id="v",
         )
+
+
+def test_pick_preset_for_niche_uses_weight(db_session):
+    from hydra.services.slot_engine import pick_preset_for_niche
+    from hydra.db.models import (
+        Brand, Niche, CommentPreset, NichePresetSelection,
+    )
+    brand = Brand(name="b", selected_presets="[]"); db_session.add(brand); db_session.flush()
+    niche = Niche(name="n", brand_id=brand.id, preset_per_video_limit=1)
+    db_session.add(niche); db_session.flush()
+    p1 = CommentPreset(name="P1", is_global=True); db_session.add(p1)
+    p2 = CommentPreset(name="P2", is_global=True); db_session.add(p2)
+    db_session.flush()
+    db_session.add_all([
+        NichePresetSelection(niche_id=niche.id, preset_id=p1.id, weight=80, enabled=True),
+        NichePresetSelection(niche_id=niche.id, preset_id=p2.id, weight=20, enabled=True),
+    ])
+    db_session.commit()
+
+    counts = {p1.id: 0, p2.id: 0}
+    import random; random.seed(42)
+    for _ in range(1000):
+        picked = pick_preset_for_niche(db_session, niche.id)
+        counts[picked.id] += 1
+    # 80:20 분포 (±15% 허용)
+    ratio = counts[p1.id] / 1000
+    assert 0.65 < ratio < 0.95, f"expected ~0.8, got {ratio}"
+
+
+def test_pick_preset_skips_disabled(db_session):
+    from hydra.services.slot_engine import pick_preset_for_niche, SlotEngineError
+    from hydra.db.models import Brand, Niche, CommentPreset, NichePresetSelection
+    brand = Brand(name="b", selected_presets="[]"); db_session.add(brand); db_session.flush()
+    niche = Niche(name="n", brand_id=brand.id, preset_per_video_limit=1)
+    db_session.add(niche); db_session.flush()
+    p1 = CommentPreset(name="P1", is_global=True); db_session.add(p1)
+    db_session.flush()
+    db_session.add(NichePresetSelection(niche_id=niche.id, preset_id=p1.id,
+                                        weight=10, enabled=False))
+    db_session.commit()
+
+    import pytest
+    with pytest.raises(SlotEngineError, match="no enabled preset"):
+        pick_preset_for_niche(db_session, niche.id)

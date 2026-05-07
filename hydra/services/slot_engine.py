@@ -212,3 +212,28 @@ def create_campaign_with_slot_tasks(
                 created.append(lb_task)
 
     return created
+
+
+def pick_preset_for_niche(db: Session, niche_id: int) -> CommentPreset:
+    """Niche 의 NichePresetSelection 가중치 따라 프리셋 1개 랜덤 선택.
+
+    Raises:
+        SlotEngineError: enabled selection 이 없을 때.
+    """
+    from hydra.db.models import NichePresetSelection
+    selections = (
+        db.query(NichePresetSelection)
+        .filter(NichePresetSelection.niche_id == niche_id)
+        .filter(NichePresetSelection.enabled.is_(True))
+        .all()
+    )
+    if not selections:
+        raise SlotEngineError(f"no enabled preset for niche {niche_id}")
+    weights = [s.weight for s in selections]
+    if sum(weights) <= 0:
+        raise SlotEngineError(f"all preset weights are zero for niche {niche_id}")
+    picked = random.choices(selections, weights=weights, k=1)[0]
+    preset = db.get(CommentPreset, picked.preset_id)
+    if preset is None:
+        raise SlotEngineError(f"preset {picked.preset_id} not found")
+    return preset
