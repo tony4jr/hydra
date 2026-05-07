@@ -3,7 +3,7 @@ import re
 import random
 from datetime import datetime, timedelta, UTC
 from sqlalchemy.orm import Session
-from hydra.db.models import Brand, Campaign, Task, Preset, Video
+from hydra.db.models import Brand, Campaign, CommentPreset, Task, Preset, Video
 
 
 def create_campaign_with_tasks(
@@ -13,8 +13,13 @@ def create_campaign_with_tasks(
     preset_code: str,
     campaign_type: str = "scenario",
     comment_mode: str = "ai_auto",
+    comment_preset_id: int | None = None,
 ) -> Campaign:
-    """캠페인 생성 + 프리셋 기반 태스크 자동 분해."""
+    """캠페인 생성 + 프리셋 기반 태스크 자동 분해.
+
+    comment_preset_id 가 지정되면 슬롯 트리 엔진(slot_engine) 으로 분기.
+    그렇지 않으면 레거시 Preset.steps JSON 기반.
+    """
     preset = db.query(Preset).filter(Preset.code == preset_code).first()
     if not preset:
         raise ValueError(f"Preset '{preset_code}' not found")
@@ -26,10 +31,25 @@ def create_campaign_with_tasks(
         campaign_type=campaign_type,
         comment_mode=comment_mode,
         preset_id=preset.id,
+        comment_preset_id=comment_preset_id,
         status="planning",
     )
     db.add(campaign)
     db.flush()
+
+    # 슬롯 트리 분기 — Phase B
+    if comment_preset_id is not None:
+        cp = db.get(CommentPreset, comment_preset_id)
+        if cp is None:
+            raise ValueError(f"CommentPreset {comment_preset_id} not found")
+        from hydra.services.slot_engine import create_campaign_with_slot_tasks
+        create_campaign_with_slot_tasks(
+            db, campaign=campaign, comment_preset=cp, video_id=video_id,
+        )
+        campaign.status = "in_progress"
+        db.commit()
+        db.refresh(campaign)
+        return campaign
 
     steps = json.loads(preset.steps)
     base_time = datetime.now(UTC)
@@ -177,7 +197,15 @@ def generate_campaign_texts(
     결과를 각 태스크의 payload에 text 필드로 추가.
     """
     campaign = db.get(Campaign, campaign_id)
-    if not campaign or not campaign.preset_id:
+    if not campaign:
+        return []
+
+    # 슬롯 트리 분기 — Phase C
+    if campaign.comment_preset_id is not None:
+        from hydra.ai.agents.slot_agent import generate_texts_for_campaign
+        return generate_texts_for_campaign(db, campaign_id=campaign_id)
+
+    if not campaign.preset_id:
         return []
 
     preset = db.get(Preset, campaign.preset_id)
@@ -236,3 +264,60 @@ def generate_campaign_texts(
 
     db.commit()
     return results
+
+
+def create_campaign_for_niche(
+    db: Session,
+    *,
+    niche_id: int,
+    video_id: str,
+) -> Campaign:
+    """새 multi-brand 흐름 진입점 — Niche 만 받아 자동으로 product/brand/preset 결정.
+
+    1. Niche 검증
+    2. NichePresetSelection.weight 따라 글로벌 프리셋 선택
+    3. Campaign row 생성
+    4. slot_engine 호출 → Task 트리 생성
+    """
+    from hydra.db.models import Niche
+    from hydra.services.slot_engine import (
+        create_campaign_with_slot_tasks, pick_preset_for_niche,
+    )
+
+    niche = db.get(Niche, niche_id)
+    if niche is None:
+        raise ValueError(f"Niche {niche_id} not found")
+
+    # 중복 가드 — 같은 (niche, video) 가 in_progress / planning 이면 거부
+    existing = (db.query(Campaign)
+                .filter(Campaign.niche_id == niche_id)
+                .filter(Campaign.video_id == video_id)
+                .filter(Campaign.status.in_(("planning", "in_progress")))
+                .first())
+    if existing is not None:
+        raise ValueError(
+            f"Campaign already exists for niche={niche_id} video={video_id} "
+            f"(campaign_id={existing.id}, status={existing.status})"
+        )
+
+    preset = pick_preset_for_niche(db, niche_id)
+
+    campaign = Campaign(
+        video_id=video_id,
+        brand_id=niche.brand_id,
+        niche_id=niche_id,
+        scenario=preset.name,
+        campaign_type="scenario",
+        comment_mode="ai_auto",
+        comment_preset_id=preset.id,
+        status="planning",
+    )
+    db.add(campaign); db.flush()
+
+    create_campaign_with_slot_tasks(
+        db, campaign=campaign, comment_preset=preset, video_id=video_id,
+    )
+    campaign.status = "in_progress"
+    db.commit()
+    db.refresh(campaign)
+    return campaign

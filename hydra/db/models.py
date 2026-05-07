@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 
+import sqlalchemy as sa
 from sqlalchemy import (
     BigInteger, Boolean, Column, Date, DateTime, Float, ForeignKey, Index, Integer,
     SmallInteger, String, Text, UniqueConstraint,
@@ -79,13 +80,15 @@ class Brand(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=False)
     product_name = Column(String)  # 상품명 (예: 모렉신). brand.name 은 회사/모브랜드 (예: 트리코라).
-    product_category = Column(String)
+    product_category = Column(String)  # deprecated — rename to category in Task 6 alembic migration
+    category = Column(String(32))  # PR-A: 영양제/식품/화장품/패션/...
     core_message = Column(Text)
     brand_story = Column(Text)
 
     target_keywords = Column(Text)   # JSON
     allowed_keywords = Column(Text)  # JSON
     banned_keywords = Column(Text)   # JSON
+    company_protected_terms = Column(Text)  # JSON list, optional — 회사명 등 표기 lock
     ingredients = Column(Text)       # JSON
     selling_points = Column(Text)    # JSON
 
@@ -120,6 +123,33 @@ class Brand(Base):
     keywords = relationship("Keyword", back_populates="brand")
     campaigns = relationship("Campaign", back_populates="brand")
     niches = relationship("Niche", back_populates="brand", cascade="all, delete-orphan")
+    products = relationship("Product", back_populates="brand", cascade="all, delete-orphan")
+
+
+class Product(Base):
+    """상품 — Brand 1:N Product (PR-A Task 1).
+
+    Brand 가 판매하는 개별 상품을 나타낸다.
+    protected_terms / core_keywords 는 JSON 배열로 저장.
+    """
+    __tablename__ = "products"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    brand_id = Column(Integer, ForeignKey("brands.id", ondelete="CASCADE"), nullable=False)
+    product_name = Column(String(120), nullable=False)
+    protected_terms = Column(Text)  # JSON list — 표기 lock
+    core_keywords = Column(Text)    # JSON list — AI 슬롯 substitution
+    description = Column(Text)
+    core_message = Column(Text)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC),
+                        onupdate=lambda: datetime.now(UTC), nullable=False)
+
+    brand = relationship("Brand", back_populates="products")
+
+    __table_args__ = (
+        Index("ix_products_brand", "brand_id"),
+    )
 
 
 class Niche(Base):
@@ -175,12 +205,16 @@ class Niche(Base):
     # PR-8d — 댓글 트리 프리셋 FK (alembic 만 nullable, 모델은 nullable 유지)
     comment_preset_id = Column(Integer, ForeignKey("comment_presets.id", ondelete="SET NULL"))
 
+    # PR-A: Brand → Product → Niche 3-tier
+    product_id = Column(Integer, ForeignKey("products.id", ondelete="SET NULL"), nullable=True)
+
     created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC),
                         onupdate=lambda: datetime.now(UTC), nullable=False)
 
     # relationships
     brand = relationship("Brand", back_populates="niches")
+    product = relationship("Product")
     keywords = relationship("Keyword", back_populates="niche")
     campaigns = relationship("Campaign", back_populates="niche")
 
@@ -328,6 +362,8 @@ class Campaign(Base):
     campaign_type = Column(String, default="scenario")
     comment_mode = Column(String, default="ai_auto")
     preset_id = Column(Integer, ForeignKey("presets.id"))
+    # 슬롯 트리 댓글 프리셋 직접 연결 (s7t8slotengine)
+    comment_preset_id = Column(Integer, ForeignKey("comment_presets.id", ondelete="SET NULL"))
     user_id = Column(Integer)
 
     # D 단계(외부 고객 포털) 대비
@@ -784,9 +820,16 @@ class Task(Base):
     # D 단계(외부 고객 포털) 대비
     customer_id = Column(Integer, nullable=True)
 
+    # 슬롯 트리 프리셋 연결 (s7t8slotengine)
+    slot_id = Column(Integer, ForeignKey("comment_tree_slots.id", ondelete="SET NULL"), nullable=True)
+    slot_label = Column(String(4), nullable=True)
+    parent_task_id = Column(Integer, ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True)
+
     worker = relationship("Worker", back_populates="tasks")
     campaign = relationship("Campaign")
     account = relationship("Account")
+    slot = relationship("CommentTreeSlot")
+    parent_task = relationship("Task", remote_side="Task.id")
 
     __table_args__ = (
         Index("idx_tasks_status", "status"),
@@ -794,6 +837,8 @@ class Task(Base):
         Index("idx_tasks_priority_status", "priority", "status"),
         Index("idx_tasks_scheduled", "scheduled_at"),
         Index("idx_tasks_created_at", "created_at"),
+        Index("idx_tasks_slot", "slot_id"),
+        Index("idx_tasks_parent", "parent_task_id"),
     )
 
 
@@ -833,6 +878,26 @@ class CommentPreset(Base):
                          order_by="CommentTreeSlot.position")
 
 
+class NichePresetSelection(Base):
+    """Niche ↔ CommentPreset N:M with weight + enabled."""
+    __tablename__ = "niche_preset_selections"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    niche_id = Column(Integer, ForeignKey("niches.id", ondelete="CASCADE"), nullable=False)
+    preset_id = Column(Integer, ForeignKey("comment_presets.id", ondelete="CASCADE"), nullable=False)
+    weight = Column(Integer, nullable=False, default=10)
+    enabled = Column(Boolean, nullable=False, default=True, server_default=sa.text("true"))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+
+    niche = relationship("Niche")
+    preset = relationship("CommentPreset")
+
+    __table_args__ = (
+        UniqueConstraint("niche_id", "preset_id", name="uq_niche_preset"),
+        Index("ix_nps_niche", "niche_id"),
+    )
+
+
 class CommentTreeSlot(Base):
     __tablename__ = "comment_tree_slots"
 
@@ -850,6 +915,16 @@ class CommentTreeSlot(Base):
     like_min = Column(Integer, default=0, nullable=False)
     like_max = Column(Integer, default=0, nullable=False)
     like_distribution = Column(String(10), default="adaptive", nullable=False)
+
+    # PR-A: 의도 설명형 슬롯 (구 text_template 대체)
+    intent = Column(Text, nullable=True)            # 의도 설명. 신규 슬롯은 NOT NULL 권장 (앱 레이어 검증)
+    tone_anchor = Column(Text, nullable=True)       # JSON list — 톤 참고 예시 1-2개
+    mention_brand = Column(Boolean, nullable=False, default=False, server_default=sa.text("false"))
+    mention_solution = Column(Boolean, nullable=False, default=False, server_default=sa.text("false"))
+
+    # 같은 프리셋 안 다른 슬롯의 라벨. 지정 시 이 슬롯은 그 라벨 슬롯과 동일 계정으로 실행.
+    # F5 흐름의 D=B 같은 자기 답글 패턴.
+    same_account_as_slot_label = Column(String(4), nullable=True)
 
     comment_preset = relationship("CommentPreset", back_populates="slots")
 
@@ -1319,4 +1394,18 @@ class YoutubeQuotaLog(Base):
     __table_args__ = (
         UniqueConstraint("api_key_index", "day", name="uq_quota_per_day"),
         Index("idx_quota_day", "day"),
+    )
+
+
+class GlobalAdPhraseBlocklist(Base):
+    """광고 카피 어휘 글로벌 banlist. 운영자가 다중 브랜드 운영하며 누적."""
+    __tablename__ = "global_ad_phrase_blocklist"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    phrase = Column(String(120), nullable=False, unique=True)
+    added_by_user_id = Column(Integer, nullable=True)
+    added_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+
+    __table_args__ = (
+        Index("ix_global_blocklist_phrase", "phrase"),
     )
