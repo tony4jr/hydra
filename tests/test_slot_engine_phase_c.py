@@ -92,22 +92,30 @@ def _make_seed(db):
 
 
 def test_system_prompt_contains_slot_metadata():
+    # Updated to new 6-layer keyword-arg signature (PR-B Task 7)
     brand = {"name": "모렉신", "product_category": "탈모 영양제",
              "core_message": "케라틴", "tone_guide": "자연스럽게"}
     slot = CommentTreeSlot(
-        slot_label="B", position=2, text_template="저도 효과 봤어요",
+        slot_label="B", position=2,
+        intent="[서브·정보형] 케라틴 정보 제공",
+        mention_brand=True, mention_solution=True,
         length="medium", emoji="sometimes",
         ai_variation=50, like_min=0, like_max=0,
         like_distribution="adaptive",
     )
     persona = {"age": 33, "gender": "여", "region": "부산",
                "occupation": "직장인", "speech_style": "편한 존댓말"}
-    sys = _build_slot_system_prompt(brand, slot, persona)
+    sys = _build_slot_system_prompt(
+        slot=slot,
+        brand=brand,
+        product={"product_name": "모렉신", "protected_terms": ["모렉신"], "core_keywords": ["케라틴"]},
+        niche={"target_audience": "탈모 여성", "mention_intensity": 60},
+        persona=persona,
+        global_blocklist=[],
+    )
     assert "모렉신" in sys
     assert "케라틴" in sys
     assert "33세" in sys
-    assert "참고 템플릿" in sys
-    assert "저도 효과 봤어요" in sys
 
 
 def test_user_message_includes_parent_context():
@@ -150,6 +158,59 @@ def test_validator_catches_banned_and_ad_patterns():
     assert any("ad pattern" in i for i in issues2)
     # too short
     assert any("too short" in i for i in _validator("a", []))
+
+
+def test_validator_catches_brand_typos():
+    # 모렙신 → 모렉신 오타
+    issues = _validator(
+        "모렙신 추천드려요", banned_keywords=[],
+        template="모렉신을 추천드려요", brand_name="모렉신",
+    )
+    assert any("모렙신" in i for i in issues)
+
+
+def test_validator_catches_keratin_typos():
+    issues = _validator(
+        "체성캐라틴이 들어있어요", banned_keywords=[],
+        template="체성케라틴 영양제예요", brand_name="모렉신",
+    )
+    assert any("체성캐라틴" in i for i in issues)
+
+
+def test_validator_template_brand_mention_required_when_template_has_it():
+    # 템플릿에 모렉신 있는데 결과에 없음 → issue
+    issues = _validator(
+        "그냥 영양제 먹고 좋아졌어요", banned_keywords=[],
+        template="모렉신 먹고 좋아졌어요", brand_name="모렉신",
+    )
+    assert any("누락" in i for i in issues)
+
+
+def test_validator_blocks_brand_mention_when_template_has_none():
+    # 템플릿에 모렉신 없는데 결과에 있음 → issue (메인 슬롯 광고티)
+    issues = _validator(
+        "모렉신 진짜 좋아요", banned_keywords=[],
+        template="머리 너무 빠져요 ㅠㅠ", brand_name="모렉신",
+    )
+    assert any("미러링 위반" in i for i in issues)
+
+
+def test_validator_passes_when_template_mirrored():
+    issues = _validator(
+        "모렉신이라고 한번 검색해보세요", banned_keywords=[],
+        template="모렉신이라고 검색해보세요", brand_name="모렉신",
+    )
+    assert issues == []
+
+
+def test_autocorrect_replaces_known_typos():
+    from hydra.ai.agents.slot_agent import _autocorrect_typos
+    fixed, fixes = _autocorrect_typos("모렙신 체성캐라틴 좋아요")
+    assert "모렉신" in fixed
+    assert "체성케라틴" in fixed
+    assert "모렙신" not in fixed
+    assert "체성캐라틴" not in fixed
+    assert len(fixes) == 2
 
 
 def test_generate_comment_dry_run_produces_marker(db_session):
@@ -242,9 +303,10 @@ def test_d_slot_uses_same_persona_as_b(db_session):
     def fake_call(*args, **kwargs):
         sys = kwargs.get("system", "")
         # 페르소나 블록 첫 줄 (- {age}세 {gender}) 추출
+        # New format: "[페르소나 — 이 사람이 실제로 쓰듯]" header (PR-B Task 7)
         in_persona = False
         for line in sys.splitlines():
-            if line.startswith("페르소나:"):
+            if "페르소나" in line and ("이 사람이" in line or line.startswith("페르소나:")):
                 in_persona = True
                 continue
             if in_persona and line.startswith("- ") and "세" in line:

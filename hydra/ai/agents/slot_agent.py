@@ -16,14 +16,15 @@ from hydra.ai.base import get_model
 from hydra.ai.harness import call_claude
 from hydra.db.models import (
     Account, Brand, Campaign, CommentPreset, CommentTreeSlot, Task, Video,
+    Niche, Product, GlobalAdPhraseBlocklist,
 )
 
 
-# 길이별 토큰/문장 가이드
+# 길이별 토큰/문장 가이드 (한국어 토큰 비효율 보정 — 자/토큰 ≈ 0.3)
 LENGTH_GUIDES = {
-    "short": ("1~2문장, 30~60자", 80),
-    "medium": ("2~3문장, 60~120자", 160),
-    "long": ("3~5문장, 120~250자", 280),
+    "short": ("1~2문장, 30~60자", 200),
+    "medium": ("2~3문장, 60~120자", 400),
+    "long": ("3~5문장, 120~250자", 700),
 }
 
 EMOJI_GUIDES = {
@@ -47,49 +48,133 @@ def _ai_variation_guide(variation: int) -> str:
     return "참고 템플릿은 방향만 참고하고, 같은 의도를 새로운 표현으로 작성하세요."
 
 
+def _detect_protected_terms(template: str | None, brand_name: str) -> list[str]:
+    """템플릿에 등장하는 보호 표기 + 브랜드명 키워드(allowed) 를 추출.
+
+    템플릿이 '모렉신', '체성케라틴' 을 쓰면 그 표기를 그대로 strict-list 로 사용.
+    """
+    base = ["모렉신", "체성케라틴"]  # 항상 보호
+    if not template:
+        return base
+    out = list(base)
+    if brand_name and brand_name not in out:
+        out.append(brand_name)
+    return out
+
+
 def _build_slot_system_prompt(
-    brand: dict[str, Any], slot: CommentTreeSlot, persona: dict[str, Any] | None
+    *,
+    slot: CommentTreeSlot,
+    brand: dict[str, Any],
+    product: dict[str, Any] | None,
+    niche: dict[str, Any],
+    persona: dict[str, Any] | None,
+    global_blocklist: list[str],
 ) -> str:
+    """6-layer system prompt 합성.
+
+    Layers:
+      1. Global (Slot.intent / tone_anchor / length / emoji / mention 정책 / blocklist)
+      2. Brand (tone_guide, banned, company_protected_terms)
+      3. Product (product_name, protected_terms, core_keywords) — mention 허용 시만
+      4. Niche (target_audience, mention_intensity, voice_override)
+      5. Persona
+      6. Conversation — _build_slot_user_message 에서 user message 로 따로
+    """
+    parts: list[str] = ["당신은 YouTube 영상에 댓글을 다는 한국 사용자입니다.",
+                        "절대 광고처럼 보이면 안 됩니다."]
+
+    # ── Layer 1: Global (slot 의도 + 정책) ──
+    parts.append(f"\n[슬롯 의도]\n{slot.intent or '(미지정)'}")
+
+    tone_anchor_list: list[str] = []
+    if slot.tone_anchor:
+        try:
+            tone_anchor_list = json.loads(slot.tone_anchor)
+        except (json.JSONDecodeError, TypeError):
+            tone_anchor_list = []
+    if tone_anchor_list:
+        anchor_lines = "\n".join(f"  - {a}" for a in tone_anchor_list)
+        parts.append(
+            f"\n[톤 참고 — 변주 시드 X, 어휘 그대로 베끼지 말 것]\n{anchor_lines}"
+        )
+
     length_text = LENGTH_GUIDES.get(slot.length, LENGTH_GUIDES["medium"])[0]
     emoji_text = EMOJI_GUIDES.get(slot.emoji, EMOJI_GUIDES["sometimes"])
-    variation_text = _ai_variation_guide(slot.ai_variation)
+    parts.append(f"\n길이 가이드: {length_text}")
+    parts.append(f"이모지 가이드: {emoji_text}")
 
-    persona_block = ""
+    mention_lines = []
+    if not slot.mention_brand:
+        mention_lines.append("- 브랜드명 직접 언급 절대 금지.")
+    if not slot.mention_solution:
+        mention_lines.append("- 솔루션 카테고리/성분 노출 금지.")
+    if slot.mention_brand:
+        mention_lines.append("- 브랜드명 자연스럽게 1회 노출 (강조 X).")
+    if slot.mention_solution:
+        mention_lines.append("- 솔루션 카테고리/성분 자연스럽게 언급 OK.")
+    if mention_lines:
+        parts.append("\n[노출 정책]\n" + "\n".join(mention_lines))
+
+    if global_blocklist:
+        bl_lines = ", ".join(f"'{p}'" for p in global_blocklist[:30])
+        parts.append(f"\n[광고 카피 금지 어휘]\n{bl_lines}")
+
+    # ── Layer 2: Brand ──
+    parts.append(f"\n[브랜드]\n- 회사: {brand.get('name', '')}")
+    if brand.get("tone_guide"):
+        parts.append(f"- 톤 가이드: {brand['tone_guide']}")
+    brand_banned = brand.get("banned_keywords") or []
+    if brand_banned:
+        parts.append(f"- 회사 banned: {', '.join(brand_banned)}")
+    company_protected = brand.get("company_protected_terms") or []
+    if company_protected:
+        parts.append(f"- 회사 표기 lock: {', '.join(company_protected)}")
+
+    # ── Layer 3: Product (mention 허용 시만) ──
+    if product and (slot.mention_brand or slot.mention_solution):
+        parts.append(f"\n[제품]")
+        if slot.mention_brand:
+            parts.append(f"- 제품명: {product.get('product_name', '')}")
+            protected = product.get("protected_terms") or []
+            if protected:
+                parts.append(f"- 표기 lock (절대 변형 금지): {', '.join(protected)}")
+        if slot.mention_solution:
+            core_kw = product.get("core_keywords") or []
+            if core_kw:
+                parts.append(f"- 솔루션 키워드 (의도 substitution 후보): {', '.join(core_kw)}")
+
+    # ── Layer 4: Niche ──
+    parts.append(f"\n[타겟 니치]")
+    if niche.get("target_audience"):
+        parts.append(f"- 타겟: {niche['target_audience']}")
+    intensity = niche.get("mention_intensity", 40)
+    parts.append(
+        f"- 노출 강도: {intensity}/100 "
+        f"({'공감/정보 톤 우선' if intensity < 50 else '직접 추천 톤 허용' if intensity > 70 else '균형'})"
+    )
+    if niche.get("voice_override"):
+        parts.append(f"- 니치 톤 추가: {niche['voice_override']}")
+
+    # ── Layer 5: Persona ──
     if persona:
-        persona_block = f"""
-페르소나:
-- {persona.get('age', '?')}세 {persona.get('gender', '?')}
-- 지역: {persona.get('region', '서울')}
-- 직업: {persona.get('occupation', '직장인')}
-- 말투: {persona.get('speech_style', '편한 존댓말')}
-이 사람이 실제로 쓰듯 작성하세요.
-"""
+        parts.append(
+            f"\n[페르소나 — 이 사람이 실제로 쓰듯]\n"
+            f"- {persona.get('age', '?')}세 {persona.get('gender', '?')}\n"
+            f"- 지역: {persona.get('region', '서울')}\n"
+            f"- 직업: {persona.get('occupation', '직장인')}\n"
+            f"- 말투: {persona.get('speech_style', '편한 존댓말')}"
+        )
 
-    template_block = ""
-    if slot.text_template:
-        template_block = f"""
-참고 템플릿:
-\"\"\"{slot.text_template}\"\"\"
-{variation_text}
-"""
+    parts.append(
+        "\n[출력 규칙]\n"
+        "- 한국어로 작성\n"
+        "- 광고 패턴 금지 (구매 링크/할인/지금 구매)\n"
+        "- 같은 표현 반복 금지\n"
+        "- 댓글만 출력. 설명/따옴표/메타텍스트 없이."
+    )
 
-    return f"""당신은 YouTube 영상에 댓글을 다는 한국 사용자입니다.
-절대 광고처럼 보이면 안 됩니다.
-
-브랜드: {brand.get('name', '')}
-제품: {brand.get('product_category', brand.get('product', ''))}
-핵심 메시지: {brand.get('core_message', '')}
-톤 가이드: {brand.get('tone_guide', '과장 없이 자연스럽게')}
-
-길이 가이드: {length_text}
-이모지 가이드: {emoji_text}
-{persona_block}{template_block}
-규칙:
-- 한국어
-- 광고 패턴 금지 (구매 링크/할인/지금 구매/꼭 써보세요)
-- 같은 표현 반복 금지
-- 댓글만 출력. 설명/따옴표/메타텍스트 없이.
-"""
+    return "\n".join(parts)
 
 
 def _build_slot_user_message(
@@ -126,7 +211,52 @@ def _resolve_persona(account: Account | None) -> dict[str, Any] | None:
         return None
 
 
-def _validator(text: str, banned_keywords: list[str]) -> list[str]:
+# 알려진 오타 패턴 — 모델이 자주 만드는 변형들. validator 가 잡고 retry.
+KNOWN_TYPO_PATTERNS = {
+    "모렉신": ["모렙신", "모랙신", "모래씬", "모럭신", "모렉씬"],
+    "체성케라틴": ["체성캐라틴", "채성케라틴", "체성케러틴", "체성캐러틴", "체성케라친"],
+}
+
+
+def _check_protected_spelling(
+    text: str, template: str | None, brand_name: str
+) -> list[str]:
+    """보호 표기 검증.
+
+    1. 템플릿이 보호 표기를 포함하는데 결과물에 없거나 오타 → issue
+    2. 결과물에 알려진 오타 변형이 있으면 → issue (어떤 경우든)
+    """
+    issues = []
+    template_text = template or ""
+
+    # 알려진 오타 검출 (always)
+    for canonical, typos in KNOWN_TYPO_PATTERNS.items():
+        for typo in typos:
+            if typo in text:
+                issues.append(f"오타 변형 '{typo}' (정답: '{canonical}')")
+
+    # 템플릿이 정답 표기를 포함하면 결과물도 포함해야
+    for canonical in KNOWN_TYPO_PATTERNS.keys():
+        if canonical in template_text and canonical not in text:
+            # 단, 결과물에 오타 변형이 있으면 위에서 이미 잡힘 — 중복 방지
+            already_typo = any(t in text for t in KNOWN_TYPO_PATTERNS[canonical])
+            if not already_typo:
+                issues.append(f"템플릿이 '{canonical}' 포함하는데 결과물에 누락")
+
+    # 브랜드명 자체 (KNOWN_TYPO_PATTERNS 외)
+    if brand_name and brand_name not in KNOWN_TYPO_PATTERNS and brand_name in template_text:
+        if brand_name not in text:
+            issues.append(f"템플릿의 브랜드명 '{brand_name}' 누락")
+
+    return issues
+
+
+def _validator(
+    text: str,
+    banned_keywords: list[str],
+    template: str | None = None,
+    brand_name: str = "",
+) -> list[str]:
     issues = []
     if len(text) < 2:
         issues.append("too short")
@@ -140,7 +270,31 @@ def _validator(text: str, banned_keywords: list[str]) -> list[str]:
     for ph in ad_phrases:
         if ph in text:
             issues.append(f"ad pattern: {ph}")
+    issues.extend(_check_protected_spelling(text, template, brand_name))
+
+    # 템플릿이 브랜드명 안 가진 메인 슬롯에서 결과물이 브랜드명 끼워넣었는지
+    if template is not None and brand_name and brand_name not in (template or ""):
+        if brand_name in text:
+            issues.append(
+                f"템플릿에 없는 브랜드명 '{brand_name}' 추가됨 (템플릿 미러링 위반)"
+            )
     return issues
+
+
+def _autocorrect_typos(text: str) -> tuple[str, list[str]]:
+    """최후 안전망: validator retry 다 실패해도 출력 직전 자동 교정.
+
+    Returns:
+        (corrected_text, fixes_applied)
+    """
+    fixes = []
+    out = text
+    for canonical, typos in KNOWN_TYPO_PATTERNS.items():
+        for typo in typos:
+            if typo in out:
+                out = out.replace(typo, canonical)
+                fixes.append(f"{typo}→{canonical}")
+    return out, fixes
 
 
 def generate_comment_for_task(
@@ -215,7 +369,40 @@ def generate_comment_for_task(
 
     persona = _resolve_persona(account)
 
-    system = _build_slot_system_prompt(brand_dict, slot, persona)
+    # Niche / Product 정보 합성
+    niche_dict: dict[str, Any] = {}
+    product_dict: dict[str, Any] | None = None
+    if campaign and campaign.brand_id:
+        niche_obj = None
+        if hasattr(campaign, 'niche_id') and campaign.niche_id:
+            niche_obj = db.get(Niche, campaign.niche_id)
+        if niche_obj:
+            niche_dict = {
+                "target_audience": niche_obj.target_audience or "",
+                "mention_intensity": getattr(niche_obj, "mention_intensity", 40),
+                "voice_override": getattr(niche_obj, "voice_override", None),
+            }
+            if niche_obj.product_id:
+                p_obj = db.get(Product, niche_obj.product_id)
+                if p_obj:
+                    product_dict = {
+                        "product_name": p_obj.product_name or "",
+                        "protected_terms": json.loads(p_obj.protected_terms or "[]"),
+                        "core_keywords": json.loads(p_obj.core_keywords or "[]"),
+                    }
+
+    # global blocklist
+    blocklist_rows = db.query(GlobalAdPhraseBlocklist).all()
+    global_blocklist = [r.phrase for r in blocklist_rows]
+
+    system = _build_slot_system_prompt(
+        slot=slot,
+        brand=brand_dict,
+        product=product_dict,
+        niche=niche_dict,
+        persona=persona,
+        global_blocklist=global_blocklist,
+    )
     user = _build_slot_user_message(video_dict, slot, parent_text, sibling_texts)
 
     if dry_run:
@@ -225,13 +412,26 @@ def generate_comment_for_task(
             f"len={slot.length} emoji={slot.emoji} ai_var={slot.ai_variation}"
         )
 
+    template_text = slot.text_template or ""
+    brand_name = brand_dict.get("name", "")
+
     text = call_claude(
         model=get_model("comment"),
         system=system,
         user_message=user,
         max_tokens=LENGTH_GUIDES.get(slot.length, LENGTH_GUIDES["medium"])[1],
-        validator=lambda t: _validator(t, banned),
+        validator=lambda t: _validator(t, banned, template_text, brand_name),
+        max_retries=4,
     )
+
+    # 최후 안전망 — retry 모두 통과해도 자동 교정 한 번 더
+    text, fixes = _autocorrect_typos(text)
+    if fixes:
+        from hydra.ai.base import log
+        log.warning(
+            f"[slot_agent] task={task.id} slot={slot.slot_label} "
+            f"autocorrected typos: {fixes}"
+        )
     return text
 
 
