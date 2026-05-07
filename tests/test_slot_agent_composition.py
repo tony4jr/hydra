@@ -49,3 +49,24 @@ def test_all_six_layers_present_in_system_prompt():
     assert "친근한 존댓말" in sys_prompt
     # Blocklist
     assert "구매 링크" in sys_prompt or "할인 쿠폰" in sys_prompt
+    # Layer 3 absence — slot has mention_brand=False AND mention_solution=False,
+    # so Product layer must NOT inject "[제품]" block even though product dict was provided
+    assert "[제품]" not in sys_prompt
+
+
+def test_layer_3_product_present_when_mention_allowed():
+    sys_prompt = _build_slot_system_prompt(
+        slot=_slot(intent="[D슬롯·답변] 제품 노출", mention_brand=True, mention_solution=True),
+        brand={"name": "OO헬스", "tone_guide": "", "banned_keywords": [],
+               "company_protected_terms": []},
+        product={"product_name": "모렉신",
+                 "protected_terms": ["모렉신", "체성케라틴"],
+                 "core_keywords": ["체성케라틴"]},
+        niche={"target_audience": "30대 여성", "mention_intensity": 70,
+               "voice_override": None},
+        persona=None,
+        global_blocklist=[],
+    )
+    assert "[제품]" in sys_prompt
+    assert "모렉신" in sys_prompt
+    assert "체성케라틴" in sys_prompt
