@@ -83,7 +83,13 @@ def _build_slot_system_prompt(
                         "절대 광고처럼 보이면 안 됩니다."]
 
     # ── Layer 1: Global (slot 의도 + 정책) ──
-    parts.append(f"\n[슬롯 의도]\n{slot.intent or '(미지정)'}")
+    intent_text = slot.intent
+    if not intent_text and slot.text_template:
+        # Legacy 슬롯 (text_template-based 어제 작성된 9 프리셋) 후방 호환
+        intent_text = f"[Legacy 텍스트 템플릿]\n참고 카피: \"{slot.text_template}\"\n참고로 사용해 의미 유지하며 자연 변주."
+    elif not intent_text:
+        intent_text = "(슬롯 의도 미지정 — 운영자 review 필요)"
+    parts.append(f"\n[슬롯 의도]\n{intent_text}")
 
     tone_anchor_list: list[str] = []
     if slot.tone_anchor:

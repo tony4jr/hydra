@@ -151,3 +151,29 @@ def test_validator_doesnt_flag_other_brand_text():
         global_blocklist=[],
     )
     assert issues == []
+
+
+# ── C2 회귀 테스트 ──────────────────────────────────────────────────────────
+
+def test_legacy_slot_intent_falls_back_to_text_template():
+    """intent=NULL 인 legacy 슬롯은 text_template 으로 폴백."""
+    s = CommentTreeSlot(
+        slot_label="A", position=1,
+        intent=None,  # legacy
+        text_template="와 너무 공감... 산후탈모 진짜 힘들어요 ㅠㅠ",
+        tone_anchor=None,
+        mention_brand=False, mention_solution=False,
+        length="medium", emoji="sometimes",
+        ai_variation=50, like_min=0, like_max=0, like_distribution="adaptive",
+    )
+    sys_prompt = _build_slot_system_prompt(
+        slot=s,
+        brand={"name": "X", "tone_guide": "", "banned_keywords": [], "company_protected_terms": []},
+        product=None,
+        niche={"target_audience": "", "mention_intensity": 40, "voice_override": None},
+        persona=None,
+        global_blocklist=[],
+    )
+    assert "Legacy 텍스트 템플릿" in sys_prompt
+    assert "산후탈모" in sys_prompt
+    assert "(미지정)" not in sys_prompt
