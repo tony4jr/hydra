@@ -41,6 +41,37 @@ def client():
     app.dependency_overrides.clear()
     engine.dispose()
 
+def test_slot_like_min_max_swap_on_create(client):
+    """SlotCreate: like_min > like_max 거꾸로 입력 → 자동 swap."""
+    cp = client.post("/api/admin/comment-presets", json={"name": "P1"}).json()
+    resp = client.post(f"/api/admin/comment-presets/{cp['id']}/slots", json={
+        "like_min": 40, "like_max": 10,  # 거꾸로
+    })
+    assert resp.status_code == 200, resp.text
+    detail = client.get(f"/api/admin/comment-presets/{cp['id']}").json()
+    s = detail["slots"][0]
+    assert s["like_min"] == 10
+    assert s["like_max"] == 40
+
+
+def test_slot_like_min_max_swap_on_update(client):
+    """SlotUpdate: 한쪽만 보내도 최종 swap 후 양쪽 저장."""
+    cp = client.post("/api/admin/comment-presets", json={"name": "P2"}).json()
+    s = client.post(f"/api/admin/comment-presets/{cp['id']}/slots", json={
+        "like_min": 5, "like_max": 20,
+    }).json()
+    # like_min 만 50으로 변경 (current.like_max=20 < 50 → swap)
+    resp = client.patch(
+        f"/api/admin/comment-presets/{cp['id']}/slots/{s['id']}",
+        json={"like_min": 50},
+    )
+    assert resp.status_code == 200, resp.text
+    detail = client.get(f"/api/admin/comment-presets/{cp['id']}").json()
+    s2 = detail["slots"][0]
+    assert s2["like_min"] == 20
+    assert s2["like_max"] == 50
+
+
 def test_list_presets(client):
     resp = client.get("/api/presets/")
     assert resp.status_code == 200

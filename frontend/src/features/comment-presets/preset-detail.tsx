@@ -337,6 +337,14 @@ function SlotCard({
         .split('\n')
         .map((s) => s.trim())
         .filter(Boolean)
+      // like_min/max 거꾸로 입력 방어: swap (서버도 같은 정규화 수행)
+      let lMin = Math.max(0, likeMin || 0)
+      let lMax = Math.max(0, likeMax || 0)
+      if (lMin > lMax) {
+        ;[lMin, lMax] = [lMax, lMin]
+        setLikeMin(lMin)
+        setLikeMax(lMax)
+      }
       await http.patch(`/api/admin/comment-presets/${presetId}/slots/${slot.id}`, {
         text_template: text || null,
         intent: intent || null,
@@ -346,8 +354,8 @@ function SlotCard({
         length,
         emoji,
         ai_variation: aiVariation,
-        like_min: likeMin,
-        like_max: likeMax,
+        like_min: lMin,
+        like_max: lMax,
         like_distribution: dist,
       })
     } finally {

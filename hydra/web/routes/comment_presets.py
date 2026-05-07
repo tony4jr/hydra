@@ -226,7 +226,8 @@ def _next_label(used: set[str]) -> str:
     raise ValueError("too many slots")
 
 
-def _validate_slot(s: SlotCreate | SlotUpdate):
+def _validate_slot(s: SlotCreate | SlotUpdate, *, current: CommentTreeSlot | None = None):
+    """Create/Update 공통 검증 + like_min/max 자동 정규화 (swap if reversed)."""
     if isinstance(s, SlotCreate):
         if s.length not in _LENGTHS:
             raise HTTPException(400, f"length must be one of {_LENGTHS}")
@@ -234,8 +235,20 @@ def _validate_slot(s: SlotCreate | SlotUpdate):
             raise HTTPException(400, f"emoji must be one of {_EMOJIS}")
         if s.like_distribution not in _DISTRIBUTIONS:
             raise HTTPException(400, f"like_distribution must be one of {_DISTRIBUTIONS}")
-        if s.like_max < s.like_min:
-            raise HTTPException(400, "like_max < like_min")
+    # 최종 like_min/max 계산 (Update 의 경우 미지정 필드는 current 유지)
+    final_min = s.like_min if s.like_min is not None else (current.like_min if current else 0)
+    final_max = s.like_max if s.like_max is not None else (current.like_max if current else 0)
+    if final_min < 0 or final_max < 0:
+        raise HTTPException(400, "like_min/like_max must be >= 0")
+    if final_min > final_max:
+        # 사용자가 거꾸로 입력 → 자동 swap (UX 친화)
+        final_min, final_max = final_max, final_min
+    s.like_min = final_min
+    s.like_max = final_max
+    # SlotUpdate: 둘 중 하나만 set 됐어도 swap 후엔 둘 다 변경 → fields_set 갱신
+    if isinstance(s, SlotUpdate):
+        s.__pydantic_fields_set__.add("like_min")
+        s.__pydantic_fields_set__.add("like_max")
 
 
 @router.post("/{preset_id}/slots")
@@ -297,7 +310,7 @@ def update_slot(
     slot = db.get(CommentTreeSlot, slot_id)
     if slot is None or slot.comment_preset_id != preset_id:
         raise HTTPException(404, "slot not found in this preset")
-    _validate_slot(data)
+    _validate_slot(data, current=slot)
     payload = data.model_dump(exclude_unset=True)
     for k, v in payload.items():
         if k in ("length", "emoji", "like_distribution") and v is not None:
