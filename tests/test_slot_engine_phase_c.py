@@ -166,6 +166,13 @@ def test_validator_catches_banned_and_ad_patterns():
     assert any("too short" in i for i in _validator("a", [], **_kw))
 
 
+@pytest.mark.skip(
+    reason=(
+        "KNOWN_TYPO_PATTERNS 가 빈 dict 로 변경 (Critical C1 fix). "
+        "운영자가 등록 시 타이핑 검증 활성. "
+        "후속 PR 에서 Product.protected_terms 기반 동적 typo seed 도입 시 재활성."
+    )
+)
 def test_validator_catches_brand_typos():
     # 모렙신 → 모렉신 오타
     # Updated to new explicit-parameter signature (PR-B Task 8); template arg removed
@@ -178,6 +185,13 @@ def test_validator_catches_brand_typos():
     assert any("모렙신" in i for i in issues)
 
 
+@pytest.mark.skip(
+    reason=(
+        "KNOWN_TYPO_PATTERNS 가 빈 dict 로 변경 (Critical C1 fix). "
+        "운영자가 등록 시 타이핑 검증 활성. "
+        "후속 PR 에서 Product.protected_terms 기반 동적 typo seed 도입 시 재활성."
+    )
+)
 def test_validator_catches_keratin_typos():
     # Updated to new explicit-parameter signature (PR-B Task 8); template arg removed
     issues = _validator(
@@ -236,6 +250,13 @@ def test_validator_passes_when_template_mirrored():
     assert issues == []
 
 
+@pytest.mark.skip(
+    reason=(
+        "KNOWN_TYPO_PATTERNS 가 빈 dict 로 변경 (Critical C1 fix). "
+        "운영자가 등록 시 타이핑 검증 활성. "
+        "후속 PR 에서 Product.protected_terms 기반 동적 typo seed 도입 시 재활성."
+    )
+)
 def test_autocorrect_replaces_known_typos():
     from hydra.ai.agents.slot_agent import _autocorrect_typos
     fixed, fixes = _autocorrect_typos("모렙신 체성캐라틴 좋아요")

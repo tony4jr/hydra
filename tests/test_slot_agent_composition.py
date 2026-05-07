@@ -1,6 +1,8 @@
 """PR-B 6-layer system prompt 합성 검증."""
 import json
 
+import pytest
+
 from hydra.ai.agents.slot_agent import _build_slot_system_prompt, _validator
 from hydra.db.models import CommentTreeSlot
 
@@ -126,3 +128,26 @@ def test_validator_blocks_global_blocklist_phrases():
         global_blocklist=["구매 링크"],
     )
     assert any("blocklist" in i.lower() or "구매 링크" in i for i in issues)
+
+
+# ── C1 회귀 테스트 ──────────────────────────────────────────────────────────
+
+def test_typo_dict_no_hardcoded_brand_terms():
+    """KNOWN_TYPO_PATTERNS 가 빈 dict 로 시작 (multi-brand 안전)."""
+    from hydra.ai.agents.slot_agent import KNOWN_TYPO_PATTERNS
+    assert KNOWN_TYPO_PATTERNS == {}, "글로벌 typo 패턴이 하드코딩되면 안 됨"
+
+
+def test_validator_doesnt_flag_other_brand_text():
+    """모렉신 brand 가 아닌 곳에서 '모렉신' 단어가 들어가도 어떤 issue 도 안 남."""
+    issues = _validator(
+        text="저는 다른제품 잘 쓰고 있어요",
+        banned_keywords=[],
+        slot_mention_brand=True,
+        slot_mention_solution=True,
+        brand_name="다른브랜드",
+        protected_terms=[],
+        core_keywords=[],
+        global_blocklist=[],
+    )
+    assert issues == []

@@ -49,16 +49,14 @@ def _ai_variation_guide(variation: int) -> str:
 
 
 def _detect_protected_terms(template: str | None, brand_name: str) -> list[str]:
-    """템플릿에 등장하는 보호 표기 + 브랜드명 키워드(allowed) 를 추출.
-
-    템플릿이 '모렉신', '체성케라틴' 을 쓰면 그 표기를 그대로 strict-list 로 사용.
-    """
-    base = ["모렉신", "체성케라틴"]  # 항상 보호
-    if not template:
-        return base
-    out = list(base)
-    if brand_name and brand_name not in out:
+    """템플릿에 등장하는 brand_name 키워드 추출. 글로벌 하드코딩 안 함."""
+    out = []
+    if brand_name:
         out.append(brand_name)
+    # 운영자가 등록한 KNOWN_TYPO_PATTERNS 의 canonical (시작은 빈 dict)
+    for canonical in KNOWN_TYPO_PATTERNS.keys():
+        if canonical not in out:
+            out.append(canonical)
     return out
 
 
@@ -211,25 +209,27 @@ def _resolve_persona(account: Account | None) -> dict[str, Any] | None:
         return None
 
 
-# 알려진 오타 패턴 — 모델이 자주 만드는 변형들. validator 가 잡고 retry.
-KNOWN_TYPO_PATTERNS = {
-    "모렉신": ["모렙신", "모랙신", "모래씬", "모럭신", "모렉씬"],
-    "체성케라틴": ["체성캐라틴", "채성케라틴", "체성케러틴", "체성캐러틴", "체성케라친"],
-}
+# 글로벌 typo 패턴 dict — 비어있음. Product.protected_terms 또는 운영자 추가로 채움.
+# 형식: {canonical: [variant1, variant2, ...]}
+KNOWN_TYPO_PATTERNS: dict[str, list[str]] = {}
 
 
 def _check_protected_spelling(
-    text: str, template: str | None, brand_name: str
+    text: str,
+    template: str | None,
+    brand_name: str,
+    *,
+    extra_protected_terms: list[str] | None = None,
 ) -> list[str]:
     """보호 표기 검증.
 
-    1. 템플릿이 보호 표기를 포함하는데 결과물에 없거나 오타 → issue
-    2. 결과물에 알려진 오타 변형이 있으면 → issue (어떤 경우든)
+    1. 결과물에 알려진 오타 변형이 있으면 → issue
+    2. 템플릿이 보호 표기를 포함하는데 결과물에 없으면 → issue
     """
     issues = []
     template_text = template or ""
 
-    # 알려진 오타 검출 (always)
+    # 알려진 오타 검출 (KNOWN_TYPO_PATTERNS 는 비어있음 — 운영자 등록 시 누적)
     for canonical, typos in KNOWN_TYPO_PATTERNS.items():
         for typo in typos:
             if typo in text:
@@ -238,15 +238,21 @@ def _check_protected_spelling(
     # 템플릿이 정답 표기를 포함하면 결과물도 포함해야
     for canonical in KNOWN_TYPO_PATTERNS.keys():
         if canonical in template_text and canonical not in text:
-            # 단, 결과물에 오타 변형이 있으면 위에서 이미 잡힘 — 중복 방지
             already_typo = any(t in text for t in KNOWN_TYPO_PATTERNS[canonical])
             if not already_typo:
                 issues.append(f"템플릿이 '{canonical}' 포함하는데 결과물에 누락")
 
-    # 브랜드명 자체 (KNOWN_TYPO_PATTERNS 외)
+    # 브랜드명 자체
     if brand_name and brand_name not in KNOWN_TYPO_PATTERNS and brand_name in template_text:
         if brand_name not in text:
             issues.append(f"템플릿의 브랜드명 '{brand_name}' 누락")
+
+    # extra_protected_terms (e.g., Product.protected_terms 에서 넘겨받음) — text에 변형 패턴이 있는지는 체크 안 함 (운영자가 typo seed 안 넣었으니 모름).
+    # 단, 템플릿에 이런 term이 있으면 결과물에도 있어야:
+    if extra_protected_terms and template_text:
+        for term in extra_protected_terms:
+            if term and term in template_text and term not in text:
+                issues.append(f"템플릿의 보호 표기 '{term}' 누락")
 
     return issues
 
@@ -288,7 +294,10 @@ def _validator(
             issues.append(f"global blocklist phrase: {ph}")
 
     # 알려진 오타 (autocorrect 와 같이)
-    issues.extend(_check_protected_spelling(text, None, brand_name))
+    issues.extend(_check_protected_spelling(
+        text, None, brand_name,
+        extra_protected_terms=protected_terms,  # Product.protected_terms 그대로
+    ))
 
     # mention_brand 정책
     if not slot_mention_brand and brand_name and brand_name in text:
