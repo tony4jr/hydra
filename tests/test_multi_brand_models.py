@@ -5,7 +5,7 @@ from hydra.db.models import (
     Brand, Product,
     CommentPreset, CommentTreeSlot,
     Niche, NichePresetSelection,
-    # Task 5: GlobalAdPhraseBlocklist
+    GlobalAdPhraseBlocklist,
 )
 
 
@@ -79,3 +79,14 @@ def test_niche_preset_selection_with_weight(db_session):
     weights = {s.preset_id: s.weight for s in selections}
     assert weights[p1.id] == 70
     assert weights[p2.id] == 30
+
+
+def test_global_ad_phrase_blocklist(db_session):
+    db_session.add_all([
+        GlobalAdPhraseBlocklist(phrase="구매 링크", added_by_user_id=1),
+        GlobalAdPhraseBlocklist(phrase="할인 쿠폰", added_by_user_id=1),
+    ])
+    db_session.commit()
+
+    rows = db_session.query(GlobalAdPhraseBlocklist).all()
+    assert {r.phrase for r in rows} == {"구매 링크", "할인 쿠폰"}

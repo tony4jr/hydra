@@ -1395,3 +1395,17 @@ class YoutubeQuotaLog(Base):
         UniqueConstraint("api_key_index", "day", name="uq_quota_per_day"),
         Index("idx_quota_day", "day"),
     )
+
+
+class GlobalAdPhraseBlocklist(Base):
+    """광고 카피 어휘 글로벌 banlist. 운영자가 다중 브랜드 운영하며 누적."""
+    __tablename__ = "global_ad_phrase_blocklist"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    phrase = Column(String(120), nullable=False, unique=True)
+    added_by_user_id = Column(Integer, nullable=True)
+    added_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+
+    __table_args__ = (
+        Index("ix_global_blocklist_phrase", "phrase"),
+    )
