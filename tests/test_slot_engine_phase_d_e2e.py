@@ -232,3 +232,63 @@ def test_create_campaign_for_niche_uses_weighted_preset(db_session):
     assert len(tasks) == 2
     by_label = {t.slot_label: t for t in tasks}
     assert by_label["B"].parent_task_id == by_label["A"].id
+
+
+# ── I2 회귀 테스트 ──────────────────────────────────────────────────────────
+
+def test_create_campaign_for_niche_blocks_duplicate(db_session):
+    """같은 (niche, video) 에 대해 두 번 호출 → ValueError."""
+    from hydra.services.campaign_service import create_campaign_for_niche
+    from hydra.db.models import (
+        Brand, Product, Niche, Account, Video, CommentPreset, CommentTreeSlot,
+        NichePresetSelection,
+    )
+    import json
+
+    brand = Brand(name="b", category="영양제", selected_presets="[]")
+    db_session.add(brand); db_session.flush()
+    product = Product(brand_id=brand.id, product_name="p")
+    db_session.add(product); db_session.flush()
+    niche = Niche(name="n", brand_id=brand.id, product_id=product.id,
+                  target_audience="t", preset_per_video_limit=1)
+    db_session.add(niche); db_session.flush()
+
+    for i in range(3):
+        db_session.add(Account(gmail=f"d_{i}@t", password="x", status="active"))
+    db_session.flush()
+
+    p = CommentPreset(name="P", is_global=True)
+    db_session.add(p); db_session.flush()
+    db_session.add(CommentTreeSlot(
+        comment_preset_id=p.id, slot_label="A", position=1,
+        intent="[메인]", mention_brand=False, mention_solution=False,
+        length="medium", emoji="sometimes", ai_variation=80,
+        like_min=0, like_max=0, like_distribution="adaptive",
+    ))
+    db_session.add(NichePresetSelection(niche_id=niche.id, preset_id=p.id,
+                                        weight=100, enabled=True))
+    db_session.add(Video(id="v_dup", url="https://yt/v_dup", title="t"))
+    db_session.commit()
+
+    # 첫 호출 OK
+    create_campaign_for_niche(db=db_session, niche_id=niche.id, video_id="v_dup")
+
+    # 두 번째 — 같은 (niche, video) → ValueError
+    with pytest.raises(ValueError, match="already exists"):
+        create_campaign_for_niche(db=db_session, niche_id=niche.id, video_id="v_dup")
+
+
+def test_create_campaign_for_niche_missing_niche_raises():
+    """존재하지 않는 niche → ValueError."""
+    from hydra.services.campaign_service import create_campaign_for_niche
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy import create_engine
+    from hydra.db.models import Base
+
+    eng = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(eng)
+    db = sessionmaker(bind=eng)()
+
+    with pytest.raises(ValueError, match="Niche.*not found"):
+        create_campaign_for_niche(db=db, niche_id=99999, video_id="v")
+    db.close()

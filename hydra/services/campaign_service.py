@@ -288,6 +288,18 @@ def create_campaign_for_niche(
     if niche is None:
         raise ValueError(f"Niche {niche_id} not found")
 
+    # 중복 가드 — 같은 (niche, video) 가 in_progress / planning 이면 거부
+    existing = (db.query(Campaign)
+                .filter(Campaign.niche_id == niche_id)
+                .filter(Campaign.video_id == video_id)
+                .filter(Campaign.status.in_(("planning", "in_progress")))
+                .first())
+    if existing is not None:
+        raise ValueError(
+            f"Campaign already exists for niche={niche_id} video={video_id} "
+            f"(campaign_id={existing.id}, status={existing.status})"
+        )
+
     preset = pick_preset_for_niche(db, niche_id)
 
     campaign = Campaign(
