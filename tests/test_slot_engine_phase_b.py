@@ -56,7 +56,7 @@ def _make_preset_f5(db) -> CommentPreset:
 
 def test_slot_tree_creates_correct_task_count(db_session):
     brand = Brand(name="b", selected_presets="[]"); db_session.add(brand); db_session.flush()
-    _make_active_accounts(db_session, 5)
+    _make_active_accounts(db_session, 40)  # like_boost 캡 회피 (3 fresh + 충분한 like 풀)
     p = _make_preset_f5(db_session)
     c = _make_campaign(db_session, brand.id)
 
@@ -164,6 +164,25 @@ def test_insufficient_accounts_raises(db_session):
         create_campaign_with_slot_tasks(
             db_session, campaign=c, comment_preset=p, video_id="v",
         )
+
+
+def test_like_n_caps_at_available_accounts(db_session):
+    """가용 계정 < like_n 일 때 like_boost 가 raise 가 아닌 cap (warning + 진행)."""
+    brand = Brand(name="b", selected_presets="[]"); db_session.add(brand); db_session.flush()
+    # 3 fresh slot (A/B/C) + 2 추가 계정만 → like_boost 풀은 2개로 캡
+    _make_active_accounts(db_session, 5)
+    p = _make_preset_f5(db_session)
+    c = _make_campaign(db_session, brand.id)
+
+    tasks = create_campaign_with_slot_tasks(
+        db_session, campaign=c, comment_preset=p, video_id="v",
+    )
+    db_session.commit()
+    like_tasks = [t for t in tasks if t.task_type == "like_boost"]
+    # 슬롯 4개 × 최대 2 = 8 (raise 안 하고 cap)
+    assert len(like_tasks) <= 4 * 2
+    # 댓글/답글 4개는 정상 생성
+    assert sum(1 for t in tasks if t.task_type in ("comment", "reply")) == 4
 
 
 def test_invalid_same_account_label_raises(db_session):
