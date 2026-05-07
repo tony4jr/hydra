@@ -1,0 +1,18 @@
+# Pre-commit hooks. 한 번만 셋업:
+#   pip install pre-commit  (또는 brew install pre-commit)
+#   pre-commit install
+#
+# 우회 (정말 필요한 경우):
+#   ALLOW_SCHEMA_NO_MIGRATION=1 git commit ...
+#   또는
+#   git commit --no-verify ...
+repos:
+  - repo: local
+    hooks:
+      - id: alembic-sync
+        name: 모델 수정 시 alembic 마이그레이션 동봉 강제
+        entry: python scripts/check_alembic_sync.py
+        language: system
+        files: '^hydra/db/models\.py$|^alembic/versions/.*\.py$'
+        pass_filenames: false
+        stages: [pre-commit]
