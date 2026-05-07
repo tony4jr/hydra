@@ -462,7 +462,7 @@ def generate_comment_for_task(
     product_core = product_dict.get("core_keywords", []) if product_dict else []
 
     text = call_claude(
-        model=get_model("comment"),
+        model=get_model("slot"),  # PR-C: Haiku (운영 환경 매칭)
         system=system,
         user_message=user,
         max_tokens=LENGTH_GUIDES.get(slot.length, LENGTH_GUIDES["medium"])[1],

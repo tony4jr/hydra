@@ -17,6 +17,8 @@ AGENT_MODELS = {
     "persona": MODEL_SONNET,
     "keyword": MODEL_SONNET,
     "casual": MODEL_HAIKU,
+    # PR-C: 슬롯 엔진 댓글 생성은 Haiku (운영 환경 매칭, 비용 1/8)
+    "slot": MODEL_HAIKU,
 }
 
 _client: anthropic.Anthropic | None = None
