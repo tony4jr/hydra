@@ -305,6 +305,20 @@ function SlotCard({
   const [likeMax, setLikeMax] = useState(slot.like_max)
   const [dist, setDist] = useState<CommentSlotDistribution>(slot.like_distribution)
   const [saving, setSaving] = useState(false)
+  // PR-D: 의도 설명형 슬롯 필드
+  const [intent, setIntent] = useState(slot.intent ?? '')
+  const [toneAnchorRaw, setToneAnchorRaw] = useState(() => {
+    if (!slot.tone_anchor) return ''
+    try {
+      const arr = JSON.parse(slot.tone_anchor) as unknown
+      if (Array.isArray(arr)) return arr.join('\n')
+    } catch {
+      // 옛 데이터 그대로
+    }
+    return slot.tone_anchor
+  })
+  const [mentionBrand, setMentionBrand] = useState(slot.mention_brand ?? false)
+  const [mentionSolution, setMentionSolution] = useState(slot.mention_solution ?? false)
 
   const indentStyle: CSSProperties =
     depth > 0
@@ -318,8 +332,17 @@ function SlotCard({
   const save = async () => {
     setSaving(true)
     try {
+      // tone_anchor: 줄별 split → JSON 배열 직렬화
+      const anchors = toneAnchorRaw
+        .split('\n')
+        .map((s) => s.trim())
+        .filter(Boolean)
       await http.patch(`/api/admin/comment-presets/${presetId}/slots/${slot.id}`, {
-        text_template: text,
+        text_template: text || null,
+        intent: intent || null,
+        tone_anchor: anchors.length > 0 ? JSON.stringify(anchors) : null,
+        mention_brand: mentionBrand,
+        mention_solution: mentionSolution,
         length,
         emoji,
         ai_variation: aiVariation,
@@ -460,9 +483,62 @@ function SlotCard({
           value={text}
           onChange={(e) => setText(e.target.value)}
           rows={2}
-          placeholder={placeholderFor(depth)}
+          placeholder={placeholderFor(depth) + ' (legacy text_template — 비워두면 intent 사용)'}
           className='w-full px-3 py-2.5 border border-border rounded-lg text-[13.5px] leading-6 bg-background outline-none focus:border-foreground/60 transition-colors resize-y'
         />
+
+        {/* PR-D: 의도 설명형 필드 */}
+        <details className='mt-2 group' open>
+          <summary className='cursor-pointer text-[11.5px] font-semibold text-muted-foreground hover:text-foreground select-none'>
+            ⚙ 의도 설명형 (intent · tone anchor · mention 정책) ▾
+          </summary>
+          <div className='mt-2 space-y-2 pl-1'>
+            <div>
+              <label className='text-[11px] text-muted-foreground'>intent — 슬롯의 의도/방향 (AI 가 따를 가이드)</label>
+              <textarea
+                value={intent}
+                onChange={(e) => setIntent(e.target.value)}
+                rows={2}
+                placeholder='예: [메인·강한 공감] 영상 주제 본인 입장에서 진심 공감. 제품·키워드 일체 X.'
+                className='mt-0.5 w-full px-2.5 py-1.5 border border-border rounded text-[12.5px] leading-5 bg-background outline-none focus:border-foreground/60 resize-y'
+              />
+            </div>
+            <div>
+              <label className='text-[11px] text-muted-foreground'>tone_anchor — 톤 참고 예시 (한 줄 = 한 anchor, 어휘 베끼지 X)</label>
+              <textarea
+                value={toneAnchorRaw}
+                onChange={(e) => setToneAnchorRaw(e.target.value)}
+                rows={3}
+                placeholder='예시 한 줄씩&#10;ㅠㅠ 영상 보면서 진짜 위로받았어요... 저도 산후 5개월차예요&#10;와 이 영상 진짜 공감되네요'
+                className='mt-0.5 w-full px-2.5 py-1.5 border border-border rounded text-[12px] leading-5 bg-background outline-none focus:border-foreground/60 resize-y font-mono'
+              />
+            </div>
+            <div className='flex gap-3 flex-wrap text-[11.5px]'>
+              <label className='flex items-center gap-1.5 cursor-pointer select-none'>
+                <input
+                  type='checkbox'
+                  checked={mentionBrand}
+                  onChange={(e) => setMentionBrand(e.target.checked)}
+                  className='cursor-pointer'
+                />
+                <span className={mentionBrand ? 'font-semibold text-orange-600' : 'text-muted-foreground'}>
+                  mention_brand (브랜드명 노출 OK)
+                </span>
+              </label>
+              <label className='flex items-center gap-1.5 cursor-pointer select-none'>
+                <input
+                  type='checkbox'
+                  checked={mentionSolution}
+                  onChange={(e) => setMentionSolution(e.target.checked)}
+                  className='cursor-pointer'
+                />
+                <span className={mentionSolution ? 'font-semibold text-emerald-600' : 'text-muted-foreground'}>
+                  mention_solution (체성케라틴 등 솔루션 키워드 노출 OK)
+                </span>
+              </label>
+            </div>
+          </div>
+        </details>
 
         <div className='flex items-center gap-2.5 mt-2.5 flex-wrap'>
           <div className='flex items-center gap-1.5 text-[11.5px] text-muted-foreground'>
@@ -575,7 +651,14 @@ function AddRow({
   const add = async () => {
     setBusy(true)
     try {
-      const body: Record<string, unknown> = { text_template: '' }
+      // PR-D: 새 슬롯은 의도 설명형 default — text_template 비움, intent 빈 placeholder
+      const body: Record<string, unknown> = {
+        text_template: null,
+        intent: '',
+        tone_anchor: null,
+        mention_brand: false,
+        mention_solution: false,
+      }
       if (replyTo) body.reply_to_slot_label = replyTo
       if (reuseLabel) body.slot_label = reuseLabel
       await http.post(`/api/admin/comment-presets/${presetId}/slots`, body)
@@ -692,10 +775,35 @@ function PreviewSection({
                   </span>
                 </div>
                 <p className='text-[13.5px] leading-relaxed break-words'>
-                  {s.text_template || (
-                    <span className='text-muted-foreground/50'>(빈 양식)</span>
-                  )}
+                  {s.text_template ||
+                    (s.intent ? (
+                      <span className='text-muted-foreground italic'>
+                        [의도] {s.intent}
+                      </span>
+                    ) : (
+                      <span className='text-muted-foreground/50'>(빈 양식)</span>
+                    ))}
                 </p>
+                {(s.mention_brand || s.mention_solution) && (
+                  <div className='mt-1 flex gap-1.5 text-[10px]'>
+                    {s.mention_brand && (
+                      <span
+                        className='px-1.5 py-0.5 rounded font-semibold'
+                        style={{ background: '#fed7aa', color: '#c2410c' }}
+                      >
+                        🏷 brand
+                      </span>
+                    )}
+                    {s.mention_solution && (
+                      <span
+                        className='px-1.5 py-0.5 rounded font-semibold'
+                        style={{ background: '#bbf7d0', color: '#166534' }}
+                      >
+                        💊 solution
+                      </span>
+                    )}
+                  </div>
+                )}
                 <div className='flex items-center gap-4 mt-2 text-[11.5px] text-muted-foreground'>
                   <span
                     className='inline-flex items-center gap-1'
