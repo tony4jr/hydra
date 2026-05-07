@@ -47,9 +47,9 @@ def upgrade() -> None:
     op.add_column('comment_tree_slots',
                   sa.Column('tone_anchor', sa.Text, nullable=True))
     op.add_column('comment_tree_slots',
-                  sa.Column('mention_brand', sa.Boolean, nullable=False, server_default=sa.text('false')))
+                  sa.Column('mention_brand', sa.Boolean, nullable=False, server_default=sa.text('0')))
     op.add_column('comment_tree_slots',
-                  sa.Column('mention_solution', sa.Boolean, nullable=False, server_default=sa.text('false')))
+                  sa.Column('mention_solution', sa.Boolean, nullable=False, server_default=sa.text('0')))
 
     # 4) niche_preset_selections 테이블
     op.create_table(
@@ -58,7 +58,7 @@ def upgrade() -> None:
         sa.Column('niche_id', sa.Integer, sa.ForeignKey('niches.id', ondelete='CASCADE'), nullable=False),
         sa.Column('preset_id', sa.Integer, sa.ForeignKey('comment_presets.id', ondelete='CASCADE'), nullable=False),
         sa.Column('weight', sa.Integer, nullable=False, server_default='10'),
-        sa.Column('enabled', sa.Boolean, nullable=False, server_default=sa.text('true')),
+        sa.Column('enabled', sa.Boolean, nullable=False, server_default=sa.text('1')),
         sa.Column('created_at', sa.DateTime, nullable=False, server_default=sa.func.current_timestamp()),
         sa.UniqueConstraint('niche_id', 'preset_id', name='uq_niche_preset'),
     )
