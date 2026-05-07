@@ -75,17 +75,20 @@ def upgrade() -> None:
     op.create_index('ix_global_blocklist_phrase', 'global_ad_phrase_blocklist', ['phrase'])
 
     # 6) 데이터 백필 — 기존 Brand 마다 Product 1개 자동 생성
+    # product_name=NULL 인 경우는 백필 안 함 — 운영자가 PR-D 어드민 wizard 에서 직접 등록
     conn = op.get_bind()
     conn.execute(sa.text("""
         INSERT INTO products (brand_id, product_name, core_keywords, description, core_message,
                               created_at, updated_at)
         SELECT id,
-               COALESCE(product_name, name),
+               product_name,
                COALESCE(allowed_keywords, '[]'),
-               '', COALESCE(core_message, ''),
+               '[자동 백필 — 운영자 검토 필요]',
+               COALESCE(core_message, ''),
                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
         FROM brands
-        WHERE NOT EXISTS (SELECT 1 FROM products p WHERE p.brand_id = brands.id)
+        WHERE product_name IS NOT NULL AND product_name <> ''
+        AND NOT EXISTS (SELECT 1 FROM products p WHERE p.brand_id = brands.id)
     """))
 
     # 7) Niche.product_id 백필 — 같은 brand_id 의 첫 product 로 매핑
