@@ -80,6 +80,7 @@ class Brand(Base):
     name = Column(String, nullable=False)
     product_name = Column(String)  # 상품명 (예: 모렉신). brand.name 은 회사/모브랜드 (예: 트리코라).
     product_category = Column(String)
+    category = Column(String(32))  # PR-A: 영양제/식품/화장품/패션/...
     core_message = Column(Text)
     brand_story = Column(Text)
 
@@ -120,6 +121,33 @@ class Brand(Base):
     keywords = relationship("Keyword", back_populates="brand")
     campaigns = relationship("Campaign", back_populates="brand")
     niches = relationship("Niche", back_populates="brand", cascade="all, delete-orphan")
+    products = relationship("Product", back_populates="brand", cascade="all, delete-orphan")
+
+
+class Product(Base):
+    """상품 — Brand 1:N Product (PR-A Task 1).
+
+    Brand 가 판매하는 개별 상품을 나타낸다.
+    protected_terms / core_keywords 는 JSON 배열로 저장.
+    """
+    __tablename__ = "products"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    brand_id = Column(Integer, ForeignKey("brands.id", ondelete="CASCADE"), nullable=False)
+    product_name = Column(String(120), nullable=False)
+    protected_terms = Column(Text)  # JSON list — 표기 lock
+    core_keywords = Column(Text)    # JSON list — AI 슬롯 substitution
+    description = Column(Text)
+    core_message = Column(Text)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC),
+                        onupdate=lambda: datetime.now(UTC), nullable=False)
+
+    brand = relationship("Brand", back_populates="products")
+
+    __table_args__ = (
+        Index("ix_products_brand", "brand_id"),
+    )
 
 
 class Niche(Base):
