@@ -4,7 +4,7 @@ import json
 from hydra.db.models import (
     Brand, Product,
     CommentPreset, CommentTreeSlot,
-    # Task 3: Niche, NichePresetSelection
+    Niche, NichePresetSelection,
     # Task 5: GlobalAdPhraseBlocklist
 )
 
@@ -53,3 +53,29 @@ def test_slot_has_intent_and_mention_policy(db_session):
     assert "와 진짜 공감" in json.loads(refetched.tone_anchor)[0]
     assert refetched.mention_brand is False
     assert refetched.mention_solution is False
+
+
+def test_niche_preset_selection_with_weight(db_session):
+    brand = Brand(name="b", selected_presets="[]"); db_session.add(brand); db_session.flush()
+    product = Product(brand_id=brand.id, product_name="p")
+    db_session.add(product); db_session.flush()
+    niche = Niche(name="산후맘", brand_id=brand.id, product_id=product.id,
+                  preset_per_video_limit=1)
+    db_session.add(niche); db_session.flush()
+
+    p1 = CommentPreset(name="F5", is_global=True); db_session.add(p1)
+    p2 = CommentPreset(name="F4", is_global=True); db_session.add(p2)
+    db_session.flush()
+
+    db_session.add_all([
+        NichePresetSelection(niche_id=niche.id, preset_id=p1.id, weight=70, enabled=True),
+        NichePresetSelection(niche_id=niche.id, preset_id=p2.id, weight=30, enabled=True),
+    ])
+    db_session.commit()
+
+    selections = (db_session.query(NichePresetSelection)
+                  .filter_by(niche_id=niche.id).all())
+    assert len(selections) == 2
+    weights = {s.preset_id: s.weight for s in selections}
+    assert weights[p1.id] == 70
+    assert weights[p2.id] == 30

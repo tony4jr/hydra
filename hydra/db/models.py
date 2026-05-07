@@ -205,12 +205,16 @@ class Niche(Base):
     # PR-8d — 댓글 트리 프리셋 FK (alembic 만 nullable, 모델은 nullable 유지)
     comment_preset_id = Column(Integer, ForeignKey("comment_presets.id", ondelete="SET NULL"))
 
+    # PR-A: Brand → Product → Niche 3-tier
+    product_id = Column(Integer, ForeignKey("products.id", ondelete="SET NULL"), nullable=True)
+
     created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC),
                         onupdate=lambda: datetime.now(UTC), nullable=False)
 
     # relationships
     brand = relationship("Brand", back_populates="niches")
+    product = relationship("Product")
     keywords = relationship("Keyword", back_populates="niche")
     campaigns = relationship("Campaign", back_populates="niche")
 
@@ -872,6 +876,26 @@ class CommentPreset(Base):
     slots = relationship("CommentTreeSlot", back_populates="comment_preset",
                          cascade="all, delete-orphan",
                          order_by="CommentTreeSlot.position")
+
+
+class NichePresetSelection(Base):
+    """Niche ↔ CommentPreset N:M with weight + enabled."""
+    __tablename__ = "niche_preset_selections"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    niche_id = Column(Integer, ForeignKey("niches.id", ondelete="CASCADE"), nullable=False)
+    preset_id = Column(Integer, ForeignKey("comment_presets.id", ondelete="CASCADE"), nullable=False)
+    weight = Column(Integer, nullable=False, default=10)
+    enabled = Column(Boolean, nullable=False, default=True, server_default=sa.text("true"))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+
+    niche = relationship("Niche")
+    preset = relationship("CommentPreset")
+
+    __table_args__ = (
+        UniqueConstraint("niche_id", "preset_id", name="uq_niche_preset"),
+        Index("ix_nps_niche", "niche_id"),
+    )
 
 
 class CommentTreeSlot(Base):
