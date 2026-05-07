@@ -71,8 +71,14 @@ def get_comment_preset(preset_id: int, db: Session = Depends(get_db)):
             "id": s.id,
             "slot_label": s.slot_label,
             "reply_to_slot_label": s.reply_to_slot_label,
+            "same_account_as_slot_label": s.same_account_as_slot_label,
             "position": s.position,
             "text_template": s.text_template,
+            # PR-D: 의도 설명형 슬롯 필드
+            "intent": s.intent,
+            "tone_anchor": s.tone_anchor,
+            "mention_brand": s.mention_brand,
+            "mention_solution": s.mention_solution,
             "length": s.length,
             "emoji": s.emoji,
             "ai_variation": s.ai_variation,
@@ -174,7 +180,13 @@ _DISTRIBUTIONS = {"adaptive", "burst", "spread", "slow"}
 class SlotCreate(BaseModel):
     slot_label: Optional[str] = None  # None = 자동 (다음 알파벳)
     reply_to_slot_label: Optional[str] = None
-    text_template: str = ""
+    same_account_as_slot_label: Optional[str] = None
+    text_template: Optional[str] = None
+    # PR-D: 의도 설명형 슬롯 필드
+    intent: Optional[str] = None
+    tone_anchor: Optional[str] = None  # JSON list 직렬화 문자열
+    mention_brand: bool = False
+    mention_solution: bool = False
     length: str = "medium"
     emoji: str = "sometimes"
     ai_variation: int = Field(default=50, ge=0, le=100)
@@ -186,7 +198,12 @@ class SlotCreate(BaseModel):
 class SlotUpdate(BaseModel):
     slot_label: Optional[str] = None
     reply_to_slot_label: Optional[str] = None
+    same_account_as_slot_label: Optional[str] = None
     text_template: Optional[str] = None
+    intent: Optional[str] = None
+    tone_anchor: Optional[str] = None
+    mention_brand: Optional[bool] = None
+    mention_solution: Optional[bool] = None
     length: Optional[str] = None
     emoji: Optional[str] = None
     ai_variation: Optional[int] = Field(default=None, ge=0, le=100)
@@ -252,8 +269,13 @@ def create_slot(preset_id: int, data: SlotCreate, db: Session = Depends(get_db))
             comment_preset_id=preset_id,
             slot_label=label,
             reply_to_slot_label=data.reply_to_slot_label,
+            same_account_as_slot_label=data.same_account_as_slot_label,
             position=next_pos,
             text_template=data.text_template,
+            intent=data.intent,
+            tone_anchor=data.tone_anchor,
+            mention_brand=data.mention_brand,
+            mention_solution=data.mention_solution,
             length=data.length, emoji=data.emoji, ai_variation=data.ai_variation,
             like_min=data.like_min, like_max=data.like_max,
             like_distribution=data.like_distribution,

@@ -18,8 +18,14 @@ export interface CommentTreeSlot {
   id: number
   slot_label: string
   reply_to_slot_label: string | null
+  same_account_as_slot_label: string | null
   position: number
   text_template: string | null
+  // PR-D: 의도 설명형 슬롯 필드
+  intent: string | null
+  tone_anchor: string | null  // JSON list (string[]) 직렬화
+  mention_brand: boolean
+  mention_solution: boolean
   length: CommentSlotLength
   emoji: CommentSlotEmoji
   ai_variation: number
