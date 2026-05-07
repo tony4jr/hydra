@@ -6,6 +6,8 @@ generate_comment_for_task / generate_texts_for_campaign 의
 import json
 from unittest.mock import patch
 
+import pytest
+
 from hydra.ai.agents.slot_agent import (
     _build_slot_system_prompt,
     _build_slot_user_message,
@@ -148,35 +150,52 @@ def test_user_message_for_main_slot_has_no_parent():
 
 
 def test_validator_catches_banned_and_ad_patterns():
+    # Updated to new explicit-parameter signature (PR-B Task 8)
+    _kw = dict(slot_mention_brand=True, slot_mention_solution=True,
+               brand_name="모렉신", protected_terms=[], core_keywords=[],
+               global_blocklist=[])
     # OK
-    assert _validator("케라틴 영양제 좋네요", ["일라스틴"]) == []
+    assert _validator("케라틴 영양제 좋네요", ["일라스틴"], **_kw) == []
     # banned
-    issues = _validator("일라스틴 좋아요", ["일라스틴"])
+    issues = _validator("일라스틴 좋아요", ["일라스틴"], **_kw)
     assert any("일라스틴" in i for i in issues)
     # ad pattern
-    issues2 = _validator("지금 구매하세요!!", [])
+    issues2 = _validator("지금 구매하세요!!", [], **_kw)
     assert any("ad pattern" in i for i in issues2)
     # too short
-    assert any("too short" in i for i in _validator("a", []))
+    assert any("too short" in i for i in _validator("a", [], **_kw))
 
 
 def test_validator_catches_brand_typos():
     # 모렙신 → 모렉신 오타
+    # Updated to new explicit-parameter signature (PR-B Task 8); template arg removed
     issues = _validator(
         "모렙신 추천드려요", banned_keywords=[],
-        template="모렉신을 추천드려요", brand_name="모렉신",
+        slot_mention_brand=True, slot_mention_solution=True,
+        brand_name="모렉신", protected_terms=[], core_keywords=[],
+        global_blocklist=[],
     )
     assert any("모렙신" in i for i in issues)
 
 
 def test_validator_catches_keratin_typos():
+    # Updated to new explicit-parameter signature (PR-B Task 8); template arg removed
     issues = _validator(
         "체성캐라틴이 들어있어요", banned_keywords=[],
-        template="체성케라틴 영양제예요", brand_name="모렉신",
+        slot_mention_brand=True, slot_mention_solution=True,
+        brand_name="모렉신", protected_terms=[], core_keywords=[],
+        global_blocklist=[],
     )
     assert any("체성캐라틴" in i for i in issues)
 
 
+@pytest.mark.skip(
+    reason=(
+        "PR-B Task 8: template-mirroring 로직이 새 _validator 에서 제거됨. "
+        "브랜드명 노출 제어는 이제 slot_mention_brand 플래그로만 결정됨 "
+        "(test_slot_agent_composition.py 의 Task 8 테스트로 커버)."
+    )
+)
 def test_validator_template_brand_mention_required_when_template_has_it():
     # 템플릿에 모렉신 있는데 결과에 없음 → issue
     issues = _validator(
@@ -186,6 +205,13 @@ def test_validator_template_brand_mention_required_when_template_has_it():
     assert any("누락" in i for i in issues)
 
 
+@pytest.mark.skip(
+    reason=(
+        "PR-B Task 8: template-mirroring 로직이 새 _validator 에서 제거됨. "
+        "메인 슬롯 브랜드명 차단은 이제 slot_mention_brand=False 로 제어됨 "
+        "(test_slot_agent_composition.py::test_validator_blocks_brand_mention_when_slot_forbids 로 커버)."
+    )
+)
 def test_validator_blocks_brand_mention_when_template_has_none():
     # 템플릿에 모렉신 없는데 결과에 있음 → issue (메인 슬롯 광고티)
     issues = _validator(
@@ -195,6 +221,13 @@ def test_validator_blocks_brand_mention_when_template_has_none():
     assert any("미러링 위반" in i for i in issues)
 
 
+@pytest.mark.skip(
+    reason=(
+        "PR-B Task 8: template-mirroring 로직이 새 _validator 에서 제거됨. "
+        "브랜드명 허용은 이제 slot_mention_brand=True 로 제어됨 "
+        "(test_slot_agent_composition.py::test_validator_passes_when_slot_allows_mention 로 커버)."
+    )
+)
 def test_validator_passes_when_template_mirrored():
     issues = _validator(
         "모렉신이라고 한번 검색해보세요", banned_keywords=[],

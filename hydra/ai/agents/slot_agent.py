@@ -254,30 +254,59 @@ def _check_protected_spelling(
 def _validator(
     text: str,
     banned_keywords: list[str],
-    template: str | None = None,
-    brand_name: str = "",
+    *,
+    slot_mention_brand: bool,
+    slot_mention_solution: bool,
+    brand_name: str,
+    protected_terms: list[str],
+    core_keywords: list[str],
+    global_blocklist: list[str],
 ) -> list[str]:
-    issues = []
+    """슬롯·브랜드·니치 정책을 통합 검증."""
+    issues: list[str] = []
+
     if len(text) < 2:
         issues.append("too short")
     if len(text) > 500:
         issues.append("over 500 chars")
+
+    # banned (brand-level)
     text_lower = text.lower()
     for kw in banned_keywords:
         if kw and kw.lower() in text_lower:
             issues.append(f"banned keyword: {kw}")
+
+    # 광고 패턴 (하드코딩 — 항상)
     ad_phrases = ["구매 링크", "할인 코드", "지금 구매", "클릭 여기", "꼭 써보세요"]
     for ph in ad_phrases:
         if ph in text:
             issues.append(f"ad pattern: {ph}")
-    issues.extend(_check_protected_spelling(text, template, brand_name))
 
-    # 템플릿이 브랜드명 안 가진 메인 슬롯에서 결과물이 브랜드명 끼워넣었는지
-    if template is not None and brand_name and brand_name not in (template or ""):
-        if brand_name in text:
-            issues.append(
-                f"템플릿에 없는 브랜드명 '{brand_name}' 추가됨 (템플릿 미러링 위반)"
-            )
+    # 글로벌 blocklist
+    for ph in global_blocklist:
+        if ph and ph in text:
+            issues.append(f"global blocklist phrase: {ph}")
+
+    # 알려진 오타 (autocorrect 와 같이)
+    issues.extend(_check_protected_spelling(text, None, brand_name))
+
+    # mention_brand 정책
+    if not slot_mention_brand and brand_name and brand_name in text:
+        issues.append(f"슬롯 mention_brand=False 인데 브랜드명 '{brand_name}' 노출")
+
+    # mention_solution 정책 (core_keywords 또는 추가 protected_terms 노출 차단)
+    if not slot_mention_solution:
+        # protected_terms 중 brand_name 이 아닌 (성분명) — 예: 체성케라틴
+        for term in protected_terms:
+            if term and term != brand_name and term in text:
+                issues.append(f"슬롯 mention_solution=False 인데 솔루션 '{term}' 노출")
+                break
+        else:
+            for kw in core_keywords:
+                if kw and kw in text:
+                    issues.append(f"슬롯 mention_solution=False 인데 성분 키워드 '{kw}' 노출")
+                    break
+
     return issues
 
 
@@ -412,15 +441,25 @@ def generate_comment_for_task(
             f"len={slot.length} emoji={slot.emoji} ai_var={slot.ai_variation}"
         )
 
-    template_text = slot.text_template or ""
+    template_text = slot.intent or ""  # 더 이상 text_template 안 씀
     brand_name = brand_dict.get("name", "")
+    product_protected = product_dict.get("protected_terms", []) if product_dict else []
+    product_core = product_dict.get("core_keywords", []) if product_dict else []
 
     text = call_claude(
         model=get_model("comment"),
         system=system,
         user_message=user,
         max_tokens=LENGTH_GUIDES.get(slot.length, LENGTH_GUIDES["medium"])[1],
-        validator=lambda t: _validator(t, banned, template_text, brand_name),
+        validator=lambda t: _validator(
+            t, banned,
+            slot_mention_brand=slot.mention_brand,
+            slot_mention_solution=slot.mention_solution,
+            brand_name=brand_name,
+            protected_terms=product_protected,
+            core_keywords=product_core,
+            global_blocklist=global_blocklist,
+        ),
         max_retries=4,
     )
 

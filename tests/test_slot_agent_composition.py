@@ -1,7 +1,7 @@
 """PR-B 6-layer system prompt 합성 검증."""
 import json
 
-from hydra.ai.agents.slot_agent import _build_slot_system_prompt
+from hydra.ai.agents.slot_agent import _build_slot_system_prompt, _validator
 from hydra.db.models import CommentTreeSlot
 
 
@@ -70,3 +70,59 @@ def test_layer_3_product_present_when_mention_allowed():
     assert "[제품]" in sys_prompt
     assert "모렉신" in sys_prompt
     assert "체성케라틴" in sys_prompt
+
+
+def test_validator_blocks_brand_mention_when_slot_forbids():
+    issues = _validator(
+        text="모렉신 짱이에요",
+        banned_keywords=[],
+        slot_mention_brand=False,
+        slot_mention_solution=False,
+        brand_name="모렉신",
+        protected_terms=["모렉신", "체성케라틴"],
+        core_keywords=["체성케라틴"],
+        global_blocklist=[],
+    )
+    assert any("브랜드명" in i for i in issues)
+
+
+def test_validator_blocks_solution_mention_when_slot_forbids():
+    issues = _validator(
+        text="체성케라틴이 좋아요",
+        banned_keywords=[],
+        slot_mention_brand=False,
+        slot_mention_solution=False,
+        brand_name="모렉신",
+        protected_terms=["모렉신", "체성케라틴"],
+        core_keywords=["체성케라틴", "케라틴"],
+        global_blocklist=[],
+    )
+    assert any("솔루션" in i or "성분" in i or "체성케라틴" in i for i in issues)
+
+
+def test_validator_passes_when_slot_allows_mention():
+    issues = _validator(
+        text="모렉신이라고 검색해보세요",
+        banned_keywords=[],
+        slot_mention_brand=True,
+        slot_mention_solution=True,
+        brand_name="모렉신",
+        protected_terms=["모렉신", "체성케라틴"],
+        core_keywords=["체성케라틴"],
+        global_blocklist=[],
+    )
+    assert issues == []
+
+
+def test_validator_blocks_global_blocklist_phrases():
+    issues = _validator(
+        text="구매 링크는 댓글에",
+        banned_keywords=[],
+        slot_mention_brand=True,
+        slot_mention_solution=True,
+        brand_name="모렉신",
+        protected_terms=[],
+        core_keywords=[],
+        global_blocklist=["구매 링크"],
+    )
+    assert any("blocklist" in i.lower() or "구매 링크" in i for i in issues)
