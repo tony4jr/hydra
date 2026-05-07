@@ -79,7 +79,7 @@ class Brand(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=False)
     product_name = Column(String)  # 상품명 (예: 모렉신). brand.name 은 회사/모브랜드 (예: 트리코라).
-    product_category = Column(String)
+    product_category = Column(String)  # deprecated — rename to category in Task 6 alembic migration
     category = Column(String(32))  # PR-A: 영양제/식품/화장품/패션/...
     core_message = Column(Text)
     brand_story = Column(Text)
@@ -87,6 +87,7 @@ class Brand(Base):
     target_keywords = Column(Text)   # JSON
     allowed_keywords = Column(Text)  # JSON
     banned_keywords = Column(Text)   # JSON
+    company_protected_terms = Column(Text)  # JSON list, optional — 회사명 등 표기 lock
     ingredients = Column(Text)       # JSON
     selling_points = Column(Text)    # JSON
 
