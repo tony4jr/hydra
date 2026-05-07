@@ -1,0 +1,44 @@
+name: Auto Deploy to Prod
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:  # 수동 실행도 가능
+
+concurrency:
+  group: prod-deploy
+  cancel-in-progress: false  # 배포 중이면 다음 머지 대기
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy
+        run: |
+          ssh -o StrictHostKeyChecking=no \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            'cd /opt/hydra && bash scripts/deploy.sh' 2>&1 | tee deploy.log
+
+      - name: Verify HEAD on prod
+        run: |
+          PROD_HEAD=$(ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} 'cd /opt/hydra && git rev-parse --short HEAD')
+          GITHUB_HEAD=${GITHUB_SHA:0:7}
+          echo "prod HEAD: $PROD_HEAD"
+          echo "github SHA: $GITHUB_HEAD"
+          if [[ "$PROD_HEAD" != "$GITHUB_HEAD" ]]; then
+            echo "::error::Prod HEAD mismatch (prod=$PROD_HEAD, github=$GITHUB_HEAD)"
+            exit 1
+          fi
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::배포 실패. 수동 점검 필요: ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} 'cd /opt/hydra && git log -3'"
