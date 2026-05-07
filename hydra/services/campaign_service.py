@@ -264,3 +264,48 @@ def generate_campaign_texts(
 
     db.commit()
     return results
+
+
+def create_campaign_for_niche(
+    db: Session,
+    *,
+    niche_id: int,
+    video_id: str,
+) -> Campaign:
+    """새 multi-brand 흐름 진입점 — Niche 만 받아 자동으로 product/brand/preset 결정.
+
+    1. Niche 검증
+    2. NichePresetSelection.weight 따라 글로벌 프리셋 선택
+    3. Campaign row 생성
+    4. slot_engine 호출 → Task 트리 생성
+    """
+    from hydra.db.models import Niche
+    from hydra.services.slot_engine import (
+        create_campaign_with_slot_tasks, pick_preset_for_niche,
+    )
+
+    niche = db.get(Niche, niche_id)
+    if niche is None:
+        raise ValueError(f"Niche {niche_id} not found")
+
+    preset = pick_preset_for_niche(db, niche_id)
+
+    campaign = Campaign(
+        video_id=video_id,
+        brand_id=niche.brand_id,
+        niche_id=niche_id,
+        scenario=preset.name,
+        campaign_type="scenario",
+        comment_mode="ai_auto",
+        comment_preset_id=preset.id,
+        status="planning",
+    )
+    db.add(campaign); db.flush()
+
+    create_campaign_with_slot_tasks(
+        db, campaign=campaign, comment_preset=preset, video_id=video_id,
+    )
+    campaign.status = "in_progress"
+    db.commit()
+    db.refresh(campaign)
+    return campaign

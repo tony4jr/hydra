@@ -173,3 +173,62 @@ def test_e2e_dry_run_text_generation(db_session):
 
     # 4번 호출됨 (A,B,C,D)
     assert len(fake_calls) == 4
+
+
+def test_create_campaign_for_niche_uses_weighted_preset(db_session):
+    """Niche 입력만으로 캠페인 enqueue — 가중치 따라 프리셋 자동 선택."""
+    from hydra.services.campaign_service import create_campaign_for_niche
+    from hydra.db.models import (
+        Brand, Product, Niche, Account, Video, CommentPreset, CommentTreeSlot,
+        NichePresetSelection, Task,
+    )
+    import json
+
+    brand = Brand(name="OO헬스", category="영양제", selected_presets="[]")
+    db_session.add(brand); db_session.flush()
+    product = Product(brand_id=brand.id, product_name="모렉신",
+                      protected_terms=json.dumps(["모렉신"]),
+                      core_keywords=json.dumps(["체성케라틴"]))
+    db_session.add(product); db_session.flush()
+    niche = Niche(name="산후맘", brand_id=brand.id, product_id=product.id,
+                  target_audience="30대 산후맘", preset_per_video_limit=1)
+    db_session.add(niche); db_session.flush()
+
+    # 활성 계정 5개
+    for i in range(5):
+        db_session.add(Account(gmail=f"e2e_{i}@t", password="x", status="active",
+                               persona=json.dumps({"age": 30+i, "gender": "여",
+                                                   "region": "서울", "occupation": "직장인",
+                                                   "speech_style": "친근한 존댓말"})))
+    db_session.flush()
+
+    # 글로벌 프리셋 1개 (의도 설명형)
+    p = CommentPreset(name="F4 트렌", is_global=True)
+    db_session.add(p); db_session.flush()
+    db_session.add_all([
+        CommentTreeSlot(comment_preset_id=p.id, slot_label="A", position=1,
+                        intent="[메인·고민] 자연 토로", mention_brand=False,
+                        mention_solution=False, length="medium", emoji="sometimes",
+                        ai_variation=80, like_min=0, like_max=5, like_distribution="adaptive"),
+        CommentTreeSlot(comment_preset_id=p.id, slot_label="B", reply_to_slot_label="A",
+                        position=2, intent="[증언] 본인 경험", mention_brand=False,
+                        mention_solution=True, length="medium", emoji="sometimes",
+                        ai_variation=80, like_min=0, like_max=5, like_distribution="adaptive"),
+    ])
+    db_session.add(NichePresetSelection(niche_id=niche.id, preset_id=p.id,
+                                        weight=100, enabled=True))
+
+    db_session.add(Video(id="v_test", url="https://yt/v_test", title="산후 V-log"))
+    db_session.commit()
+
+    campaign = create_campaign_for_niche(
+        db=db_session, niche_id=niche.id, video_id="v_test",
+    )
+    db_session.commit()
+
+    tasks = (db_session.query(Task)
+             .filter(Task.campaign_id == campaign.id)
+             .filter(Task.task_type.in_(("comment", "reply"))).all())
+    assert len(tasks) == 2
+    by_label = {t.slot_label: t for t in tasks}
+    assert by_label["B"].parent_task_id == by_label["A"].id
