@@ -103,7 +103,7 @@ def upgrade() -> None:
     # 8) Niche.comment_preset_id 가 있던 행 → NichePresetSelection 으로 이전
     conn.execute(sa.text("""
         INSERT INTO niche_preset_selections (niche_id, preset_id, weight, enabled, created_at)
-        SELECT id, comment_preset_id, 100, 1, CURRENT_TIMESTAMP
+        SELECT id, comment_preset_id, 100, true, CURRENT_TIMESTAMP
         FROM niches
         WHERE comment_preset_id IS NOT NULL
         AND NOT EXISTS (
