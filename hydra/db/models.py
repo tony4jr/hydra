@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 
+import sqlalchemy as sa
 from sqlalchemy import (
     BigInteger, Boolean, Column, Date, DateTime, Float, ForeignKey, Index, Integer,
     SmallInteger, String, Text, UniqueConstraint,
@@ -890,6 +891,12 @@ class CommentTreeSlot(Base):
     like_min = Column(Integer, default=0, nullable=False)
     like_max = Column(Integer, default=0, nullable=False)
     like_distribution = Column(String(10), default="adaptive", nullable=False)
+
+    # PR-A: 의도 설명형 슬롯 (구 text_template 대체)
+    intent = Column(Text, nullable=True)            # 의도 설명. 신규 슬롯은 NOT NULL 권장 (앱 레이어 검증)
+    tone_anchor = Column(Text, nullable=True)       # JSON list — 톤 참고 예시 1-2개
+    mention_brand = Column(Boolean, nullable=False, default=False, server_default=sa.text("false"))
+    mention_solution = Column(Boolean, nullable=False, default=False, server_default=sa.text("false"))
 
     # 같은 프리셋 안 다른 슬롯의 라벨. 지정 시 이 슬롯은 그 라벨 슬롯과 동일 계정으로 실행.
     # F5 흐름의 D=B 같은 자기 답글 패턴.

@@ -3,9 +3,9 @@ import json
 
 from hydra.db.models import (
     Brand, Product,
+    CommentPreset, CommentTreeSlot,
     # Task 3: Niche, NichePresetSelection
     # Task 5: GlobalAdPhraseBlocklist
-    # Task 2: CommentPreset, CommentTreeSlot  (already exist — imported in later task tests)
 )
 
 
@@ -27,3 +27,29 @@ def test_product_belongs_to_brand(db_session):
     assert refetched.brand_id == brand.id
     assert "체성케라틴" in json.loads(refetched.protected_terms)
     assert refetched.brand.name == "OO헬스"
+
+
+def test_slot_has_intent_and_mention_policy(db_session):
+    p = CommentPreset(name="F5 demo", is_global=True, is_default=False)
+    db_session.add(p); db_session.flush()
+
+    slot = CommentTreeSlot(
+        comment_preset_id=p.id, slot_label="A", position=1,
+        intent="[메인·고민형] 영상 주제에 공감, 본인 입장에서 자연 토로. 제품 언급 X.",
+        tone_anchor=json.dumps([
+            "와 진짜 공감... 저도 그런 고민 있어요 ㅠㅠ",
+            "ㅠㅠ 저도 똑같아요"
+        ], ensure_ascii=False),
+        mention_brand=False,
+        mention_solution=False,
+        length="medium", emoji="sometimes",
+        ai_variation=80,
+        like_min=0, like_max=10, like_distribution="adaptive",
+    )
+    db_session.add(slot); db_session.commit()
+
+    refetched = db_session.query(CommentTreeSlot).filter_by(slot_label="A").first()
+    assert refetched.intent.startswith("[메인·고민형]")
+    assert "와 진짜 공감" in json.loads(refetched.tone_anchor)[0]
+    assert refetched.mention_brand is False
+    assert refetched.mention_solution is False
