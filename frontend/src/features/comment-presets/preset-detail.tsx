@@ -301,8 +301,9 @@ function SlotCard({
   const [length, setLength] = useState<CommentSlotLength>(slot.length)
   const [emoji, setEmoji] = useState<CommentSlotEmoji>(slot.emoji)
   const [aiVariation, setAiVariation] = useState(slot.ai_variation)
-  const [likeMin, setLikeMin] = useState(slot.like_min)
-  const [likeMax, setLikeMax] = useState(slot.like_max)
+  // 방어: DB 에 거꾸로 저장된 행이 남아있으면 표시 시점에서도 swap (마이그레이션 미적용 환경 보호)
+  const [likeMin, setLikeMin] = useState(Math.min(slot.like_min, slot.like_max))
+  const [likeMax, setLikeMax] = useState(Math.max(slot.like_min, slot.like_max))
   const [dist, setDist] = useState<CommentSlotDistribution>(slot.like_distribution)
   const [saving, setSaving] = useState(false)
   // PR-D: 의도 설명형 슬롯 필드
