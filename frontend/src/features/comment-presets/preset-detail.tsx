@@ -605,8 +605,15 @@ function SlotCard({
             value={likeMin}
             min={0}
             onChange={(e) => setLikeMin(Number(e.target.value) || 0)}
+            onBlur={() => {
+              if (likeMin > likeMax) {
+                setLikeMin(likeMax)
+                setLikeMax(likeMin)
+              }
+            }}
             className='w-[42px] px-1.5 py-0.5 border border-border rounded bg-background text-[11.5px] text-center'
             style={{ color: '#dc2626' }}
+            title='최소 좋아요 수 (최대보다 크면 자동 swap)'
           />
           <span style={{ color: '#dc2626' }}>~</span>
           <input
@@ -614,8 +621,15 @@ function SlotCard({
             value={likeMax}
             min={0}
             onChange={(e) => setLikeMax(Number(e.target.value) || 0)}
+            onBlur={() => {
+              if (likeMin > likeMax) {
+                setLikeMin(likeMax)
+                setLikeMax(likeMin)
+              }
+            }}
             className='w-[42px] px-1.5 py-0.5 border border-border rounded bg-background text-[11.5px] text-center'
             style={{ color: '#dc2626' }}
+            title='최대 좋아요 수'
           />
           <span className='text-muted-foreground/70'>·</span>
           <span style={{ color: '#dc2626' }}>시점</span>
