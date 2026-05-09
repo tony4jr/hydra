@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
-import CommentPresetsPage from '@/features/comment-presets'
+import { PresetsCommex } from '@/features/presets-commex'
 
 export const Route = createFileRoute('/_authenticated/presets/')({
-  component: CommentPresetsPage,
+  component: PresetsCommex,
 })

@@ -6,7 +6,7 @@
  *
  * 시각 디자인 최소 (shadcn 기본). 다음 "디자인 시스템 PR" 에서 일괄 재작성.
  *
- * 클릭 가능 카드: market_fit → /targets, task_created → /tasks
+ * 클릭 가능 카드: market_fit/task_created → /queue
  * 나머지 정적 (PR-5 영상 통합 보기 후 추가 예정).
  */
 import { useQuery } from '@tanstack/react-query'

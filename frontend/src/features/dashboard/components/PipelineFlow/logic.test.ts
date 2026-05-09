@@ -26,8 +26,8 @@ describe('getStageLabel', () => {
 
 describe('getStageRouteTo', () => {
   it('returns route for clickable stages', () => {
-    expect(getStageRouteTo('market_fit')).toBe('/targets')
-    expect(getStageRouteTo('task_created')).toBe('/tasks')
+    expect(getStageRouteTo('market_fit')).toBe('/queue')
+    expect(getStageRouteTo('task_created')).toBe('/queue')
   })
 
   it('returns null for non-clickable stages', () => {

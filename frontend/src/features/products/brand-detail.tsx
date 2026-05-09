@@ -48,7 +48,7 @@ export default function BrandDetailPage() {
 
           <div className='mb-5 flex flex-wrap gap-2 text-[12px]'>
             <Link
-              to='/targets'
+              to='/queue'
               className='rounded-md border border-border px-2.5 py-1 hover:bg-muted/50'
             >
               영상 풀 · 수집 →
@@ -60,7 +60,7 @@ export default function BrandDetailPage() {
               캠페인 →
             </Link>
             <Link
-              to='/tasks'
+              to='/queue'
               className='rounded-md border border-border px-2.5 py-1 hover:bg-muted/50'
             >
               작업 큐 →

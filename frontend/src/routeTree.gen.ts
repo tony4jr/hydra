@@ -23,6 +23,7 @@ import { Route as AuthenticatedVideosIndexRouteImport } from './routes/_authenti
 import { Route as AuthenticatedTasksIndexRouteImport } from './routes/_authenticated/tasks/index'
 import { Route as AuthenticatedTargetsIndexRouteImport } from './routes/_authenticated/targets/index'
 import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
+import { Route as AuthenticatedQuickIndexRouteImport } from './routes/_authenticated/quick/index'
 import { Route as AuthenticatedQueueIndexRouteImport } from './routes/_authenticated/queue/index'
 import { Route as AuthenticatedPresetsIndexRouteImport } from './routes/_authenticated/presets/index'
 import { Route as AuthenticatedOnboardingIndexRouteImport } from './routes/_authenticated/onboarding/index'
@@ -128,6 +129,11 @@ const AuthenticatedSettingsIndexRoute =
     path: '/',
     getParentRoute: () => AuthenticatedSettingsRouteRoute,
   } as any)
+const AuthenticatedQuickIndexRoute = AuthenticatedQuickIndexRouteImport.update({
+  id: '/quick/',
+  path: '/quick/',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedQueueIndexRoute = AuthenticatedQueueIndexRouteImport.update({
   id: '/queue/',
   path: '/queue/',
@@ -338,6 +344,7 @@ export interface FileRoutesByFullPath {
   '/onboarding/': typeof AuthenticatedOnboardingIndexRoute
   '/presets/': typeof AuthenticatedPresetsIndexRoute
   '/queue/': typeof AuthenticatedQueueIndexRoute
+  '/quick/': typeof AuthenticatedQuickIndexRoute
   '/settings/': typeof AuthenticatedSettingsIndexRoute
   '/targets/': typeof AuthenticatedTargetsIndexRoute
   '/tasks/': typeof AuthenticatedTasksIndexRoute
@@ -382,6 +389,7 @@ export interface FileRoutesByTo {
   '/onboarding': typeof AuthenticatedOnboardingIndexRoute
   '/presets': typeof AuthenticatedPresetsIndexRoute
   '/queue': typeof AuthenticatedQueueIndexRoute
+  '/quick': typeof AuthenticatedQuickIndexRoute
   '/settings': typeof AuthenticatedSettingsIndexRoute
   '/targets': typeof AuthenticatedTargetsIndexRoute
   '/tasks': typeof AuthenticatedTasksIndexRoute
@@ -428,6 +436,7 @@ export interface FileRoutesById {
   '/_authenticated/onboarding/': typeof AuthenticatedOnboardingIndexRoute
   '/_authenticated/presets/': typeof AuthenticatedPresetsIndexRoute
   '/_authenticated/queue/': typeof AuthenticatedQueueIndexRoute
+  '/_authenticated/quick/': typeof AuthenticatedQuickIndexRoute
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
   '/_authenticated/targets/': typeof AuthenticatedTargetsIndexRoute
   '/_authenticated/tasks/': typeof AuthenticatedTasksIndexRoute
@@ -475,6 +484,7 @@ export interface FileRouteTypes {
     | '/onboarding/'
     | '/presets/'
     | '/queue/'
+    | '/quick/'
     | '/settings/'
     | '/targets/'
     | '/tasks/'
@@ -519,6 +529,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/presets'
     | '/queue'
+    | '/quick'
     | '/settings'
     | '/targets'
     | '/tasks'
@@ -564,6 +575,7 @@ export interface FileRouteTypes {
     | '/_authenticated/onboarding/'
     | '/_authenticated/presets/'
     | '/_authenticated/queue/'
+    | '/_authenticated/quick/'
     | '/_authenticated/settings/'
     | '/_authenticated/targets/'
     | '/_authenticated/tasks/'
@@ -687,6 +699,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/settings/'
       preLoaderRoute: typeof AuthenticatedSettingsIndexRouteImport
       parentRoute: typeof AuthenticatedSettingsRouteRoute
+    }
+    '/_authenticated/quick/': {
+      id: '/_authenticated/quick/'
+      path: '/quick'
+      fullPath: '/quick/'
+      preLoaderRoute: typeof AuthenticatedQuickIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/queue/': {
       id: '/_authenticated/queue/'
@@ -976,6 +995,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOnboardingIndexRoute: typeof AuthenticatedOnboardingIndexRoute
   AuthenticatedPresetsIndexRoute: typeof AuthenticatedPresetsIndexRoute
   AuthenticatedQueueIndexRoute: typeof AuthenticatedQueueIndexRoute
+  AuthenticatedQuickIndexRoute: typeof AuthenticatedQuickIndexRoute
   AuthenticatedTargetsIndexRoute: typeof AuthenticatedTargetsIndexRoute
   AuthenticatedTasksIndexRoute: typeof AuthenticatedTasksIndexRoute
   AuthenticatedVideosIndexRoute: typeof AuthenticatedVideosIndexRoute
@@ -1003,6 +1023,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOnboardingIndexRoute: AuthenticatedOnboardingIndexRoute,
   AuthenticatedPresetsIndexRoute: AuthenticatedPresetsIndexRoute,
   AuthenticatedQueueIndexRoute: AuthenticatedQueueIndexRoute,
+  AuthenticatedQuickIndexRoute: AuthenticatedQuickIndexRoute,
   AuthenticatedTargetsIndexRoute: AuthenticatedTargetsIndexRoute,
   AuthenticatedTasksIndexRoute: AuthenticatedTasksIndexRoute,
   AuthenticatedVideosIndexRoute: AuthenticatedVideosIndexRoute,

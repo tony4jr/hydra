@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
-import CampaignsPage from '@/features/campaigns'
+import { CampaignsCommex } from '@/features/campaigns-commex'
 
 export const Route = createFileRoute('/_authenticated/campaigns/')({
-  component: CampaignsPage,
+  component: CampaignsCommex,
 })

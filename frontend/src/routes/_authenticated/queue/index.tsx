@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
-import QueuePage from '@/features/queue'
+import { QueueCommex } from '@/features/queue-commex'
 
 export const Route = createFileRoute('/_authenticated/queue/')({
-  component: QueuePage,
+  component: QueueCommex,
 })
