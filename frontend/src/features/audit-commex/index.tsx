@@ -24,6 +24,31 @@ export function AuditCommex() {
       l.event.toLowerCase().includes(q.toLowerCase()) ||
       l.meta.some((m) => m.toLowerCase().includes(q.toLowerCase()))
   )
+  const downloadCsv = () => {
+    const header = ['time', 'event', 'meta']
+    const body = filtered.map((l) => [
+      l.time,
+      l.event,
+      l.meta.join('|'),
+    ])
+    const csv = [header, ...body]
+      .map((row) =>
+        row
+          .map((cell) => `"${String(cell).split('"').join('""')}"`)
+          .join(',')
+      )
+      .join('\n')
+    const blob = new Blob([`\ufeff${csv}`], {
+      type: 'text/csv;charset=utf-8',
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `commex-audit-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast.success(`${filtered.length}건을 CSV로 다운로드했습니다`)
+  }
 
   return (
     <>
@@ -73,7 +98,7 @@ export function AuditCommex() {
                   }}
                 />
               </div>
-              <button className='cx-btn-soft' onClick={() => toast.info('CSV 다운로드 (예정)')}>
+              <button className='cx-btn-soft' onClick={downloadCsv}>
                 <Download className='inline h-4 w-4 mr-1.5' />다운로드
               </button>
             </div>

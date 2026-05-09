@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Plus, Copy, Trash2, Sparkles, Send, Save, Wand2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useNavigate } from '@tanstack/react-router'
@@ -367,6 +367,23 @@ export function QuickWork() {
 
   const navigate = useNavigate()
   const storeSave = useCommexStore((s) => s.saveDraft)
+  const nicheContext = useCommexStore((s) => s.nicheContext)
+  const clearCtx = useCommexStore((s) => s.clearNicheContext)
+
+  // 브랜드/니치 페이지에서 컨텍스트 가지고 진입 시 selection 자동 세팅
+  useEffect(() => {
+    if (!nicheContext) return
+    const b = BRANDS.find((br) => br.name === nicheContext.brandName)
+    if (!b) return
+    setBrandId(b.id)
+    const n = b.niches.find((nn) => nn.name === nicheContext.nicheName)
+    if (n) {
+      setNicheId(n.id)
+      setPresetId(n.presetIds[0])
+    }
+    clearCtx()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const storeQueue = useCommexStore((s) => s.sendToQueue)
   const storeRun = useCommexStore((s) => s.runNow)
 

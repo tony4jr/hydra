@@ -6,18 +6,33 @@ import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
 
+const STORAGE_KEY = 'commex-settings-v1'
+
+type SettingsSnapshot = {
+  model: string
+  limit: string
+  channel: string
+  yt: string
+  ai: string
+  memo: string
+  dryRun: boolean
+}
+
 export function SettingsCommex() {
-  const [model, setModel] = useState('gpt-4.1')
-  const [limit, setLimit] = useState('500')
-  const [channel, setChannel] = useState('Slack')
-  const [yt, setYt] = useState('••••••••••••••••')
-  const [ai, setAi] = useState('••••••••••••••••')
-  const [memo, setMemo] = useState(
-    '초안 생성과 게시 한도를 분리해서 관리합니다.'
-  )
-  const [dryRun, setDryRun] = useState(false)
+  const [initial] = useState(loadSettings)
+  const [model, setModel] = useState(initial.model)
+  const [limit, setLimit] = useState(initial.limit)
+  const [channel, setChannel] = useState(initial.channel)
+  const [yt, setYt] = useState(initial.yt)
+  const [ai, setAi] = useState(initial.ai)
+  const [memo, setMemo] = useState(initial.memo)
+  const [dryRun, setDryRun] = useState(initial.dryRun)
 
   const save = () => {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ model, limit, channel, yt, ai, memo, dryRun })
+    )
     toast.success('전역 설정이 저장됐어요', {
       description: `모델: ${model} · 일일 한도: ${limit} · 알림: ${channel}`,
     })
@@ -222,6 +237,26 @@ function Toggle({
       </button>
     </div>
   )
+}
+
+function loadSettings(): SettingsSnapshot {
+  const fallback: SettingsSnapshot = {
+    model: 'gpt-4.1',
+    limit: '500',
+    channel: 'Slack',
+    yt: '••••••••••••••••',
+    ai: '••••••••••••••••',
+    memo: '초안 생성과 게시 한도를 분리해서 관리합니다.',
+    dryRun: false,
+  }
+  if (typeof window === 'undefined') return fallback
+  const raw = window.localStorage.getItem(STORAGE_KEY)
+  if (!raw) return fallback
+  try {
+    return { ...fallback, ...(JSON.parse(raw) as Partial<SettingsSnapshot>) }
+  } catch {
+    return fallback
+  }
 }
 
 export default SettingsCommex

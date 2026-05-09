@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Plus, Play, X } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
@@ -25,10 +25,22 @@ const statusClass = (s: VideoStatus) => {
 
 export function VideosCommex() {
   const videos = useCommexStore((s) => s.videos)
+  const brands = useCommexStore((s) => s.brands)
   const excludeStore = useCommexStore((s) => s.excludeVideo)
   const addManualStore = useCommexStore((s) => s.addManualVideos)
+  const setNicheContext = useCommexStore((s) => s.setNicheContext)
   const [brand, setBrand] = useState('전체')
+  const [niche, setNiche] = useState<string>('전체')
   const [status, setStatus] = useState<'전체' | VideoStatus>('전체')
+  const nicheContext = useCommexStore((s) => s.nicheContext)
+  const clearCtx = useCommexStore((s) => s.clearNicheContext)
+  useEffect(() => {
+    if (!nicheContext) return
+    setBrand(nicheContext.brandName)
+    setNiche(nicheContext.nicheName)
+    clearCtx()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [modalOpen, setModalOpen] = useState(false)
   const [mBrand, setMBrand] = useState(BRANDS[0].name)
   const [mNiche, setMNiche] = useState(BRANDS[0].niches[0].name)
@@ -40,10 +52,17 @@ export function VideosCommex() {
       videos.filter(
         (v) =>
           (brand === '전체' || v.brand === brand) &&
+          (niche === '전체' || v.niche === niche) &&
           (status === '전체' || v.status === status)
       ),
-    [videos, brand, status]
+    [videos, brand, niche, status]
   )
+
+  const availableNiches = useMemo(() => {
+    if (brand === '전체') return []
+    const b = brands.find((bb) => bb.name === brand)
+    return b?.niches ?? []
+  }, [brand, brands])
 
   const exclude = (id: string) => {
     excludeStore(id)
@@ -51,11 +70,12 @@ export function VideosCommex() {
   }
 
   const goQuick = (v: Video) => {
+    setNicheContext({ brandName: v.brand, nicheName: v.niche })
     toast.success(`${v.title} 컨텍스트로 빠른 작업 진입`)
     navigate({ to: '/quick' })
   }
 
-  const niches = BRANDS.find((b) => b.name === mBrand)?.niches ?? []
+  const niches = brands.find((b) => b.name === mBrand)?.niches ?? []
 
   const submitManual = () => {
     const urls = mUrls
@@ -102,21 +122,24 @@ export function VideosCommex() {
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
+                gridTemplateColumns: '1fr 1fr 1fr',
                 gap: 14,
               }}
             >
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <label style={{ fontSize: 13, fontWeight: 800, color: '#44506a' }}>
-                  브랜드 필터
+                  브랜드
                 </label>
                 <select
                   className='cx-input'
                   value={brand}
-                  onChange={(e) => setBrand(e.target.value)}
+                  onChange={(e) => {
+                    setBrand(e.target.value)
+                    setNiche('전체')
+                  }}
                 >
                   <option value='전체'>전체</option>
-                  {BRANDS.map((b) => (
+                  {brands.map((b) => (
                     <option key={b.id} value={b.name}>
                       {b.name}
                     </option>
@@ -125,7 +148,25 @@ export function VideosCommex() {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <label style={{ fontSize: 13, fontWeight: 800, color: '#44506a' }}>
-                  상태 필터
+                  니치
+                </label>
+                <select
+                  className='cx-input'
+                  value={niche}
+                  onChange={(e) => setNiche(e.target.value)}
+                  disabled={brand === '전체'}
+                >
+                  <option value='전체'>전체</option>
+                  {availableNiches.map((n) => (
+                    <option key={n.id} value={n.name}>
+                      {n.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <label style={{ fontSize: 13, fontWeight: 800, color: '#44506a' }}>
+                  상태
                 </label>
                 <select
                   className='cx-input'
@@ -314,11 +355,11 @@ export function VideosCommex() {
                       value={mBrand}
                       onChange={(e) => {
                         setMBrand(e.target.value)
-                        const b = BRANDS.find((bb) => bb.name === e.target.value)
+                        const b = brands.find((bb) => bb.name === e.target.value)
                         if (b) setMNiche(b.niches[0].name)
                       }}
                     >
-                      {BRANDS.map((b) => (
+                      {brands.map((b) => (
                         <option key={b.id}>{b.name}</option>
                       ))}
                     </select>

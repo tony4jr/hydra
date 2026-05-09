@@ -1,6 +1,7 @@
-import { createFileRoute } from '@tanstack/react-router'
-import VideoTimelinePage from '@/features/videos/timeline'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_authenticated/videos/$videoId')({
-  component: VideoTimelinePage,
+  beforeLoad: () => {
+    throw redirect({ to: '/videos' })
+  },
 })

@@ -1,6 +1,7 @@
-import { createFileRoute } from '@tanstack/react-router'
-import FeedPage from '@/features/feed'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_authenticated/feed/')({
-  component: FeedPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/queue' })
+  },
 })

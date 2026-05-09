@@ -1,6 +1,7 @@
-import { createFileRoute } from '@tanstack/react-router'
-import OnboardingPage from '@/features/onboarding'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_authenticated/onboarding/')({
-  component: OnboardingPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/brands' })
+  },
 })

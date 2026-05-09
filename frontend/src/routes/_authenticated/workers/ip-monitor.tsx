@@ -1,6 +1,7 @@
-import { createFileRoute } from '@tanstack/react-router'
-import IpMonitorPage from '@/features/workers/ip-monitor-page'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_authenticated/workers/ip-monitor')({
-  component: IpMonitorPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/workers' })
+  },
 })

@@ -1,6 +1,7 @@
-import { createFileRoute } from '@tanstack/react-router'
-import NicheLayout from '@/features/products/niche-layout'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_authenticated/brands/$brandId/niches/$nicheId')({
-  component: NicheLayout,
+  beforeLoad: () => {
+    throw redirect({ to: '/brands' })
+  },
 })

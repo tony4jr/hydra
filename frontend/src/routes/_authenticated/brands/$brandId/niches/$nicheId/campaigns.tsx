@@ -1,15 +1,9 @@
-import { createFileRoute, useParams } from '@tanstack/react-router'
-import { CampaignsTab } from '@/features/products/niche-tabs/campaigns'
-
-function CampaignsRoute() {
-  const { nicheId } = useParams({
-    from: '/_authenticated/brands/$brandId/niches/$nicheId/campaigns',
-  })
-  return <CampaignsTab nicheId={nicheId} />
-}
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
 export const Route = createFileRoute(
   '/_authenticated/brands/$brandId/niches/$nicheId/campaigns',
 )({
-  component: CampaignsRoute,
+  beforeLoad: () => {
+    throw redirect({ to: '/campaigns' })
+  },
 })

@@ -1,6 +1,7 @@
-import { createFileRoute } from '@tanstack/react-router'
-import TasksQueuePage from '@/features/tasks-queue'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_authenticated/tasks/')({
-  component: TasksQueuePage,
+  beforeLoad: () => {
+    throw redirect({ to: '/queue' })
+  },
 })

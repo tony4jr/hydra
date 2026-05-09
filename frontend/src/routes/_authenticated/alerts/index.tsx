@@ -1,6 +1,7 @@
-import { createFileRoute } from '@tanstack/react-router'
-import AlertsPage from '@/features/alerts'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_authenticated/alerts/')({
-  component: AlertsPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/audit' })
+  },
 })

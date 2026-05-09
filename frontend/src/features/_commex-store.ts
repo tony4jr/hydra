@@ -9,13 +9,17 @@ import {
   VIDEOS as INITIAL_VIDEOS,
   AUTO_JOBS as INITIAL_AUTO_JOBS,
   ACTIVITY as INITIAL_ACTIVITY,
+  BRANDS as INITIAL_BRANDS,
   type QueueItem,
   type QueueStatus,
   type Video,
   type VideoStatus,
   type AutoJob,
   type ActivityItem,
+  type Brand,
 } from './_commex-mock'
+
+export type NicheContext = { brandName: string; nicheName: string } | null
 
 type QueueDraft = {
   title: string
@@ -29,6 +33,19 @@ type State = {
   videos: Video[]
   autoJobs: AutoJob[]
   activity: ActivityItem[]
+  brands: Brand[]
+  nicheContext: NicheContext
+
+  // Brand/Niche actions
+  addBrand: (input: { name: string; summary: string }) => string
+  addNiche: (brandId: string, input: {
+    name: string
+    desc: string
+    keywords: string[]
+  }) => string
+  updateNicheKeywords: (brandId: string, nicheId: string, keywords: string[]) => void
+  setNicheContext: (ctx: NicheContext) => void
+  clearNicheContext: () => void
 
   // Queue actions
   saveDraft: (d: QueueDraft) => string
@@ -36,6 +53,7 @@ type State = {
   runNow: (d: QueueDraft) => string
   approveQueue: (id: string) => void
   approveMany: (ids: string[]) => number
+  scheduleMany: (ids: string[], schedule: string) => number
   retryQueue: (id: string) => void
   deleteQueue: (id: string) => void
 
@@ -49,6 +67,17 @@ type State = {
 
   // Auto job actions
   toggleAutoJob: (id: string) => void
+  upsertAutoJob: (input: {
+    id?: string
+    brand: string
+    niche: string
+    active: boolean
+    keywords: string[]
+    limit: string
+    time: string
+    nextRun: string
+  }) => string
+  duplicateAutoJob: (id: string) => string | null
 
   // Activity helper
   pushActivity: (a: Omit<ActivityItem, 'id' | 'time'>) => void
@@ -66,6 +95,71 @@ export const useCommexStore = create<State>()(
       videos: INITIAL_VIDEOS,
       autoJobs: INITIAL_AUTO_JOBS,
       activity: INITIAL_ACTIVITY,
+      brands: INITIAL_BRANDS,
+      nicheContext: null,
+
+      addBrand: ({ name, summary }) => {
+        const id = newId('b')
+        const brand: Brand = {
+          id,
+          name,
+          summary,
+          niches: [],
+        }
+        set((s) => ({ brands: [...s.brands, brand] }))
+        get().pushActivity({
+          kind: 'preset',
+          title: '브랜드 추가',
+          body: name,
+        })
+        return id
+      },
+      addNiche: (brandId, { name, desc, keywords }) => {
+        const id = newId('n')
+        set((s) => ({
+          brands: s.brands.map((b) =>
+            b.id !== brandId
+              ? b
+              : {
+                  ...b,
+                  niches: [
+                    ...b.niches,
+                    {
+                      id,
+                      name,
+                      desc,
+                      keywords,
+                      presets: ['공감형 메인 댓글'],
+                      videos: 0,
+                    },
+                  ],
+                }
+          ),
+        }))
+        const brand = get().brands.find((b) => b.id === brandId)
+        get().pushActivity({
+          kind: 'preset',
+          title: '니치 추가',
+          body: `${brand?.name ?? '브랜드'} · ${name}`,
+        })
+        return id
+      },
+      updateNicheKeywords: (brandId, nicheId, keywords) => {
+        set((s) => ({
+          brands: s.brands.map((b) =>
+            b.id !== brandId
+              ? b
+              : {
+                  ...b,
+                  niches: b.niches.map((n) =>
+                    n.id === nicheId ? { ...n, keywords } : n
+                  ),
+                }
+          ),
+        }))
+      },
+      setNicheContext: (ctx) => set({ nicheContext: ctx }),
+      clearNicheContext: () => set({ nicheContext: null }),
 
       saveDraft: (d) => {
         const id = newId('q')
@@ -160,6 +254,31 @@ export const useCommexStore = create<State>()(
         })
         return targets.length
       },
+      scheduleMany: (ids, schedule) => {
+        const targets = ids.filter((id) => {
+          const status = get().queue.find((q) => q.id === id)?.status
+          return status === 'draft' || status === 'pending' || status === 'scheduled'
+        })
+        if (!targets.length) return 0
+        set((s) => ({
+          queue: s.queue.map((q) =>
+            targets.includes(q.id)
+              ? {
+                  ...q,
+                  status: 'scheduled' as QueueStatus,
+                  worker: q.worker === '—' ? pickAvailableWorker() : q.worker,
+                  createdAt: schedule,
+                }
+              : q
+          ),
+        }))
+        get().pushActivity({
+          kind: 'pending',
+          title: '예약 변경',
+          body: `${targets.length}건 → ${schedule}`,
+        })
+        return targets.length
+      },
       retryQueue: (id) => {
         set((s) => ({
           queue: s.queue.map((q) =>
@@ -213,6 +332,53 @@ export const useCommexStore = create<State>()(
           ),
         }))
       },
+      upsertAutoJob: (input) => {
+        const id = input.id ?? newId('aj')
+        const job: AutoJob = {
+          id,
+          brand: input.brand,
+          niche: input.niche,
+          active: input.active,
+          nextRun: input.nextRun,
+          lastRun: input.id
+            ? (get().autoJobs.find((j) => j.id === input.id)?.lastRun ?? '—')
+            : '—',
+          keywords: input.keywords,
+          limit: input.limit,
+          time: input.time,
+        }
+        set((s) => ({
+          autoJobs: input.id
+            ? s.autoJobs.map((j) => (j.id === input.id ? job : j))
+            : [job, ...s.autoJobs],
+        }))
+        get().pushActivity({
+          kind: 'auto',
+          title: input.id ? '자동 작업 수정' : '자동 작업 생성',
+          body: `${job.brand} · ${job.niche}`,
+        })
+        return id
+      },
+      duplicateAutoJob: (id) => {
+        const src = get().autoJobs.find((j) => j.id === id)
+        if (!src) return null
+        const nextId = newId('aj')
+        const clone: AutoJob = {
+          ...src,
+          id: nextId,
+          active: false,
+          nextRun: '내일 09:00',
+          lastRun: '—',
+          limit: `${src.limit} 복제`,
+        }
+        set((s) => ({ autoJobs: [clone, ...s.autoJobs] }))
+        get().pushActivity({
+          kind: 'auto',
+          title: '자동 작업 복제',
+          body: `${clone.brand} · ${clone.niche}`,
+        })
+        return nextId
+      },
 
       pushActivity: (a) => {
         const item: ActivityItem = {
@@ -229,9 +395,14 @@ export const useCommexStore = create<State>()(
           videos: INITIAL_VIDEOS,
           autoJobs: INITIAL_AUTO_JOBS,
           activity: INITIAL_ACTIVITY,
+          brands: INITIAL_BRANDS,
+          nicheContext: null,
         }),
     }),
-    { name: 'commex-store-v1' }
+    {
+      name: 'commex-store-v2',
+      version: 2,
+    }
   )
 )
 

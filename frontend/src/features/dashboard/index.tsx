@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import {
   Zap,
@@ -26,6 +27,7 @@ import {
   GLOBAL_PRESETS as MOCK_PRESETS_FULL,
   VIDEOS as MOCK_VIDEOS_FULL,
 } from '../_commex-mock'
+import { useCommexStore } from '../_commex-store'
 
 interface ActiveCampaign {
   id: number
@@ -127,15 +129,25 @@ const MOCK_VIDEOS = MOCK_VIDEOS_FULL.slice(0, 3).map((v, i) => ({
 }))
 
 const MOCK_PRESETS = MOCK_PRESETS_FULL.slice(0, 4)
+type QueueTab = 'all' | 'pending' | 'scheduled' | 'failed'
 
 export function Dashboard() {
   const stats = STATS
   const workers = MOCK_WORKERS_FULL
   const campaigns = MOCK_CAMPAIGNS
   const loading = false
+  const queue = useCommexStore((s) => s.queue)
+  const [queueTab, setQueueTab] = useState<QueueTab>('all')
 
   const onlineWorkers = workers.filter((w) => w.status === 'online').length
   const errorCount = stats?.errors?.unresolved ?? 0
+  const queueRows = queue.filter((q) => queueTab === 'all' || q.status === queueTab)
+  const queueCounts = {
+    all: queue.length,
+    pending: queue.filter((q) => q.status === 'pending').length,
+    scheduled: queue.filter((q) => q.status === 'scheduled').length,
+    failed: queue.filter((q) => q.status === 'failed').length,
+  }
 
   return (
     <>
@@ -383,10 +395,20 @@ export function Dashboard() {
                   </Link>
                 </div>
                 <div className='cx-tabs' style={{ marginBottom: 12 }}>
-                  <button className='cx-tab active'>전체</button>
-                  <button className='cx-tab'>승인 대기</button>
-                  <button className='cx-tab'>예약</button>
-                  <button className='cx-tab'>실패</button>
+                  {[
+                    ['all', '전체'],
+                    ['pending', '승인 대기'],
+                    ['scheduled', '예약'],
+                    ['failed', '실패'],
+                  ].map(([key, label]) => (
+                    <button
+                      key={key}
+                      className={`cx-tab ${queueTab === key ? 'active' : ''}`}
+                      onClick={() => setQueueTab(key as QueueTab)}
+                    >
+                      {label} {queueCounts[key as QueueTab]}
+                    </button>
+                  ))}
                 </div>
                 <div
                   style={{
@@ -396,23 +418,23 @@ export function Dashboard() {
                   }}
                 >
                   <QueueStat
-                    label='대기'
-                    value={stats?.tasks?.pending ?? 0}
+                    label='현재 표시'
+                    value={queueRows.length}
                     pill='cx-pill-pending'
                   />
                   <QueueStat
-                    label='실행 중'
-                    value={stats?.tasks?.running ?? 0}
+                    label='예약'
+                    value={queueCounts.scheduled}
                     pill='cx-pill-running'
                   />
                   <QueueStat
-                    label='완료'
-                    value={stats?.tasks?.today_completed ?? 0}
+                    label='승인 대기'
+                    value={queueCounts.pending}
                     pill='cx-pill-done'
                   />
                   <QueueStat
                     label='실패'
-                    value={stats?.tasks?.today_failed ?? 0}
+                    value={queueCounts.failed}
                     pill='cx-pill-failed'
                   />
                 </div>

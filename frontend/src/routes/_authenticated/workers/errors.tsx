@@ -1,6 +1,7 @@
-import { createFileRoute } from '@tanstack/react-router'
-import WorkerErrorsPage from '@/features/workers/errors-page'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_authenticated/workers/errors')({
-  component: WorkerErrorsPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/workers' })
+  },
 })

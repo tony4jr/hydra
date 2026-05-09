@@ -1,10 +1,13 @@
+import { useState } from 'react'
 import { Plus, Activity } from 'lucide-react'
 import { toast } from 'sonner'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
-import { WORKERS } from '../_commex-mock'
+import { WORKERS, type WorkerInfo } from '../_commex-mock'
+
+const STORAGE_KEY = 'commex-workers-v1'
 
 const PILL = {
   online: { cls: 'cx-pill-done', label: 'online' },
@@ -13,7 +16,51 @@ const PILL = {
 } as const
 
 export function WorkersCommex() {
-  const online = WORKERS.filter((w) => w.status === 'online').length
+  const [workers, setWorkers] = useState<WorkerInfo[]>(loadWorkers)
+  const [registerOpen, setRegisterOpen] = useState(false)
+  const [workerName, setWorkerName] = useState('')
+  const online = workers.filter((w) => w.status === 'online').length
+
+  const persist = (next: WorkerInfo[]) => {
+    setWorkers(next)
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+  }
+  const dryRun = () => {
+    const next = workers.map((w, i) =>
+      i === 0
+        ? {
+            ...w,
+            status: 'online' as const,
+            currentTask: 'dry-run 점검 완료',
+            heartbeat: '방금 전',
+          }
+        : w
+    )
+    persist(next)
+    toast.success('dry-run 상태를 워커 목록에 반영했습니다')
+  }
+  const registerWorker = () => {
+    const name = workerName.trim()
+    if (!name) {
+      toast.warning('워커 이름을 입력하세요')
+      return
+    }
+    persist([
+      {
+        id: Date.now(),
+        name,
+        status: 'paused',
+        currentTask: '등록 대기',
+        heartbeat: '방금 전',
+        version: 'v2.2.1',
+        os: 'mac',
+      },
+      ...workers,
+    ])
+    setWorkerName('')
+    setRegisterOpen(false)
+    toast.success(`${name} 워커를 등록했습니다`)
+  }
 
   return (
     <>
@@ -36,11 +83,11 @@ export function WorkersCommex() {
               </p>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button className='cx-btn-soft' onClick={() => toast.info('dry-run 시작 (예정)')}>
+              <button className='cx-btn-soft' onClick={dryRun}>
                 <Activity className='inline h-4 w-4 mr-1.5' />
                 dry-run
               </button>
-              <button className='cx-btn-primary' onClick={() => toast.success('워커 등록 (예정)')}>
+              <button className='cx-btn-primary' onClick={() => setRegisterOpen(true)}>
                 <Plus className='inline h-4 w-4 mr-1' />
                 워커 등록
               </button>
@@ -49,10 +96,10 @@ export function WorkersCommex() {
 
           {/* Stats */}
           <div className='cx-kpi-strip four'>
-            <Stat label='전체 워커' value={WORKERS.length} />
+            <Stat label='전체 워커' value={workers.length} />
             <Stat label='온라인' value={online} accent='green' />
-            <Stat label='일시정지' value={WORKERS.filter((w) => w.status === 'paused').length} accent='orange' />
-            <Stat label='오프라인' value={WORKERS.filter((w) => w.status === 'offline').length} accent='red' />
+            <Stat label='일시정지' value={workers.filter((w) => w.status === 'paused').length} accent='orange' />
+            <Stat label='오프라인' value={workers.filter((w) => w.status === 'offline').length} accent='red' />
           </div>
 
           <div className='cx-card' style={{ overflow: 'hidden' }}>
@@ -68,7 +115,7 @@ export function WorkersCommex() {
                 </tr>
               </thead>
               <tbody>
-                {WORKERS.map((w) => (
+                {workers.map((w) => (
                   <tr key={w.id}>
                     <td style={{ paddingLeft: 18, fontWeight: 800, fontFamily: 'monospace', fontSize: 13 }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
@@ -96,10 +143,68 @@ export function WorkersCommex() {
               </tbody>
             </table>
           </div>
+          {registerOpen && (
+            <div
+              style={{
+                position: 'fixed',
+                inset: 0,
+                zIndex: 60,
+                background: 'rgba(15,23,42,0.35)',
+                display: 'grid',
+                placeItems: 'center',
+                padding: 20,
+              }}
+              onClick={() => setRegisterOpen(false)}
+            >
+              <div
+                className='cx-card cx-card-pad'
+                style={{ width: 'min(420px, 100%)', display: 'flex', flexDirection: 'column', gap: 14 }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className='cx-section-head'>
+                  <div className='cx-section-title'>워커 등록</div>
+                  <button className='cx-btn-mini' onClick={() => setRegisterOpen(false)}>
+                    닫기
+                  </button>
+                </div>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <span style={{ fontSize: 12, color: 'var(--cx-sub)', fontWeight: 800 }}>
+                    워커 이름
+                  </span>
+                  <input
+                    className='cx-input'
+                    value={workerName}
+                    onChange={(e) => setWorkerName(e.target.value)}
+                    autoFocus
+                    placeholder='예: worker-06'
+                  />
+                </label>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                  <button className='cx-btn-soft' onClick={() => setRegisterOpen(false)}>
+                    취소
+                  </button>
+                  <button className='cx-btn-primary' onClick={registerWorker}>
+                    등록
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </Main>
     </>
   )
+}
+
+function loadWorkers(): WorkerInfo[] {
+  if (typeof window === 'undefined') return WORKERS
+  const raw = window.localStorage.getItem(STORAGE_KEY)
+  if (!raw) return WORKERS
+  try {
+    return JSON.parse(raw) as WorkerInfo[]
+  } catch {
+    return WORKERS
+  }
 }
 
 function Stat({

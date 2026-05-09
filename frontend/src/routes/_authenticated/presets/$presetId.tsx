@@ -1,6 +1,7 @@
-import { createFileRoute } from '@tanstack/react-router'
-import CommentPresetDetailPage from '@/features/comment-presets/preset-detail'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_authenticated/presets/$presetId')({
-  component: CommentPresetDetailPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/presets' })
+  },
 })
