@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { AuditLogPage } from '@/features/audit/audit-log-page'
+import { AuditCommex } from '@/features/audit-commex'
 
 export const Route = createFileRoute('/_authenticated/audit/')({
-  component: AuditLogPage,
+  component: AuditCommex,
 })

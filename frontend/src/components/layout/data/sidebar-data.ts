@@ -1,25 +1,23 @@
 import {
-  LayoutDashboard,
+  Home,
+  Zap,
+  RefreshCw,
   ListTodo,
-  Users,
   Video,
-  Monitor,
+  Layers,
+  BarChart3,
+  Puzzle,
+  Users,
+  Cpu,
+  ScrollText,
   Settings,
   Command,
-  ScrollText,
-  Boxes,
-  Sparkles,
-  Activity,
-  AlertTriangle,
-  ListChecks,
 } from 'lucide-react'
 import { type SidebarData } from '../types'
 
 /**
- * PR-8a 사이드바 IA — 3 그룹 (지금/자산/안전).
- *
- * 신규 페이지 (피드/문제/예정/프리셋/키워드) 는 PR-8b 등 후속 sub-PR 에서 추가.
- * 본 PR-8a 는 현재 존재하는 페이지의 그룹/순서 재배치 + rename 만.
+ * Commex Renewal IA — renewal_spec §2 / §3.2
+ * 라우트는 hydra 기존 라우트 유지 (renewal_spec §5 가이드 준수).
  */
 export const sidebarData: SidebarData = {
   user: {
@@ -29,90 +27,32 @@ export const sidebarData: SidebarData = {
   },
   teams: [
     {
-      name: 'HYDRA',
+      name: 'Commex',
       logo: Command,
-      plan: 'YouTube Marketing Bot',
+      plan: '댓글 운영 자동화',
     },
   ],
   navGroups: [
     {
-      title: '지금',
+      title: '메인',
       items: [
-        {
-          title: '피드',
-          url: '/feed',
-          icon: Activity,
-        },
-        {
-          title: '문제',
-          url: '/alerts',
-          icon: AlertTriangle,
-        },
-        {
-          title: '예정',
-          url: '/queue',
-          icon: ListTodo,
-        },
-        {
-          title: '대시보드',
-          url: '/',
-          icon: LayoutDashboard,
-        },
-        {
-          title: '시작하기',
-          url: '/onboarding',
-          icon: Sparkles,
-        },
+        { title: '홈', url: '/', icon: Home },
+        { title: '빠른 작업', url: '/quick', icon: Zap },
+        { title: '자동 작업', url: '/campaigns', icon: RefreshCw },
+        { title: '작업 큐', url: '/queue', icon: ListTodo },
+        { title: '영상 풀', url: '/videos', icon: Video },
+        { title: '브랜드 / 니치', url: '/brands', icon: Layers },
+        { title: '리포트', url: '/analytics', icon: BarChart3 },
       ],
     },
     {
-      title: '운영',
+      title: '관리자',
       items: [
-        {
-          title: '브랜드',
-          url: '/brands',
-          icon: Boxes,
-        },
-        {
-          title: '프리셋',
-          url: '/presets',
-          icon: ListChecks,
-        },
-        {
-          title: '영상',
-          url: '/videos',
-          icon: Video,
-        },
-      ],
-    },
-    {
-      title: '계정',
-      items: [
-        {
-          title: '계정 · 아바타',
-          url: '/accounts',
-          icon: Users,
-        },
-      ],
-    },
-    {
-      title: '안전',
-      items: [
-        {
-          title: '워커',
-          url: '/workers',
-          icon: Monitor,
-        },
-        {
-          title: '로그',
-          url: '/audit',
-          icon: ScrollText,
-        },
-        {
-          title: '설정',
-          url: '/settings',
-          icon: Settings,
-        },
+        { title: '글로벌 프리셋', url: '/presets', icon: Puzzle },
+        { title: '계정 · 아바타', url: '/accounts', icon: Users },
+        { title: '워커', url: '/workers', icon: Cpu },
+        { title: '로그', url: '/audit', icon: ScrollText },
+        { title: '전역 설정', url: '/settings', icon: Settings },
       ],
     },
   ],

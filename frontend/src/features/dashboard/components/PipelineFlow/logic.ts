@@ -31,8 +31,8 @@ export function getStageLabel(stage: StageName): string {
 export function getStageRouteTo(stage: StageName): string | null {
   const map: Record<StageName, string | null> = {
     discovered: null,
-    market_fit: '/targets',
-    task_created: '/tasks',
+    market_fit: '/queue',
+    task_created: '/queue',
     comment_posted: null,  // PR-5 영상 통합 보기에서 추가 예정
     survived_24h: null,
   }
