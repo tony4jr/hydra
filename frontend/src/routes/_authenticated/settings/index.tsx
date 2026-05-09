@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { SettingsCommex } from '@/features/settings-commex'
+import { SettingsGeneral } from '@/features/settings/general'
 
 export const Route = createFileRoute('/_authenticated/settings/')({
-  component: SettingsCommex,
+  component: SettingsGeneral,
 })
