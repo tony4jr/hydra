@@ -1,7 +1,6 @@
-import { createFileRoute, redirect } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
+import { AvatarManager } from '@/features/avatars/avatar-manager'
 
 export const Route = createFileRoute('/_authenticated/avatars/')({
-  beforeLoad: () => {
-    throw redirect({ to: '/accounts' })
-  },
+  component: AvatarManager,
 })
