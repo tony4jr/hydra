@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react'
 import {
   Users, CheckCircle2, Flame, Snowflake, ShieldOff, Ghost,
   ChevronLeft, ChevronRight, ShieldAlert, ShieldCheck, UserCheck,
-  ImageOff, AlertTriangle, Plus,
+  ImageOff, AlertTriangle, Plus, Trash2, Globe,
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -229,18 +230,20 @@ export default function AccountsPage() {
             <tr className='border-b border-border bg-muted/30'>
               <th className='p-3 text-left font-medium text-[12px] text-muted-foreground'>계정명</th>
               <th className='p-3 text-left font-medium text-[12px] text-muted-foreground'>페르소나</th>
+              <th className='p-3 text-center font-medium text-[12px] text-muted-foreground'>AdsPower</th>
               <th className='p-3 text-center font-medium text-[12px] text-muted-foreground'>상태</th>
               <th className='p-3 text-center font-medium text-[12px] text-muted-foreground'>워밍업</th>
               <th className='p-3 text-center font-medium text-[12px] text-muted-foreground'>온보딩</th>
               <th className='p-3 text-center font-medium text-[12px] text-muted-foreground'>2FA</th>
               <th className='p-3 text-center font-medium text-[12px] text-muted-foreground'>성공률</th>
               <th className='p-3 text-right font-medium text-[12px] text-muted-foreground'>마지막 활동</th>
+              <th className='p-3 text-right font-medium text-[12px] text-muted-foreground'>작업</th>
             </tr>
           </thead>
           <tbody>
             {items.length === 0 ? (
               <tr>
-                <td colSpan={8} className='py-12 text-center text-muted-foreground text-[13px]'>
+                <td colSpan={10} className='py-12 text-center text-muted-foreground text-[13px]'>
                   해당하는 계정이 없어요
                 </td>
               </tr>
@@ -260,6 +263,19 @@ export default function AccountsPage() {
                     </div>
                   </td>
                   <td className='p-3 text-muted-foreground text-[13px]'>{acc.persona_name || '-'}</td>
+                  <td className='p-3 text-center'>
+                    {acc.adspower_profile_id ? (
+                      <span
+                        className='inline-flex items-center gap-1 px-2 py-0.5 rounded font-mono text-[11px] bg-blue-500/10 text-blue-500 border border-blue-500/20'
+                        title={`AdsPower 프로필: ${acc.adspower_profile_id}`}
+                      >
+                        <Globe className='h-3 w-3' />
+                        {acc.adspower_profile_id}
+                      </span>
+                    ) : (
+                      <span className='text-muted-foreground text-[12px]'>미연결</span>
+                    )}
+                  </td>
                   <td className='p-3 text-center'>
                     <span className={`hydra-tag ${statusTagClass[acc.status] || 'hydra-tag-muted'}`}>
                       {statusLabels[acc.status] || acc.status}
@@ -284,6 +300,31 @@ export default function AccountsPage() {
                   <td className='p-3 text-center text-[13px]'>{acc.success_rate}%</td>
                   <td className='p-3 text-right text-muted-foreground text-[12px]'>
                     {acc.last_active_at ? new Date(acc.last_active_at).toLocaleString('ko') : '-'}
+                  </td>
+                  <td className='p-3 text-right'>
+                    <Button
+                      variant='ghost'
+                      size='icon'
+                      className='h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive'
+                      title={`${acc.gmail} 삭제`}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (!confirm(`${acc.gmail} 계정을 삭제할까요?\n\n관련된 작업 큐, 액션 로그, IP 로그도 함께 정리됩니다. 되돌릴 수 없습니다.`)) return
+                        ;(async () => {
+                          try {
+                            await fetchApi(`/accounts/api/${acc.id}`, { method: 'DELETE' })
+                            toast.success('계정 삭제됨', { description: acc.gmail })
+                            setReloadKey(k => k + 1)
+                          } catch (err) {
+                            toast.error('삭제 실패', {
+                              description: err instanceof Error ? err.message : String(err),
+                            })
+                          }
+                        })()
+                      }}
+                    >
+                      <Trash2 className='h-4 w-4' />
+                    </Button>
                   </td>
                 </tr>
               )
