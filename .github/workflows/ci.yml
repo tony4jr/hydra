@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpq-dev
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pytest pytest-asyncio
+
+      - name: Run unit + integration tests
+        env:
+          HYDRA_ENCRYPTION_KEY: ${{ secrets.HYDRA_ENCRYPTION_KEY || 'WzlMqJZkW9eVxlEJ-VqsJ4Lx5pPyLLM2lq1QM_Y0E5g=' }}
+        run: |
+          pytest tests/ -q --maxfail=5 -x
+
+      - name: PR-K mock YouTube smoke
+        env:
+          HYDRA_ENCRYPTION_KEY: ${{ secrets.HYDRA_ENCRYPTION_KEY || 'WzlMqJZkW9eVxlEJ-VqsJ4Lx5pPyLLM2lq1QM_Y0E5g=' }}
+        run: |
+          pytest tests/test_pr_k_mock_youtube.py -v
