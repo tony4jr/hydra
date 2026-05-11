@@ -68,6 +68,9 @@ type State = {
   duplicateSlot: (nichePresetId: string, slotUid: string) => void
   setNicheContext: (ctx: NicheContext) => void
   clearNicheContext: () => void
+  /** /campaigns 진입 시 새 자동 작업 모달을 자동으로 열기 위한 1회성 의도 */
+  newAutoJobIntent: { brandName: string; nicheName: string } | null
+  setNewAutoJobIntent: (v: { brandName: string; nicheName: string } | null) => void
 
   // Queue actions
   saveDraft: (d: QueueDraft) => string
@@ -392,6 +395,8 @@ export const useCommexStore = create<State>()(
       },
       setNicheContext: (ctx) => set({ nicheContext: ctx }),
       clearNicheContext: () => set({ nicheContext: null }),
+      newAutoJobIntent: null,
+      setNewAutoJobIntent: (v) => set({ newAutoJobIntent: v }),
 
       saveDraft: (d) => {
         const id = newId('q')
