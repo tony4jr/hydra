@@ -70,6 +70,7 @@ class Account(Base):
     __table_args__ = (
         Index("idx_accounts_status", "status"),
         Index("idx_accounts_warmup", "warmup_group", "status"),
+        Index("idx_accounts_last_active", "status", "last_active_at"),
         UniqueConstraint("adspower_profile_id", name="uq_accounts_adspower_profile_id"),
     )
 
@@ -825,6 +826,11 @@ class Task(Base):
     slot_label = Column(String(4), nullable=True)
     parent_task_id = Column(Integer, ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True)
 
+    # PR-C: phase 진행 추적. last_progress_at 기반 stale 감지 (started_at 보단 정확).
+    last_progress_at = Column(DateTime, nullable=True)
+    last_phase = Column(String(64), nullable=True)
+    session_uuid = Column(String(64), nullable=True)  # WorkerSession.session_uuid
+
     worker = relationship("Worker", back_populates="tasks")
     campaign = relationship("Campaign")
     account = relationship("Account")
@@ -839,6 +845,59 @@ class Task(Base):
         Index("idx_tasks_created_at", "created_at"),
         Index("idx_tasks_slot", "slot_id"),
         Index("idx_tasks_parent", "parent_task_id"),
+        Index("idx_tasks_last_progress", "last_progress_at"),
+        Index("idx_tasks_session", "session_uuid"),
+        Index("idx_tasks_status_lastprog", "status", "last_progress_at"),
+        Index("idx_tasks_status_startedat", "status", "started_at"),
+    )
+
+
+class WorkerSession(Base):
+    """PR-C: 워커 세션 단위 heartbeat 추적.
+
+    같은 worker 가 여러 task 를 한 세션에 묶어서 실행할 때, 세션 자체의 progress 도 봐야
+    어디서 멈췄는지 정확. zombie cleanup 도 last_heartbeat_at 기준으로 session 단위로
+    잡고, 각 task 의 last_progress_at 과 함께 본다.
+    """
+    __tablename__ = "worker_sessions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_uuid = Column(String(64), nullable=False, unique=True, index=True)
+    worker_id = Column(Integer, ForeignKey("workers.id", ondelete="SET NULL"), nullable=True)
+    account_id = Column(Integer, ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True)
+    started_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+    last_heartbeat_at = Column(DateTime, nullable=True)
+    ended_at = Column(DateTime, nullable=True)
+    status = Column(String(32), nullable=False, default="active")
+    notes = Column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("idx_wsess_worker_started", "worker_id", "started_at"),
+        Index("idx_wsess_status_hb", "status", "last_heartbeat_at"),
+    )
+
+
+class WorkerProgress(Base):
+    """PR-C: phase 변경 history — 사고 후 phase 시퀀스 reconstruction 용.
+
+    INSERT-only append log. 30초 heartbeat 는 worker_sessions / tasks UPDATE 로 분리.
+    여기엔 phase 변경 시점만 기록 (Codex 권장 — INSERT 빈도 제한).
+    """
+    __tablename__ = "worker_progress"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_uuid = Column(String(64), nullable=False, index=True)
+    task_id = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=True)
+    worker_id = Column(Integer, ForeignKey("workers.id", ondelete="SET NULL"), nullable=True)
+    attempt_no = Column(Integer, nullable=False, default=0)
+    sequence_no = Column(Integer, nullable=False, default=0)
+    phase = Column(String(64), nullable=False)
+    message = Column(Text, nullable=True)
+    occurred_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+
+    __table_args__ = (
+        Index("idx_wprog_session_seq", "session_uuid", "sequence_no"),
+        Index("idx_wprog_task_occ", "task_id", "occurred_at"),
     )
 
 

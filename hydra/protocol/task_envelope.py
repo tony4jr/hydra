@@ -71,6 +71,53 @@ class WorkerConfig(BaseModel):
     max_tasks_per_session: int = 8
 
 
+PHASE_NAMES = (
+    "session_start",
+    "ip_rotate",
+    "adspower_open",
+    "cdp_connect",
+    "video_goto",
+    "compose",
+    "type",
+    "submit",
+    "wait",
+    "session_end",
+)
+
+
+class TaskProgress(BaseModel):
+    """PR-C: 워커 → 서버 진행 보고.
+
+    phase 변경 시점 + 30초 heartbeat 둘 다 같은 endpoint 로. 서버가 INSERT (변경 시)
+    또는 UPDATE (heartbeat) 결정.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    session_uuid: str = Field(..., description="WorkerSession.session_uuid. 같은 세션 내 진행 연결자.")
+    task_id: Optional[int] = Field(None, description="현재 task. session_start/end 시엔 None.")
+    attempt_no: int = Field(0, description="재시도 번호 (envelope 기반). 0 = 첫 시도.")
+    sequence_no: int = Field(..., description="이 session 안에서 progress event 의 0-based 순서.")
+    phase: str = Field(..., description="현재 phase. PHASE_NAMES 중 하나.")
+    message: Optional[str] = Field(None, description="자유 메시지. error/info 등.")
+    is_phase_change: bool = Field(False, description="True 면 phase 변경 → INSERT. False = heartbeat → UPDATE only.")
+
+
+class SessionHeartbeat(BaseModel):
+    """PR-C: WorkerSession 단위 30초 heartbeat (task progress 와 별개).
+
+    PR-C v2: worker_id 는 deprecated — 서버가 auth 토큰으로 식별. body 값 무시.
+    호환을 위해 optional 로 유지하되 서버 핸들러는 사용 안 함.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    session_uuid: str
+    worker_id: Optional[int] = Field(None, deprecated=True, description="DEPRECATED — server uses auth")
+    account_id: Optional[int] = None
+    status: str = "active"
+
+
 class TaskEnvelope(BaseModel):
     """Self-contained task dispatch envelope.
 

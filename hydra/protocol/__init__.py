@@ -9,14 +9,20 @@ and providing transitional support.
 """
 from hydra.protocol.task_envelope import (
     AccountSnapshot,
+    PHASE_NAMES,
+    SessionHeartbeat,
     TaskEnvelope,
+    TaskProgress,
     WorkerConfig,
     redact_for_logging,
 )
 
 __all__ = [
     "AccountSnapshot",
+    "PHASE_NAMES",
+    "SessionHeartbeat",
     "TaskEnvelope",
+    "TaskProgress",
     "WorkerConfig",
     "redact_for_logging",
 ]

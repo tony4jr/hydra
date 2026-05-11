@@ -32,3 +32,8 @@ PR-J canary + PR-K mock YouTube + PR-M 백업 + PR-Kill suspend guard, 그 후 2
 ## 진행 기록
 
 <!-- 각 PR 완료 시 아래에 추가 -->
+
+### 2026-05-12 00:57:14 — ✅ PR-C deploy (Codex OK v2)
+- phase reporter + worker_sessions + worker_progress + COALESCE zombie
+- 단위 8 + 통합 2 = 10 통과. v2 수정: NULL worker_id 차단, auth.worker_id 만 사용, 복합 인덱스
+- alembic upgrade x5y6workersess 적용, 신규 2 테이블 + tasks 컬럼 + 인덱스 생성
