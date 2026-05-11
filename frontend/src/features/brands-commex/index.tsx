@@ -172,6 +172,17 @@ export function BrandsCommex() {
               </p>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                className='cx-btn-soft'
+                onClick={() => {
+                  const n = useCommexStore.getState().syncDefaultBrands()
+                  if (n === 0) toast.info('이미 기본 브랜드가 모두 있습니다')
+                  else toast.success(`기본 브랜드 ${n}개 동기화됨`)
+                }}
+                title='mock 의 기본 브랜드 중 빠진 것 다시 추가 (기존 데이터 보존)'
+              >
+                기본 동기화
+              </button>
               <button className='cx-btn-soft' onClick={() => setBrandModal(true)}>
                 <Plus className='inline h-4 w-4 mr-1' />브랜드 추가
               </button>
