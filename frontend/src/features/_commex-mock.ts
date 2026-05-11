@@ -58,12 +58,41 @@ export type Video = {
   url: string
   duration: string
 }
+export type AccountKey = 'A' | 'B' | 'C' | 'D' | 'E'
+export type PresetSlot = {
+  uid: string
+  account: AccountKey
+  target: string // '메인 댓글' | 'A에게 답글' …
+  active: boolean
+  intent: string
+  tone_anchor: string
+  legacy_text_template?: string
+  length: 'short' | 'normal' | 'long'
+  emoji: 'never' | 'sometimes' | 'often'
+  ai_freedom: number // 0..100
+  mention_brand: boolean
+  mention_solution: boolean
+  style_polite: 'natural' | 'polite' | 'friendly'
+  style_pov: 'apply' | 'experience' | 'question'
+  reduce_repetition: boolean
+  like_min: number
+  like_max: number
+}
 export type GlobalPreset = {
   id: string
   name: string
   desc: string
   used: number
   version: string
+  slots?: PresetSlot[]
+}
+export type NichePreset = {
+  id: string
+  niche_id: string
+  name: string
+  desc: string
+  forked_from?: string // 글로벌 프리셋 id
+  slots: PresetSlot[]
 }
 export type WorkerInfo = {
   id: number
@@ -305,16 +334,72 @@ export const VIDEOS: Video[] = [
 // PRESETS
 // ============================================================
 
+const slotBase = (overrides: Partial<PresetSlot> & { uid: string; account: AccountKey; target: string }): PresetSlot => ({
+  active: true,
+  intent: '',
+  tone_anchor: '',
+  legacy_text_template: '',
+  length: 'normal',
+  emoji: 'sometimes',
+  ai_freedom: 70,
+  mention_brand: false,
+  mention_solution: true,
+  style_polite: 'natural',
+  style_pov: 'experience',
+  reduce_repetition: true,
+  like_min: 5,
+  like_max: 20,
+  ...overrides,
+})
+
 export const GLOBAL_PRESETS: GlobalPreset[] = [
-  { id: 'g1', name: '공감형 메인 댓글', desc: '강한 공감과 자기 경험을 살짝', used: 1245, version: 'v2.3' },
-  { id: 'g2', name: '질문형 진입', desc: '질문으로 대화 흐름을 여는 타입', used: 987, version: 'v1.8' },
-  { id: 'g3', name: '정보형 메인 댓글', desc: '정보/팁을 자연스럽게 녹임', used: 756, version: 'v3.1' },
-  { id: 'g4', name: '후기형 세트', desc: '경험과 변화 강조', used: 654, version: 'v2.0' },
-  { id: 'g5', name: '경험 공유형', desc: '본인 경험·실패담 자연스럽게', used: 521, version: 'v1.4' },
-  { id: 'g6', name: '취향 공감형', desc: '소소한 취향 일치 표현', used: 412, version: 'v1.2' },
-  { id: 'g7', name: '루틴 공감형', desc: '루틴/습관 공감 + 추가 질문', used: 398, version: 'v1.6' },
-  { id: 'g8', name: '초보 공감형', desc: '초보 입장 공감 + 격려', used: 287, version: 'v1.0' },
+  {
+    id: 'g1', name: '공감형 메인 댓글', desc: '강한 공감과 자기 경험을 살짝', used: 1245, version: 'v2.3',
+    slots: [
+      slotBase({ uid: 'g1-a', account: 'A', target: '메인 댓글', intent: '[메인·강한 감정] 영상에 깊은 공감. 본인 상황 살짝.', tone_anchor: 'ㅠㅠ 저도 너무 똑같아요. 펑펑 울었어요', ai_freedom: 88, like_min: 40, like_max: 90 }),
+      slotBase({ uid: 'g1-b', account: 'B', target: 'A에게 답글', intent: '같은 처지 공감 + 끝까지 본 후기', tone_anchor: '저도요 끝까지 봤어요', ai_freedom: 75 }),
+    ],
+  },
+  {
+    id: 'g2', name: '질문형 진입', desc: '질문으로 대화 흐름을 여는 타입', used: 987, version: 'v1.8',
+    slots: [
+      slotBase({ uid: 'g2-a', account: 'A', target: '메인 댓글', intent: '질문으로 진입, 다른 시청자 반응 유도', tone_anchor: '혹시 저처럼 이 부분에서 멈춘 분 또 계신가요?', length: 'normal' }),
+      slotBase({ uid: 'g2-b', account: 'B', target: 'A에게 답글', intent: '실제 해본 사람 후기 궁금', tone_anchor: '저도 그 부분 와닿았어요', ai_freedom: 70 }),
+    ],
+  },
+  { id: 'g3', name: '정보형 메인 댓글', desc: '정보/팁을 자연스럽게 녹임', used: 756, version: 'v3.1',
+    slots: [
+      slotBase({ uid: 'g3-a', account: 'A', target: '메인 댓글', intent: '정보 정리 칭찬 + 자기 경험 인용', tone_anchor: '정리가 깔끔해서 저장해두려구요', style_pov: 'apply' }),
+    ],
+  },
+  { id: 'g4', name: '후기형 세트', desc: '경험과 변화 강조', used: 654, version: 'v2.0',
+    slots: [
+      slotBase({ uid: 'g4-a', account: 'A', target: '메인 댓글', intent: '경험·변화·꾸준함 강조', tone_anchor: '꾸준히 했더니 진짜 차이 나더라구요' }),
+    ],
+  },
+  { id: 'g5', name: '경험 공유형', desc: '본인 경험·실패담 자연스럽게', used: 521, version: 'v1.4',
+    slots: [
+      slotBase({ uid: 'g5-a', account: 'A', target: '메인 댓글', intent: '실패담 → 영상에서 배움', tone_anchor: '저도 처음엔 잘 안됐는데' }),
+    ],
+  },
+  { id: 'g6', name: '취향 공감형', desc: '소소한 취향 일치 표현', used: 412, version: 'v1.2',
+    slots: [
+      slotBase({ uid: 'g6-a', account: 'A', target: '메인 댓글', intent: '취향 일치 표현', tone_anchor: '저도 딱 이 스타일 좋아해요' }),
+    ],
+  },
+  { id: 'g7', name: '루틴 공감형', desc: '루틴/습관 공감 + 추가 질문', used: 398, version: 'v1.6',
+    slots: [
+      slotBase({ uid: 'g7-a', account: 'A', target: '메인 댓글', intent: '루틴 따라하고 싶다는 인상', tone_anchor: '저도 따라해보고 싶어졌어요' }),
+    ],
+  },
+  { id: 'g8', name: '초보 공감형', desc: '초보 입장 공감 + 격려', used: 287, version: 'v1.0',
+    slots: [
+      slotBase({ uid: 'g8-a', account: 'A', target: '메인 댓글', intent: '초보 입장에서 공감 + 격려', tone_anchor: '저도 처음엔 이런 실수 했어요' }),
+    ],
+  },
 ]
+
+export const newSlotId = () => 's-' + Math.random().toString(36).slice(2, 8)
 
 // ============================================================
 // WORKERS
