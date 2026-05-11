@@ -185,6 +185,9 @@ export default function WorkersPage() {
             </div>
           )}
 
+          {/* Stale tasks 알림 — 실행 중 task 중 예상 시간 초과한 거 있을 때만 */}
+          <StaleTasksBanner />
+
           {/* Worker cards */}
           {loading ? (
             <div className='grid gap-3 md:grid-cols-2 lg:grid-cols-3'>
@@ -374,5 +377,69 @@ export default function WorkersPage() {
         onUpdated={loadWorkers}
       />
     </>
+  )
+}
+
+// =================================================================
+// Stale tasks 알림 배너 — admin/tasks/stale-stats 폴링
+// =================================================================
+function StaleTasksBanner() {
+  const [stats, setStats] = useState<{
+    in_flight_total: number
+    stale_count: number
+    zombie_candidate_count: number
+    oldest_elapsed_minutes: number | null
+  } | null>(null)
+
+  useEffect(() => {
+    let mounted = true
+    const load = async () => {
+      try {
+        const data = await fetchApi<{
+          in_flight_total: number
+          stale_count: number
+          zombie_candidate_count: number
+          oldest_elapsed_minutes: number | null
+        }>('/api/admin/tasks/stale-stats')
+        if (mounted) setStats(data)
+      } catch { /* noop */ }
+    }
+    load()
+    const id = setInterval(load, 30_000)
+    return () => { mounted = false; clearInterval(id) }
+  }, [])
+
+  if (!stats || stats.stale_count === 0) return null
+
+  return (
+    <div
+      style={{
+        marginBottom: 20,
+        padding: '14px 18px',
+        borderRadius: 14,
+        background: stats.zombie_candidate_count > 0
+          ? 'linear-gradient(180deg,#fff0ef,#fff)'
+          : 'linear-gradient(180deg,#fff8eb,#fff)',
+        border: `1px solid ${stats.zombie_candidate_count > 0 ? '#f4cccb' : '#f0d18f'}`,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 14,
+      }}
+    >
+      <span style={{ fontSize: 22 }}>
+        {stats.zombie_candidate_count > 0 ? '🚨' : '⚠️'}
+      </span>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: stats.zombie_candidate_count > 0 ? '#9a2e26' : '#9a6e1c' }}>
+          {stats.zombie_candidate_count > 0
+            ? `좀비 후보 ${stats.zombie_candidate_count}건 · 정체 task ${stats.stale_count}건`
+            : `예상 시간 초과 task ${stats.stale_count}건`}
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--cx-sub)', marginTop: 2 }}>
+          진행 중 {stats.in_flight_total}건 중 정체 의심 {stats.stale_count}건. 가장 오래된 task: {stats.oldest_elapsed_minutes ?? 0}분 경과.
+          {stats.zombie_candidate_count > 0 && ' · zombie_cleanup 다음 tick 에서 자동 복구 예정.'}
+        </div>
+      </div>
+    </div>
   )
 }
