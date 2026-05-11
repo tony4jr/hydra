@@ -84,11 +84,12 @@ def _auto_assign_account(db, task: "Task") -> bool:
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     dialect = db.bind.dialect.name
 
-    # task_type 카테고리에 따라 카운트할 ActionLog type + 적용할 limit 컬럼 분기.
+    # task_type 카테고리에 따라 카운트할 ActionLog.action_type + 적용할 limit 컬럼 분기.
+    # ActionType enum (core/enums.py:126): COMMENT/REPLY/LIKE_VIDEO/LIKE_COMMENT
     if task.task_type in ("like", "like_boost"):
-        relevant_types = ("like", "like_boost")
+        relevant_types = ("like_video", "like_comment")
         limit_col = Account.daily_like_limit
-    else:  # comment, reply, subscribe — 댓글 카운트로 통일 (subscribe 는 영향 적어 fallback)
+    else:  # comment, reply, subscribe — 댓글 카운트로 통일
         relevant_types = ("comment", "reply")
         limit_col = Account.daily_comment_limit
 
@@ -99,7 +100,7 @@ def _auto_assign_account(db, task: "Task") -> bool:
         )
         .filter(
             ActionLog.created_at >= today_start,
-            ActionLog.type.in_(relevant_types),
+            ActionLog.action_type.in_(relevant_types),  # fix: ActionLog.type → action_type
         )
         .group_by(ActionLog.account_id)
         .subquery()
