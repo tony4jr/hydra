@@ -14,9 +14,11 @@ type JobForm = {
   niche: string
   active: boolean
   keywords: string
-  limit: string
-  time: string
-  nextRun: string
+  // 객관식 필드 — 저장 시 문자열 직렬화
+  limit_per_day: number
+  schedule_days: '매일' | '평일' | '주말'
+  schedule_start: number // 0~23
+  schedule_end: number   // 0~23 (exclusive)
 }
 
 export function CampaignsCommex() {
@@ -72,9 +74,7 @@ export function CampaignsCommex() {
       niche: job.niche,
       active: job.active,
       keywords: job.keywords.join(', '),
-      limit: job.limit,
-      time: job.time,
-      nextRun: job.nextRun,
+      ...parseJobToForm(job),
     })
     setFormOpen(true)
   }
@@ -83,12 +83,27 @@ export function CampaignsCommex() {
       toast.warning('브랜드와 니치를 선택하세요')
       return
     }
+    if (form.schedule_end <= form.schedule_start) {
+      toast.warning('종료 시각이 시작 시각보다 늦어야 합니다')
+      return
+    }
+    if (form.limit_per_day < 1 || form.limit_per_day > 50) {
+      toast.warning('하루 한도는 1~50 사이여야 합니다')
+      return
+    }
     upsertAutoJob({
-      ...form,
+      id: form.id,
+      brand: form.brand,
+      niche: form.niche,
+      active: form.active,
       keywords: form.keywords
         .split(',')
         .map((k) => k.trim())
         .filter(Boolean),
+      limit: formatLimit(form.limit_per_day),
+      time: formatTime(form.schedule_days, form.schedule_start, form.schedule_end),
+      // nextRun 은 사용자가 직접 입력 X — scheduler 가 자동 계산. mock 에서는 시작 시각으로
+      nextRun: `오늘 ${hh(form.schedule_start)}`,
     })
     setFormOpen(false)
     toast.success(form.id ? '자동 작업을 수정했습니다' : '자동 작업을 만들었습니다')
@@ -251,27 +266,125 @@ export function CampaignsCommex() {
                     placeholder='쉼표로 구분'
                   />
                 </Field>
-                <Field label='한도'>
-                  <input
-                    className='cx-input'
-                    value={form.limit}
-                    onChange={(e) => setForm((f) => ({ ...f, limit: e.target.value }))}
-                  />
+                <Field label={`하루 한도 — ${form.limit_per_day}건`}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <input
+                      type='range'
+                      min={1}
+                      max={50}
+                      step={1}
+                      value={form.limit_per_day}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, limit_per_day: Number(e.target.value) }))
+                      }
+                      style={{ flex: 1, accentColor: 'var(--cx-primary)' }}
+                    />
+                    <input
+                      type='number'
+                      className='cx-input'
+                      min={1}
+                      max={50}
+                      style={{ width: 80, height: 36, textAlign: 'center', fontSize: 13 }}
+                      value={form.limit_per_day}
+                      onChange={(e) =>
+                        setForm((f) => ({
+                          ...f,
+                          limit_per_day: Math.max(1, Math.min(50, Number(e.target.value) || 0)),
+                        }))
+                      }
+                    />
+                  </div>
                 </Field>
-                <Field label='실행 시간'>
-                  <input
-                    className='cx-input'
-                    value={form.time}
-                    onChange={(e) => setForm((f) => ({ ...f, time: e.target.value }))}
-                  />
+                <Field label='실행 시간대'>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '110px 1fr 14px 1fr',
+                      gap: 8,
+                      alignItems: 'center',
+                    }}
+                  >
+                    <select
+                      className='cx-input'
+                      style={{ height: 36, fontSize: 13 }}
+                      value={form.schedule_days}
+                      onChange={(e) =>
+                        setForm((f) => ({
+                          ...f,
+                          schedule_days: e.target.value as JobForm['schedule_days'],
+                        }))
+                      }
+                    >
+                      <option value='매일'>매일</option>
+                      <option value='평일'>평일 (월~금)</option>
+                      <option value='주말'>주말 (토~일)</option>
+                    </select>
+                    <select
+                      className='cx-input'
+                      style={{ height: 36, fontSize: 13 }}
+                      value={form.schedule_start}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, schedule_start: Number(e.target.value) }))
+                      }
+                    >
+                      {Array.from({ length: 24 }, (_, h) => (
+                        <option key={h} value={h}>
+                          {hh(h)}
+                        </option>
+                      ))}
+                    </select>
+                    <span
+                      style={{
+                        textAlign: 'center',
+                        color: 'var(--cx-sub)',
+                        fontWeight: 800,
+                      }}
+                    >
+                      ~
+                    </span>
+                    <select
+                      className='cx-input'
+                      style={{ height: 36, fontSize: 13 }}
+                      value={form.schedule_end}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, schedule_end: Number(e.target.value) }))
+                      }
+                    >
+                      {Array.from({ length: 24 }, (_, h) => (
+                        <option key={h} value={h}>
+                          {hh(h)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </Field>
-                <Field label='다음 실행'>
-                  <input
-                    className='cx-input'
-                    value={form.nextRun}
-                    onChange={(e) => setForm((f) => ({ ...f, nextRun: e.target.value }))}
-                  />
-                </Field>
+
+                {/* 분산 미리보기 */}
+                <div
+                  style={{
+                    padding: 10,
+                    borderRadius: 12,
+                    background: '#f6f8ff',
+                    border: '1px solid #d9dffd',
+                    fontSize: 12,
+                    color: 'var(--cx-primary)',
+                    lineHeight: 1.55,
+                  }}
+                >
+                  📊 <b>예상 분산:</b> {form.schedule_days} {hh(form.schedule_start)}~
+                  {hh(form.schedule_end)} (
+                  {Math.max(0, form.schedule_end - form.schedule_start)}시간) 안에 {form.limit_per_day}
+                  건 발행 → 약 {form.schedule_end > form.schedule_start && form.limit_per_day > 0
+                    ? Math.round(
+                        ((form.schedule_end - form.schedule_start) * 60) / form.limit_per_day
+                      )
+                    : 0}{' '}
+                  분마다 1건
+                  <br />
+                  <span style={{ color: 'var(--cx-sub)', fontSize: 11 }}>
+                    💡 다음 실행 시각은 backend scheduler 가 자동 계산합니다 (사용자 지정 X)
+                  </span>
+                </div>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 800 }}>
                   <input
                     type='checkbox'
@@ -340,10 +453,30 @@ function emptyForm(brand = '', niche = ''): JobForm {
     niche,
     active: true,
     keywords: '',
-    limit: '하루 6건',
-    time: '평일 10:00 ~ 18:00',
-    nextRun: '오늘 18:00',
+    limit_per_day: 6,
+    schedule_days: '평일',
+    schedule_start: 10,
+    schedule_end: 18,
   }
+}
+
+const hh = (h: number) => `${String(h).padStart(2, '0')}:00`
+const formatLimit = (n: number) => `하루 ${n}건`
+const formatTime = (days: JobForm['schedule_days'], s: number, e: number) =>
+  `${days} ${hh(s)} ~ ${hh(e)}`
+
+// AutoJob 의 문자열 한도/시간을 폼 필드로 파싱
+function parseJobToForm(job: AutoJob): Omit<JobForm, 'id' | 'brand' | 'niche' | 'active' | 'keywords'> {
+  const limitMatch = job.limit.match(/(\d+)/)
+  const limit_per_day = limitMatch ? Number(limitMatch[1]) : 6
+  let schedule_days: JobForm['schedule_days'] = '평일'
+  if (job.time.includes('매일')) schedule_days = '매일'
+  else if (job.time.includes('주말')) schedule_days = '주말'
+  else if (job.time.includes('주중')) schedule_days = '평일'
+  const range = job.time.match(/(\d{1,2}):\d{2}\s*~\s*(\d{1,2}):\d{2}/)
+  const schedule_start = range ? Number(range[1]) : 10
+  const schedule_end = range ? Number(range[2]) : 18
+  return { limit_per_day, schedule_days, schedule_start, schedule_end }
 }
 
 function Field({
