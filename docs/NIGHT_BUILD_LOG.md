@@ -48,3 +48,14 @@ PR-J canary + PR-K mock YouTube + PR-M 백업 + PR-Kill suspend guard, 그 후 2
 - GET /api/admin/phase-gauge (running task + phase + age)
 - GET /api/admin/phase-gauge/sessions (active worker_sessions)
 - GET /api/admin/phase-gauge/recent-history (phase 변경 history)
+
+### 2026-05-12 01:11:00 — 🚀 카나리아 smoke 활성화 (16:11)
+- pc-01 version=69813ef (PR-A+C+E+C2 모두 적용)
+- allow_campaign=True, paused=False
+- 244 task pending (smoke-v4 캠페인 10개), 카나리아 1~3 task 30~60분 관찰 예정
+
+### 2026-05-12 01:16:55 — 🛑 카나리아 일시 정지 (16:15)
+- 이슈: 워커 PC 에 ADB 디바이스 미연결 → ensure_safe_ip_from_snapshot fail-closed → IPRotationFailed 무한 reschedule 루프
+- 진단: PR-E 의 fail-closed 가 정상 작동 (1-account-1-IP invariant 보호). 워커 측 ADB 설정 필요
+- 조치: pc-01.allow_campaign=False (자원 낭비 방지). 사용자 도착 후 휴대폰 USB tethering + ADB device 연결 + allow_campaign=True 만 풀면 즉시 재개
+- phase reporter / session heartbeat / progress endpoint 모두 정상 동작 검증 완료 (200 OK, history 기록 OK)

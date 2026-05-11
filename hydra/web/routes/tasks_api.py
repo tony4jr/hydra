@@ -488,8 +488,9 @@ def fail(
 
 
 # ───────── PR-C: phase progress + session heartbeat endpoints ─────────
+# Router prefix 가 이미 /api/tasks/v2 라서 route path 는 /progress, /session-heartbeat 로만.
 
-@router.post("/v2/progress")
+@router.post("/progress")
 def report_progress(
     progress: TaskProgress,
     worker: Worker = Depends(worker_auth),
@@ -546,7 +547,7 @@ def report_progress(
         db.close()
 
 
-@router.post("/v2/session-heartbeat")
+@router.post("/session-heartbeat")
 def session_heartbeat(
     hb: SessionHeartbeat,
     worker: Worker = Depends(worker_auth),
