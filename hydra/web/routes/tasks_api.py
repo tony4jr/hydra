@@ -18,7 +18,24 @@ from sqlalchemy import text
 
 from hydra.db import session as _db_session
 from hydra.db.models import Account, ProfileLock, Task, Worker
+from hydra.services.account_limits import can_execute_task
 from hydra.web.routes.worker_api import worker_auth
+
+
+# legacy task_service 와 동일한 정의 — 워커 역할 분리 가드용
+PREPARATION_TYPES = {"login", "channel_setup", "warmup", "onboard"}
+
+
+def _role_allows(worker: Worker, task_type: str) -> bool:
+    """Worker.allow_preparation / allow_campaign 가드.
+
+    None 이면 default True (안전). 모델 default 가 True 인 컬럼에 NULL 이 들어가는
+    회귀 방지.
+    """
+    if task_type in PREPARATION_TYPES:
+        # allow_preparation 가 명시적으로 False 일 때만 거절
+        return worker.allow_preparation is not False
+    return worker.allow_campaign is not False
 
 
 def _parse_allowed(allowed_json: str | None) -> list[str]:
@@ -60,7 +77,8 @@ def _auto_assign_account(db, task: "Task") -> bool:
     if task.task_type not in _AUTO_ASSIGN_TYPES:
         return True  # Other task types may legitimately have no account_id
     now = datetime.now(UTC)
-    available = (
+    dialect = db.bind.dialect.name
+    q = (
         db.query(Account)
         .filter(
             Account.status == "active",
@@ -73,8 +91,12 @@ def _auto_assign_account(db, task: "Task") -> bool:
             (Account.identity_challenge_until.is_(None))
             | (Account.identity_challenge_until <= now)
         )
-        .first()
     )
+    # Postgres: account row 도 FOR UPDATE SKIP LOCKED 로 다중 워커 동시 선택 방지.
+    # 다른 워커가 같은 row 잡고 있으면 skip → 다른 active 계정 선택.
+    if dialect == "postgresql":
+        q = q.with_for_update(skip_locked=True)
+    available = q.first()
     if not available:
         return False
     task.account_id = available.id
@@ -101,10 +123,11 @@ _FETCH_SQL_PG = text("""
        )
      ORDER BY
        CASE t.priority
+         WHEN 'urgent' THEN 4
          WHEN 'high' THEN 3
          WHEN 'normal' THEN 2
          WHEN 'low' THEN 1
-         ELSE 0
+         ELSE 2
        END DESC,
        t.scheduled_at ASC NULLS FIRST,
        t.id ASC
@@ -130,10 +153,11 @@ _FETCH_SQL_SQLITE = text("""
        )
      ORDER BY
        CASE t.priority
+         WHEN 'urgent' THEN 4
          WHEN 'high' THEN 3
          WHEN 'normal' THEN 2
          WHEN 'low' THEN 1
-         ELSE 0
+         ELSE 2
        END DESC,
        t.scheduled_at ASC,
        t.id ASC
@@ -161,11 +185,22 @@ def fetch_tasks(worker: Worker = Depends(worker_auth)) -> dict:
                 continue
             if not _is_task_allowed(candidate.task_type, allowed):
                 continue
+            # 워커 역할(allow_preparation/allow_campaign) 가드 — legacy 와 동일 정책.
+            if not _role_allows(worker, candidate.task_type):
+                continue
             # Auto-assign account_id for unassigned campaign/scenario tasks.
             # Skips candidate if no idle active account is available right now —
             # next fetch round will retry once a worker frees an account.
             if not _auto_assign_account(db, candidate):
                 continue
+            # 일일/주간 한도 가드 — legacy 에서 빠진 채로 v2 만 돌 때 한도 초과 위험.
+            # 가용 계정이 있어도 그 계정이 한도 초과면 skip 하고 다음 task 시도.
+            if candidate.account_id:
+                allowed_now, _reason = can_execute_task(
+                    db, candidate.account_id, candidate.task_type
+                )
+                if not allowed_now:
+                    continue
             task = candidate
             break
 
