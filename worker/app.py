@@ -64,6 +64,13 @@ class WorkerApp:
         print("\n[Worker] Shutting down...")
         self.running = False
 
+    def _worker_id_cache(self) -> int:
+        """heartbeat 응답에서 받은 worker id 캐시. 없으면 -1 (서버가 token 으로 식별).
+
+        Note: heartbeat 응답에 worker_id 가 포함되지 않을 수도 있어 None 안전.
+        """
+        return getattr(self, "_cached_worker_id", -1)
+
     def run(self):
         """메인 루프 — 단일 async 이벤트 루프로 실행."""
         asyncio.run(self._async_run())
@@ -241,11 +248,23 @@ class WorkerApp:
 
         db = SessionLocal()  # IpLog 쓰기용 — 워커 측 로그. PR-B 에서 서버화 예정.
         try:
+            # PR-C: progress reporter — server 보고 콜백.
+            def _progress_cb(**kw):
+                self.client.report_progress(**kw)
+
             session = WorkerSession(
                 profile_id, account_id,
                 device_id=worker_config.adb_device_id or config.adb_device_id,
                 account_snapshot=account_snapshot,
                 worker_config=worker_config,
+                progress_reporter=_progress_cb,
+            )
+            # PR-C: WorkerSession 등록 (heartbeat 시작).
+            self.client.session_heartbeat(
+                session_uuid=session.session_uuid,
+                worker_id=self._worker_id_cache(),
+                account_id=account_id,
+                status="active",
             )
 
             try:
@@ -282,9 +301,12 @@ class WorkerApp:
                     print(f"[Worker] Executing task {task_id} ({task_type})")
 
                     self._current_task_id = task_id
+                    session.current_task_id = task_id
+                    session._emit_phase("compose", message=f"task={task_id} type={task_type}")
                     try:
                         try:
                             result = await self.executor.execute(task, session)
+                            session._emit_phase("submit", message=f"task={task_id} done")
                             self.client.complete_task(task_id, result)
                             session.tasks_completed += 1
                             print(f"[Worker] Task {task_id} completed")
@@ -316,7 +338,19 @@ class WorkerApp:
                                 pass
                     finally:
                         self._current_task_id = None
+                        session.current_task_id = None
             finally:
+                # PR-C: 세션 종료 phase + heartbeat status=ended.
+                try:
+                    session._emit_phase("session_end")
+                    self.client.session_heartbeat(
+                        session_uuid=session.session_uuid,
+                        worker_id=self._worker_id_cache(),
+                        account_id=account_id,
+                        status="ended",
+                    )
+                except Exception:
+                    pass
                 await session.close()
         finally:
             db.close()

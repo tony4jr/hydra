@@ -183,6 +183,60 @@ class ServerClient:
         except Exception:
             pass
 
+    def report_progress(
+        self,
+        *,
+        session_uuid: str,
+        task_id: int | None,
+        attempt_no: int,
+        sequence_no: int,
+        phase: str,
+        message: str | None = None,
+        is_phase_change: bool = False,
+    ) -> None:
+        """PR-C: phase 변경/heartbeat 보고. 절대 예외 propagate X (best-effort)."""
+        try:
+            self._request(
+                "POST", "/api/tasks/v2/progress",
+                headers=self.headers,
+                json={
+                    "session_uuid": session_uuid,
+                    "task_id": task_id,
+                    "attempt_no": attempt_no,
+                    "sequence_no": sequence_no,
+                    "phase": phase,
+                    "message": message,
+                    "is_phase_change": is_phase_change,
+                },
+                timeout=10,
+            )
+        except Exception:
+            pass
+
+    def session_heartbeat(
+        self,
+        *,
+        session_uuid: str,
+        worker_id: int,
+        account_id: int | None,
+        status: str = "active",
+    ) -> None:
+        """PR-C: WorkerSession 단위 heartbeat. best-effort."""
+        try:
+            self._request(
+                "POST", "/api/tasks/v2/session-heartbeat",
+                headers=self.headers,
+                json={
+                    "session_uuid": session_uuid,
+                    "worker_id": worker_id,
+                    "account_id": account_id,
+                    "status": status,
+                },
+                timeout=10,
+            )
+        except Exception:
+            pass
+
     def report_log_tail(self, entries: list[dict]) -> None:
         """verbose_mode 일 때 INFO+ 활동 로그 batch push. 조용히 실패."""
         if not entries:

@@ -19,8 +19,12 @@ from sqlalchemy import text
 from sqlalchemy import func
 
 from hydra.db import session as _db_session
-from hydra.db.models import Account, ActionLog, ProfileLock, Task, Worker
-from hydra.protocol import AccountSnapshot, TaskEnvelope, WorkerConfig
+from hydra.db.models import (
+    Account, ActionLog, ProfileLock, Task, Worker, WorkerProgress, WorkerSession,
+)
+from hydra.protocol import (
+    AccountSnapshot, SessionHeartbeat, TaskEnvelope, TaskProgress, WorkerConfig,
+)
 from hydra.services.account_limits import can_execute_task
 from hydra.web.routes.worker_api import worker_auth
 
@@ -477,6 +481,107 @@ def fail(
         # M1-7: 실패 전이 훅
         from hydra.core.orchestrator import on_task_fail
         on_task_fail(t.id, db)
+        db.commit()
+        return {"ok": True}
+    finally:
+        db.close()
+
+
+# ───────── PR-C: phase progress + session heartbeat endpoints ─────────
+
+@router.post("/v2/progress")
+def report_progress(
+    progress: TaskProgress,
+    worker: Worker = Depends(worker_auth),
+) -> dict:
+    """워커가 phase 변경 또는 30초 heartbeat 마다 호출.
+
+    - is_phase_change=True → worker_progress INSERT + tasks UPDATE
+    - is_phase_change=False → tasks UPDATE only (heartbeat)
+    소유권 검증 (PR-C v2 — Codex 검토):
+      - task_id 가 있으면 task.worker_id == worker.id 강제 (NULL 우회 차단)
+      - 위반 시 409 (task_not_claimed) — claim 안 된 task progress 주입 막음
+    """
+    db = _db_session.SessionLocal()
+    try:
+        if progress.task_id is not None:
+            t = db.get(Task, progress.task_id)
+            if t is None:
+                raise HTTPException(404, "task not found")
+            # PR-C v2: NULL 우회 차단. progress 는 claim API 가 아니므로 worker_id 가
+            # 박혀있어야만 보고 허용.
+            if t.worker_id is None:
+                raise HTTPException(409, "task_not_claimed: cannot report progress on unclaimed task")
+            if t.worker_id != worker.id:
+                raise HTTPException(403, "task not owned by this worker")
+            t.last_progress_at = datetime.now(UTC)
+            t.last_phase = progress.phase
+            t.session_uuid = progress.session_uuid
+
+        if progress.is_phase_change:
+            db.add(WorkerProgress(
+                session_uuid=progress.session_uuid,
+                task_id=progress.task_id,
+                worker_id=worker.id,
+                attempt_no=progress.attempt_no,
+                sequence_no=progress.sequence_no,
+                phase=progress.phase,
+                message=progress.message,
+            ))
+
+        # session heartbeat 도 동시에 갱신.
+        sess = (
+            db.query(WorkerSession)
+            .filter(WorkerSession.session_uuid == progress.session_uuid)
+            .first()
+        )
+        if sess is not None:
+            if sess.worker_id is not None and sess.worker_id != worker.id:
+                raise HTTPException(403, "session not owned by this worker")
+            sess.last_heartbeat_at = datetime.now(UTC)
+
+        db.commit()
+        return {"ok": True}
+    finally:
+        db.close()
+
+
+@router.post("/v2/session-heartbeat")
+def session_heartbeat(
+    hb: SessionHeartbeat,
+    worker: Worker = Depends(worker_auth),
+) -> dict:
+    """WorkerSession 단위 30초 heartbeat.
+
+    PR-C v2 — Codex 검토: body 의 worker_id 무시. auth 된 worker.id 만 사용.
+    워커가 -1 같은 placeholder 보내도 서버가 정확히 식별.
+    """
+    db = _db_session.SessionLocal()
+    try:
+        sess = (
+            db.query(WorkerSession)
+            .filter(WorkerSession.session_uuid == hb.session_uuid)
+            .first()
+        )
+        now = datetime.now(UTC)
+        if sess is None:
+            sess = WorkerSession(
+                session_uuid=hb.session_uuid,
+                worker_id=worker.id,           # auth 기준
+                account_id=hb.account_id,
+                started_at=now,
+                last_heartbeat_at=now,
+                status=hb.status,
+            )
+            db.add(sess)
+        else:
+            if sess.worker_id is not None and sess.worker_id != worker.id:
+                raise HTTPException(403, "session not owned by this worker")
+            sess.last_heartbeat_at = now
+            if hb.status != sess.status:
+                sess.status = hb.status
+                if hb.status in ("ended", "failed"):
+                    sess.ended_at = now
         db.commit()
         return {"ok": True}
     finally:

@@ -1,12 +1,14 @@
 """브라우저 세션 관리 — 프로필 열기/닫기/태스크 루프.
 
 PR-A: WorkerSession 은 AccountSnapshot/WorkerConfig 로만 동작.
-ORM Account/Worker 객체에 의존하지 않는다.
+PR-C: phase reporter 통합 — start_phase / finish_phase 콜백으로 서버 보고.
 """
 import asyncio
 import json
 import random
+import uuid as _uuid
 from datetime import datetime, UTC
+from typing import Callable, Optional
 from hydra.browser.driver import BrowserSession
 from hydra.browser.actions import (
     human_click, random_delay, scroll_page, click_like_button, watch_video, handle_ad,
@@ -28,6 +30,7 @@ class WorkerSession:
         device_id: str | None = None,
         account_snapshot: AccountSnapshot | None = None,
         worker_config: WorkerConfig | None = None,
+        progress_reporter: Optional[Callable] = None,
     ):
         self.profile_id = profile_id
         self.account_id = account_id
@@ -36,13 +39,39 @@ class WorkerSession:
         self.worker_config = worker_config or WorkerConfig()
         self.browser: BrowserSession | None = None
         self.tasks_completed = 0
-        # 가드 — WorkerConfig 가 잘못 설정돼 max < 하한이어도 random.randint 가 ValueError 안 나게.
         _max_tasks = max(3, self.worker_config.max_tasks_per_session)
         _max_minutes = max(20, self.worker_config.max_session_minutes)
         self.max_tasks_per_session = random.randint(3, _max_tasks)
         self.max_session_minutes = random.randint(20, _max_minutes)
         self.started_at: datetime | None = None
         self.ip_log_id: int | None = None
+        # PR-C: session 단위 UUID + progress reporter
+        self.session_uuid = str(_uuid.uuid4())
+        self.sequence_no = 0
+        self.current_task_id: int | None = None
+        self.current_phase: str = "session_start"
+        self._report = progress_reporter or (lambda **kw: None)
+
+    def _emit_phase(self, phase: str, message: str | None = None, is_change: bool = True) -> None:
+        """phase 변경 시 서버 보고 + local 상태 갱신.
+
+        is_change=False 면 heartbeat (서버측 UPDATE only, history INSERT 안 함).
+        """
+        if is_change:
+            self.current_phase = phase
+            self.sequence_no += 1
+        try:
+            self._report(
+                session_uuid=self.session_uuid,
+                task_id=self.current_task_id,
+                attempt_no=0,
+                sequence_no=self.sequence_no,
+                phase=phase,
+                message=message,
+                is_phase_change=is_change,
+            )
+        except Exception:
+            pass
 
     @property
     def account(self):
@@ -52,11 +81,12 @@ class WorkerSession:
     async def start(self, db=None) -> bool:
         """세션 시작: IP 안전 확인 → 프로필 열기 → YouTube 접속.
 
+        PR-C: 각 step 마다 phase 보고.
         IPRotationFailed from ensure_safe_ip propagates so the caller can
         reschedule the task.
         """
+        self._emit_phase("session_start")
         try:
-            # persona 기반 세션 템포 + 타이핑 스타일 + 활동량 설정 (anti-detection)
             try:
                 snap = self.account_snapshot
                 if snap is not None and snap.persona:
@@ -74,6 +104,7 @@ class WorkerSession:
                 set_activity_multiplier(1.0)
 
             if db is not None and self.account_snapshot is not None:
+                self._emit_phase("ip_rotate")
                 ip_log = await ensure_safe_ip_from_snapshot(
                     db,
                     account_id=self.account_id,
@@ -82,19 +113,24 @@ class WorkerSession:
                 )
                 self.ip_log_id = getattr(ip_log, "id", None)
 
+            self._emit_phase("adspower_open")
             self.browser = BrowserSession(self.profile_id)
             await self.browser.start()
 
             if self.browser.page is not None:
+                self._emit_phase("video_goto", message="https://www.youtube.com")
                 await self.browser.goto("https://www.youtube.com")
                 await random_delay(2.0, 4.0)
 
             self.started_at = datetime.now(UTC)
+            self._emit_phase("wait", message="session active")
             return True
         except IPRotationFailed:
+            self._emit_phase("ip_rotate", message="failed", is_change=True)
             raise
         except Exception as e:
-            print(f"[Session] Failed to start: {e}")
+            print(f"[Session] Failed to start: {type(e).__name__}")
+            self._emit_phase("session_end", message=f"start_failed: {type(e).__name__}")
             await self.close()
             return False
 
