@@ -44,6 +44,7 @@ type State = {
     keywords: string[]
   }) => string
   updateNicheKeywords: (brandId: string, nicheId: string, keywords: string[]) => void
+  updateNichePresets: (brandId: string, nicheId: string, presets: string[]) => void
   setNicheContext: (ctx: NicheContext) => void
   clearNicheContext: () => void
 
@@ -153,6 +154,20 @@ export const useCommexStore = create<State>()(
                   ...b,
                   niches: b.niches.map((n) =>
                     n.id === nicheId ? { ...n, keywords } : n
+                  ),
+                }
+          ),
+        }))
+      },
+      updateNichePresets: (brandId, nicheId, presets) => {
+        set((s) => ({
+          brands: s.brands.map((b) =>
+            b.id !== brandId
+              ? b
+              : {
+                  ...b,
+                  niches: b.niches.map((n) =>
+                    n.id === nicheId ? { ...n, presets } : n
                   ),
                 }
           ),

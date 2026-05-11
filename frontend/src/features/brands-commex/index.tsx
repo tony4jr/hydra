@@ -16,7 +16,7 @@ import { Main } from '@/components/layout/main'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { useCommexStore } from '../_commex-store'
-import type { Niche } from '../_commex-mock'
+import { GLOBAL_PRESETS, type Niche } from '../_commex-mock'
 
 // 결정적 hash 로 키워드별 7일 영상 수 시뮬레이션
 function keywordEffect(brand: string, keyword: string): number {
@@ -79,11 +79,18 @@ export function BrandsCommex() {
   const setNicheContext = useCommexStore((s) => s.setNicheContext)
   const addBrand = useCommexStore((s) => s.addBrand)
   const addNiche = useCommexStore((s) => s.addNiche)
+  const updateNichePresets = useCommexStore((s) => s.updateNichePresets)
   const navigate = useNavigate()
 
   const [selectedId, setSelectedId] = useState(brands[0]?.id ?? '')
   const [brandModal, setBrandModal] = useState(false)
   const [nicheModal, setNicheModal] = useState(false)
+  const [presetEditing, setPresetEditing] = useState<{
+    brandId: string
+    nicheId: string
+    nicheName: string
+    presets: string[]
+  } | null>(null)
   const [brandForm, setBrandForm] = useState({ name: '', summary: '' })
   const [nicheForm, setNicheForm] = useState({
     name: '',
@@ -325,6 +332,16 @@ export function BrandsCommex() {
                     }
                     onToggleAuto={(jobId) => toggleAutoJob(jobId)}
                     onAction={(action) => {
+                      if (action === 'preset') {
+                        // 니치 카드 안에서 모달로 프리셋 편집 (이 니치 전용 선택)
+                        setPresetEditing({
+                          brandId: brand.id,
+                          nicheId: n.id,
+                          nicheName: n.name,
+                          presets: [...n.presets],
+                        })
+                        return
+                      }
                       setNicheContext({
                         brandName: brand.name,
                         nicheName: n.name,
@@ -333,7 +350,6 @@ export function BrandsCommex() {
                         videos: '/videos' as const,
                         quick: '/quick' as const,
                         auto: '/campaigns' as const,
-                        preset: '/presets' as const,
                       }[action]
                       navigate({ to: dest })
                       toast.success(`${n.name} 컨텍스트 적용`, {
@@ -415,9 +431,159 @@ export function BrandsCommex() {
               </FormLine>
             </InlineModal>
           )}
+
+          {presetEditing && (
+            <PresetEditorModal
+              data={presetEditing}
+              onClose={() => setPresetEditing(null)}
+              onSave={(presets) => {
+                updateNichePresets(
+                  presetEditing.brandId,
+                  presetEditing.nicheId,
+                  presets
+                )
+                toast.success(
+                  `${presetEditing.nicheName} 프리셋 ${presets.length}개 저장됨`
+                )
+                setPresetEditing(null)
+              }}
+            />
+          )}
         </div>
       </Main>
     </>
+  )
+}
+
+// =================================================================
+// Preset Editor Modal — 니치에 포함할 글로벌 프리셋 선택
+// =================================================================
+
+function PresetEditorModal({
+  data,
+  onClose,
+  onSave,
+}: {
+  data: { brandId: string; nicheId: string; nicheName: string; presets: string[] }
+  onClose: () => void
+  onSave: (presets: string[]) => void
+}) {
+  const [selected, setSelected] = useState<Set<string>>(new Set(data.presets))
+  const toggle = (name: string) => {
+    const next = new Set(selected)
+    if (next.has(name)) next.delete(name); else next.add(name)
+    setSelected(next)
+  }
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0,
+        background: 'rgba(12,18,34,0.52)',
+        backdropFilter: 'blur(5px)',
+        zIndex: 60,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 20,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: 'min(640px, 100%)',
+          background: '#fff',
+          borderRadius: 22,
+          overflow: 'hidden',
+          boxShadow: '0 40px 90px rgba(12,18,34,0.28)',
+          display: 'flex',
+          flexDirection: 'column',
+          maxHeight: '85vh',
+        }}
+      >
+        <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--cx-line)' }}>
+          <div style={{ fontSize: 18, fontWeight: 900 }}>
+            {data.nicheName} — 프리셋 편집
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--cx-sub)', marginTop: 4 }}>
+            이 니치에 포함할 글로벌 프리셋을 선택하세요. 선택된 프리셋들 중에서
+            슬롯 엔진이 가중치에 따라 하나를 골라 댓글을 생성합니다.
+          </div>
+        </div>
+
+        <div style={{ padding: 18, overflow: 'auto', flex: 1 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {GLOBAL_PRESETS.map((p) => {
+              const isOn = selected.has(p.name)
+              return (
+                <label
+                  key={p.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: 12,
+                    borderRadius: 14,
+                    border: `1px solid ${isOn ? '#c7d0ff' : 'var(--cx-line)'}`,
+                    background: isOn ? '#f6f8ff' : '#fff',
+                    cursor: 'pointer',
+                    transition: 'all 0.14s ease',
+                  }}
+                >
+                  <input
+                    type='checkbox'
+                    checked={isOn}
+                    onChange={() => toggle(p.name)}
+                    style={{
+                      width: 16, height: 16,
+                      accentColor: 'var(--cx-primary)',
+                      flexShrink: 0,
+                    }}
+                  />
+                  <Puzzle
+                    className='h-4 w-4'
+                    style={{ color: isOn ? 'var(--cx-primary)' : 'var(--cx-sub)', flexShrink: 0 }}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--cx-text)' }}>
+                      {p.name}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--cx-sub)', lineHeight: 1.4, marginTop: 2 }}>
+                      {p.desc}
+                    </div>
+                  </div>
+                  <span style={{ fontSize: 11, color: 'var(--cx-sub)', fontWeight: 700, flexShrink: 0 }}>
+                    {p.version}
+                  </span>
+                </label>
+              )
+            })}
+          </div>
+        </div>
+
+        <div
+          style={{
+            padding: '14px 22px',
+            borderTop: '1px solid var(--cx-line)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          <span style={{ fontSize: 12, color: 'var(--cx-sub)' }}>
+            {selected.size}개 선택됨 / 전체 {GLOBAL_PRESETS.length}개
+          </span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className='cx-btn-soft' onClick={onClose}>취소</button>
+            <button
+              className='cx-btn-primary'
+              onClick={() => onSave(Array.from(selected))}
+            >
+              저장
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 
