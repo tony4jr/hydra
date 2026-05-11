@@ -174,15 +174,51 @@ async def _get_worker_external_ip() -> str:
         return "0.0.0.0"
 
 
-async def ensure_safe_ip(db: Session, account, worker) -> "IpLog":
-    """Ensure the session uses an IP not claimed by another account in cooldown.
+async def ensure_safe_ip_from_snapshot(
+    db: Session,
+    *,
+    account_id: int,
+    adb_device_id: str | None,
+    cooldown_minutes: int | None = None,
+) -> "IpLog":
+    """Envelope-based variant — works with primitives only, no ORM lookup.
 
-    1. Resolve adb_device_id: prefer worker.ip_config JSON, fallback to
-       settings.adb_device_id (.env 로 Worker PC 런타임에서 설정된 값).
-    2. Worker.ip_config 비어있고 env 도 없으면 경고 + 외부 IP 만 기록.
-    3. Query phone IP via ADB.
-    4. No conflict → log and return.
-    5. Conflict → rotate_and_verify → log new IP and return.
+    Preferred entrypoint after PR-A. Workers receive `adb_device_id` from
+    `TaskEnvelope.worker_config` and call this directly.
+
+    **Fail-closed**: if no adb_device_id is configured anywhere, raise
+    IPRotationFailed instead of silently using whatever external IP the
+    worker box happens to have. Silent skip violates the 1-account-1-IP
+    anti-detection invariant — a misconfigured worker would happily run
+    multiple accounts behind the same datacenter/VPS IP.
+    """
+    device_id = adb_device_id or settings.adb_device_id or None
+    cooldown = cooldown_minutes or settings.ip_rotation_cooldown_minutes
+
+    if not device_id:
+        log.error(
+            f"ensure_safe_ip: no adb_device_id for account={account_id} "
+            "(envelope.worker_config + settings.adb_device_id both empty) — "
+            "refusing to proceed (1-account-1-IP invariant)"
+        )
+        raise IPRotationFailed(
+            "no_adb_device_configured: cannot guarantee per-account IP isolation"
+        )
+
+    current_ip = await _get_current_ip(device_id)
+
+    if check_ip_available(db, current_ip, account_id, cooldown_minutes=cooldown):
+        return log_ip_usage(db, account_id, current_ip, device_id)
+
+    new_ip = await rotate_and_verify(db, device_id, account_id)
+    return log_ip_usage(db, account_id, new_ip, device_id)
+
+
+async def ensure_safe_ip(db: Session, account, worker) -> "IpLog":
+    """[LEGACY] ORM-based entrypoint. Forwards to snapshot variant.
+
+    Kept so non-worker callers (e.g. integration tests, manual scripts) keep
+    working. PR-A worker code does NOT call this.
     """
     ip_config = {}
     if worker.ip_config:

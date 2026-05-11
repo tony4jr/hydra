@@ -64,6 +64,19 @@ PERMANENT_ERROR_PATTERNS = (
     "account suspended", "captcha_persistent", "profile_locked_elsewhere",
     "banned", "permanent",
 )
+# 워커/인프라 귀속 에러: 계정 책임 아니므로 suspend 하지 않고 재시도 무한 (retry_count 증분 안 함)
+# Why: 49계정 자동 suspended 사고 (orchestrator가 Session start failed를 계정 문제로 오해)
+# How to apply: on_task_fail 진입 시 가장 먼저 검사; 매치되면 account 상태 전이 + retry_count 증가 모두 스킵
+WORKER_ENVIRONMENT_ERROR_PATTERNS = (
+    "session start failed",
+    "local_worker_row_missing",
+    "local_account_row_missing",
+    "ip_rotation_failed",
+    "adspower_open_failed",
+    "adspower_api_error",
+    "playwright_launch_failed",
+    "browser_disconnected",
+)
 # task_type → max_retries (None = 모델 기본값 사용)
 TASK_RETRY_POLICY = {
     "comment": 1,           # 보수적 — 댓글 실패는 노출 위험
@@ -81,6 +94,16 @@ def _is_permanent_error(error_msg: str | None) -> bool:
     # 공백/언더스코어/하이픈 제거 후 lower → 다양한 표기 대응
     norm = error_msg.lower().replace("_", "").replace("-", "").replace(" ", "")
     for p in PERMANENT_ERROR_PATTERNS:
+        if p.lower().replace("_", "").replace("-", "").replace(" ", "") in norm:
+            return True
+    return False
+
+
+def _is_worker_environment_error(error_msg: str | None) -> bool:
+    if not error_msg:
+        return False
+    norm = error_msg.lower().replace("_", "").replace("-", "").replace(" ", "")
+    for p in WORKER_ENVIRONMENT_ERROR_PATTERNS:
         if p.lower().replace("_", "").replace("-", "").replace(" ", "") in norm:
             return True
     return False
@@ -134,6 +157,26 @@ def on_task_fail(task_id: int, session: Session) -> None:
 
     if account.status in ("suspended", "banned", "retired"):
         return  # terminal — 더 이상 전이 없음
+
+    # 워커/인프라 귀속 에러 → 계정 무책임. retry_count 증가 없이 같은 priority/type 으로 재큐.
+    # circuit-breaker는 이미 위에서 워커 카운트 잡았으므로 워커 격리는 별도로 동작.
+    if _is_worker_environment_error(task.error_message):
+        session.add(Task(
+            account_id=account.id,
+            task_type=task.task_type,
+            status="pending",
+            priority=task.priority,
+            retry_count=task.retry_count,  # 증가 안 함
+            max_retries=task.max_retries,
+            campaign_id=task.campaign_id,
+            slot_id=task.slot_id,
+            slot_label=task.slot_label,
+            parent_task_id=task.parent_task_id,
+            payload=task.payload,
+            scheduled_at=task.scheduled_at,
+        ))
+        session.flush()
+        return
 
     # T10: 영구 에러 → 재시도 없이 즉시 격리
     if _is_permanent_error(task.error_message):
