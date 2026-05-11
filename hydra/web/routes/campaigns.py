@@ -150,11 +150,13 @@ def create_direct_campaign(data: DirectCampaignCreate, db: Session = Depends(get
         from hydra.db.models import Task
 
         # 댓글 태스크 (프리셋 or 수동)
+        # PR #92: video.priority → task.priority 전파 (Video/Task enum 동일)
+        _video_priority = (video.priority if video.priority else "normal")
         if data.work_mode == "preset" and data.preset_code:
             task = Task(
                 campaign_id=campaign.id,
                 task_type="comment",
-                priority="normal",
+                priority=_video_priority,
                 status="pending",
                 payload=json.dumps({
                     "video_id": video_id,
@@ -169,7 +171,7 @@ def create_direct_campaign(data: DirectCampaignCreate, db: Session = Depends(get
                 task = Task(
                     campaign_id=campaign.id,
                     task_type=step.get("type", "comment"),
-                    priority="normal",
+                    priority=_video_priority,
                     status="pending",
                     payload=json.dumps({
                         "video_id": video_id,
@@ -182,13 +184,14 @@ def create_direct_campaign(data: DirectCampaignCreate, db: Session = Depends(get
                 )
                 db.add(task)
 
-        # 좋아요 태스크
+        # 좋아요 태스크 (보수적: video.priority high 이상이면 그 priority, 아니면 low)
+        _like_priority = _video_priority if _video_priority in ("urgent", "high") else "low"
         import random
         for j in range(data.like_count):
             task = Task(
                 campaign_id=campaign.id,
                 task_type="like",
-                priority="low",
+                priority=_like_priority,
                 status="pending",
                 payload=json.dumps({"video_id": video_id}, ensure_ascii=False),
                 scheduled_at=now + timedelta(seconds=random.uniform(15, 90) * j),
@@ -200,7 +203,7 @@ def create_direct_campaign(data: DirectCampaignCreate, db: Session = Depends(get
             task = Task(
                 campaign_id=campaign.id,
                 task_type="subscribe",
-                priority="low",
+                priority=_video_priority,
                 status="pending",
                 payload=json.dumps({"video_id": video_id}, ensure_ascii=False),
                 scheduled_at=now,

@@ -193,6 +193,14 @@ def update_worker(
             w.allow_preparation = bool(req.allow_preparation)
         if req.allow_campaign is not None:
             w.allow_campaign = bool(req.allow_campaign)
+        # 양쪽 OFF 가드 — 워커가 어떤 task 도 못 받게 되는 상태 방지.
+        # 명시적으로 둘 다 False 로 두려면 status='paused' 사용 권장.
+        if w.allow_preparation is False and w.allow_campaign is False:
+            raise HTTPException(
+                400,
+                "워커 역할이 양쪽 모두 OFF 입니다. 최소 하나는 ON 이어야 task 를 받을 수 있습니다. "
+                "전체 정지가 필요하면 status='paused' 를 사용하세요."
+            )
         if req.status is not None:
             if req.status not in ("online", "offline", "paused"):
                 raise HTTPException(400, f"invalid status: {req.status}")
