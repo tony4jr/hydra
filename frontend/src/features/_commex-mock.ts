@@ -6,6 +6,8 @@ export type Niche = {
   name: string
   desc: string
   keywords: string[]
+  /** 시청자가 검색하도록 유도할 핵심 키워드 (니치 단위) */
+  promotedKeywords?: string[]
   presets: string[]
   videos: number
 }
@@ -134,6 +136,7 @@ export const BRANDS: Brand[] = [
         name: '탈모 고민',
         desc: '공감형 진입과 감정 반응 중심',
         keywords: ['탈모', '머리빠짐', '두피', '고민', 'M자탈모'],
+        promotedKeywords: ['체성케라틴', 'M자탈모 회복'],
         presets: ['공감형 메인 댓글', '답글 세트 A', '감정 공감 메인'],
         videos: 128,
       },
@@ -142,6 +145,7 @@ export const BRANDS: Brand[] = [
         name: '두피 관리',
         desc: '정보형/솔루션형 댓글 중심',
         keywords: ['두피관리', '샴푸', '각질', '케어', '두피염'],
+        promotedKeywords: ['모렉신 두피 토닉', '각질 케어 샴푸'],
         presets: ['정보형 메인 댓글', '질문형 후속', '두피 케어 정보형'],
         videos: 76,
       },
@@ -150,6 +154,7 @@ export const BRANDS: Brand[] = [
         name: '남성 헤어',
         desc: '남성 헤어/볼륨 관련 반응형',
         keywords: ['남성헤어', '볼륨', '스타일링', '모발'],
+        promotedKeywords: ['남성 볼륨 케어', '모렉신 스타일링'],
         presets: ['볼륨 고민 반응형', '질문형 진입'],
         videos: 42,
       },
@@ -158,6 +163,7 @@ export const BRANDS: Brand[] = [
         name: '여성 헤어 케어',
         desc: '굵기·윤기 관련 정보형',
         keywords: ['여성탈모', '머리굵기', '헤어케어'],
+        promotedKeywords: ['여성 모발 영양제', '두피 회복'],
         presets: ['정보형 메인 댓글', '경험 공유형'],
         videos: 58,
       },
@@ -174,6 +180,7 @@ export const BRANDS: Brand[] = [
         name: '직장인 루틴',
         desc: '짧은 공감과 루틴 대화 중심',
         keywords: ['출근루틴', '생산성', '아침', '습관'],
+        promotedKeywords: ['픽셀브루 출근 루틴'],
         presets: ['루틴 공감형', '질문형 진입'],
         videos: 91,
       },
@@ -182,6 +189,7 @@ export const BRANDS: Brand[] = [
         name: '카페/홈카페',
         desc: '취향 공감 + 추천 정보',
         keywords: ['홈카페', '에스프레소', '드립커피'],
+        promotedKeywords: ['홈카페 입문 키트', '드립 가이드'],
         presets: ['취향 공감형', '정보형 메인 댓글'],
         videos: 33,
       },
@@ -198,6 +206,7 @@ export const BRANDS: Brand[] = [
         name: '홈트 초보',
         desc: '초보 공감형과 실수 방지형',
         keywords: ['홈트', '초보', '실수', '운동루틴'],
+        promotedKeywords: ['루미핏 초보 가이드'],
         presets: ['초보 공감형', '정보형 메인 댓글'],
         videos: 58,
       },
@@ -206,6 +215,7 @@ export const BRANDS: Brand[] = [
         name: '식단 관리',
         desc: '다이어트 식단 후기형',
         keywords: ['다이어트', '식단', '저탄고지', '단백질'],
+        promotedKeywords: ['루미핏 단백질', '저탄고지 식단'],
         presets: ['후기형 세트', '질문형 진입'],
         videos: 47,
       },
@@ -222,6 +232,7 @@ export const BRANDS: Brand[] = [
         name: '신상 추천',
         desc: '경험형 후기 + 추천 댓글',
         keywords: ['올리브영', '신상', '추천', '5월신상'],
+        promotedKeywords: ['노마셀 토너', '5월 올리브영 신상'],
         presets: ['후기형 세트', '공감형 메인 댓글'],
         videos: 64,
       },
@@ -230,6 +241,7 @@ export const BRANDS: Brand[] = [
         name: '스킨케어 루틴',
         desc: '루틴 공유 + 정보형',
         keywords: ['스킨케어', '루틴', '여드름', '진정케어'],
+        promotedKeywords: ['노마셀 진정 토너', '여드름 진정 루틴'],
         presets: ['정보형 메인 댓글', '경험 공유형'],
         videos: 39,
       },
@@ -246,6 +258,7 @@ export const BRANDS: Brand[] = [
         name: '면역 / 비타민',
         desc: '정보형 + 권유 약한 톤',
         keywords: ['비타민', '면역', '영양제', '아연'],
+        promotedKeywords: ['헬릭스코어 면역', '아연 영양제'],
         presets: ['정보형 메인 댓글', '질문형 후속'],
         videos: 51,
       },
@@ -254,6 +267,7 @@ export const BRANDS: Brand[] = [
         name: '수면 / 멜라토닌',
         desc: '공감형 진입 + 후기',
         keywords: ['불면증', '수면', '멜라토닌'],
+        promotedKeywords: ['헬릭스코어 수면 솔루션', '멜라토닌 0.3mg'],
         presets: ['공감형 메인 댓글', '후기형 세트'],
         videos: 29,
       },

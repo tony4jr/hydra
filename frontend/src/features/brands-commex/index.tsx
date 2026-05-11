@@ -342,16 +342,6 @@ export function BrandsCommex() {
                 </div>
               </div>
 
-              {/* 핵심 검색 키워드 (브랜드 수준) */}
-              {brand && (
-                <PromotedKeywordsBar
-                  brandName={brand.name}
-                  keywords={brand.promotedKeywords ?? []}
-                  onChange={(kws) =>
-                    useCommexStore.getState().updateBrandPromotedKeywords(brand.id, kws)
-                  }
-                />
-              )}
 
               <div
                 style={{
@@ -392,6 +382,9 @@ export function BrandsCommex() {
                     )}
                     onUpdateKeywords={(keywords) =>
                       updateKeywords(brand.id, n.id, keywords)
+                    }
+                    onUpdatePromotedKeywords={(kws) =>
+                      useCommexStore.getState().updateNichePromotedKeywords(brand.id, n.id, kws)
                     }
                     onToggleAuto={(jobId) => toggleAutoJob(jobId)}
                     onDelete={() => {
@@ -657,14 +650,12 @@ function PresetEditorModal({
 // =================================================================
 
 // =================================================================
-// 브랜드 핵심 검색 키워드 인라인 편집 바
+// 니치 핵심 검색 키워드 — NicheCard 안에서 사용. 컴팩트 인라인.
 // =================================================================
-function PromotedKeywordsBar({
-  brandName,
+function PromotedKeywordsSection({
   keywords,
   onChange,
 }: {
-  brandName: string
   keywords: string[]
   onChange: (kws: string[]) => void
 }) {
@@ -673,7 +664,6 @@ function PromotedKeywordsBar({
 
   const remove = (kw: string) => {
     onChange(keywords.filter((k) => k !== kw))
-    toast.success(`${kw} 키워드 제거`)
   }
   const add = () => {
     const t = newKw.trim()
@@ -685,41 +675,32 @@ function PromotedKeywordsBar({
     onChange([...keywords, t])
     setNewKw('')
     setAdding(false)
-    toast.success(`${t} 키워드 추가`)
   }
 
   return (
-    <div
-      style={{
-        marginBottom: 14,
-        padding: '12px 14px',
-        borderRadius: 14,
-        background: 'linear-gradient(180deg,#fff8eb,#fff)',
-        border: '1px solid #f0d18f',
-      }}
-    >
+    <div>
       <div
         style={{
+          fontSize: 11,
+          color: 'var(--cx-sub)',
+          fontWeight: 800,
+          marginBottom: 6,
+          textTransform: 'uppercase',
+          letterSpacing: '0.04em',
           display: 'flex',
-          alignItems: 'center',
           justifyContent: 'space-between',
-          gap: 8,
-          marginBottom: 8,
+          alignItems: 'center',
         }}
       >
-        <div>
-          <div style={{ fontSize: 12, fontWeight: 800, color: '#9a6e1c' }}>
-            💡 핵심 검색 키워드 ({brandName})
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--cx-sub)', marginTop: 2 }}>
-            댓글에 녹여서 시청자가 검색하도록 유도할 단어. 예: 모렉신 → '체성케라틴'
-          </div>
-        </div>
+        <span>🔍 핵심 검색 키워드 <span style={{ textTransform: 'none', color: '#9a6e1c', fontWeight: 700 }}>· 시청자 검색 유도</span></span>
         {!adding && (
           <button
-            className='cx-btn-mini'
             onClick={() => setAdding(true)}
-            style={{ height: 26, fontSize: 11, padding: '0 10px' }}
+            style={{
+              background: 'none', border: 'none',
+              color: '#9a6e1c', fontSize: 11, fontWeight: 800,
+              cursor: 'pointer',
+            }}
           >
             + 추가
           </button>
@@ -728,7 +709,7 @@ function PromotedKeywordsBar({
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
         {keywords.length === 0 && !adding && (
           <span style={{ fontSize: 11, color: 'var(--cx-sub)', fontStyle: 'italic' }}>
-            아직 핵심 키워드가 없습니다. 시청자 검색 유도용 키워드를 추가하세요.
+            없음. 예: '체성케라틴' 같은 제품·검색 유도어
           </span>
         )}
         {keywords.map((k) => (
@@ -738,47 +719,36 @@ function PromotedKeywordsBar({
               display: 'inline-flex',
               alignItems: 'center',
               gap: 4,
-              padding: '4px 4px 4px 12px',
+              padding: '3px 4px 3px 10px',
               borderRadius: 999,
-              background: '#fff',
+              background: 'linear-gradient(180deg,#fff8eb,#fff)',
               border: '1px solid #f0d18f',
               color: '#9a6e1c',
-              fontSize: 12,
+              fontSize: 11,
               fontWeight: 800,
             }}
           >
-            🔍 {k}
+            {k}
             <button
               onClick={() => remove(k)}
               title='제거'
               style={{
-                width: 18,
-                height: 18,
-                borderRadius: 999,
+                width: 16, height: 16, borderRadius: 999,
                 border: 'none',
                 background: 'rgba(154,110,28,0.1)',
-                color: '#9a6e1c',
-                cursor: 'pointer',
-                display: 'grid',
-                placeItems: 'center',
-                fontSize: 11,
-                fontWeight: 900,
+                color: '#9a6e1c', cursor: 'pointer',
+                display: 'grid', placeItems: 'center',
+                fontSize: 10, fontWeight: 900, padding: 0,
               }}
-            >
-              ×
-            </button>
+            >×</button>
           </span>
         ))}
         {adding && (
           <span
             style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
-              padding: '2px 4px 2px 10px',
-              borderRadius: 999,
-              background: '#fff',
-              border: '1px solid #9a6e1c',
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              padding: '2px 4px 2px 10px', borderRadius: 999,
+              background: '#fff', border: '1px solid #9a6e1c',
             }}
           >
             <input
@@ -787,36 +757,22 @@ function PromotedKeywordsBar({
               onChange={(e) => setNewKw(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') add()
-                if (e.key === 'Escape') {
-                  setNewKw('')
-                  setAdding(false)
-                }
+                if (e.key === 'Escape') { setNewKw(''); setAdding(false) }
               }}
-              placeholder='유도 검색어 (예: 체성케라틴)'
+              placeholder='유도 검색어'
               style={{
-                border: 'none',
-                outline: 'none',
-                fontSize: 12,
-                width: 180,
-                background: 'transparent',
+                border: 'none', outline: 'none', fontSize: 11,
+                width: 130, background: 'transparent',
               }}
             />
             <button
               onClick={add}
               style={{
-                width: 22,
-                height: 22,
-                borderRadius: 999,
-                border: 'none',
-                background: '#9a6e1c',
-                color: '#fff',
-                cursor: 'pointer',
-                fontSize: 12,
-                fontWeight: 900,
+                width: 20, height: 20, borderRadius: 999,
+                border: 'none', background: '#9a6e1c', color: '#fff',
+                cursor: 'pointer', fontSize: 11, fontWeight: 900,
               }}
-            >
-              ✓
-            </button>
+            >✓</button>
           </span>
         )}
       </div>
@@ -833,6 +789,7 @@ function NicheCard({
   todayCollected,
   autoJob,
   onUpdateKeywords,
+  onUpdatePromotedKeywords,
   onToggleAuto,
   onAction,
   onDelete,
@@ -845,6 +802,7 @@ function NicheCard({
   todayCollected: number
   autoJob: { id: string; active: boolean; nextRun: string } | undefined
   onUpdateKeywords: (keywords: string[]) => void
+  onUpdatePromotedKeywords: (keywords: string[]) => void
   onToggleAuto: (jobId: string) => void
   onAction: (action: 'videos' | 'quick' | 'auto' | 'preset') => void
   onDelete: () => void
@@ -1160,6 +1118,12 @@ function NicheCard({
           )}
         </div>
       </div>
+
+      {/* 핵심 검색 키워드 (니치별) */}
+      <PromotedKeywordsSection
+        keywords={niche.promotedKeywords ?? []}
+        onChange={onUpdatePromotedKeywords}
+      />
 
       {/* Sparkline (7-day collection trend) */}
       <div

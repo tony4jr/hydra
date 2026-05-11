@@ -50,6 +50,7 @@ type State = {
   updateNicheKeywords: (brandId: string, nicheId: string, keywords: string[]) => void
   updateNichePresets: (brandId: string, nicheId: string, presets: string[]) => void
   updateBrandPromotedKeywords: (brandId: string, keywords: string[]) => void
+  updateNichePromotedKeywords: (brandId: string, nicheId: string, keywords: string[]) => void
   deleteBrand: (brandId: string) => void
   deleteNiche: (brandId: string, nicheId: string) => void
 
@@ -343,6 +344,20 @@ export const useCommexStore = create<State>()(
         set((s) => ({
           brands: s.brands.map((b) =>
             b.id === brandId ? { ...b, promotedKeywords: keywords } : b
+          ),
+        }))
+      },
+      updateNichePromotedKeywords: (brandId, nicheId, keywords) => {
+        set((s) => ({
+          brands: s.brands.map((b) =>
+            b.id !== brandId
+              ? b
+              : {
+                  ...b,
+                  niches: b.niches.map((n) =>
+                    n.id === nicheId ? { ...n, promotedKeywords: keywords } : n
+                  ),
+                }
           ),
         }))
       },
