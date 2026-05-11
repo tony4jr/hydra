@@ -1,6 +1,10 @@
-"""Worker 메인 앱 — heartbeat + task fetch + execute loop."""
+"""Worker 메인 앱 — heartbeat + task fetch + execute loop.
+
+PR-A: 워커는 stateless executor. 서버가 보낸 TaskEnvelope 만 사용하고
+local SQLite 의 Account/Worker 테이블을 lookup 하지 않는다. 로컬 DB 는
+IpLog 같은 워커 측 쓰기 로그용으로만 남는다.
+"""
 import asyncio
-import hashlib
 import signal
 import sys
 from collections import defaultdict
@@ -10,7 +14,38 @@ from worker.client import ServerClient
 from worker.executor import TaskExecutor
 from worker.log_shipper import install_log_shipping
 from hydra.db.session import SessionLocal
-from hydra.db.models import Account, Worker
+from hydra.protocol import AccountSnapshot, TaskEnvelope, WorkerConfig
+
+
+def _envelope_from_task(task: dict) -> TaskEnvelope | None:
+    """Parse envelope from server response.
+
+    Prefers the new `envelope` field. Falls back to legacy flat shape
+    (id + task_type + account_snapshot) so workers can roll out before
+    server. Returns None if neither shape is parseable — caller should
+    treat that as a server contract violation and fail the task.
+    """
+    env = task.get("envelope")
+    if env:
+        try:
+            return TaskEnvelope.model_validate(env)
+        except Exception as e:
+            print(f"[Worker] envelope parse failed, trying legacy shape: {e}")
+    snap = task.get("account_snapshot")
+    if not snap or task.get("id") is None or not task.get("task_type"):
+        return None
+    try:
+        return TaskEnvelope(
+            task_id=task["id"],
+            task_type=task["task_type"],
+            priority=task.get("priority") or "normal",
+            payload=task.get("payload"),
+            account=AccountSnapshot.model_validate(snap),
+            worker_config=WorkerConfig(),
+        )
+    except Exception as e:
+        print(f"[Worker] legacy envelope construction failed: {e}")
+        return None
 
 
 class WorkerApp:
@@ -31,71 +66,8 @@ class WorkerApp:
         """메인 루프 — 단일 async 이벤트 루프로 실행."""
         asyncio.run(self._async_run())
 
-    def _sync_local_db(self):
-        """Sync accounts + workers from server to local SQLite.
-
-        Runs at worker startup. Required because:
-          - WorkerSession.start() calls ensure_safe_ip(db, account, worker),
-            which queries the LOCAL db for those rows.
-          - Without sync, queries return None → ensure_safe_ip is silently
-            skipped → 1-account-1-IP invariant is violated.
-
-        Uses upsert (insert-or-update by id) so this is safe to call repeatedly
-        and won't trip foreign-key constraints from existing related rows
-        (ProfileLock, IpLog, Task).
-        """
-        from datetime import datetime as _dt
-        from sqlalchemy import DateTime, Boolean
-        from hydra.db.session import SessionLocal as _SL
-        from hydra.db.models import Account, Worker
-
-        try:
-            data = self.client.sync_data()
-        except Exception as e:
-            print(f"[Worker] sync_data fetch failed: {e}")
-            return
-        accs = data.get("accounts", [])
-        wkrs = data.get("workers", [])
-
-        def _coerce(model_cls, k, v):
-            if v is None:
-                return None
-            col = model_cls.__table__.columns.get(k)
-            if col is None:
-                return v
-            if isinstance(col.type, DateTime) and isinstance(v, str):
-                try:
-                    return _dt.fromisoformat(v)
-                except Exception:
-                    return None
-            if isinstance(col.type, Boolean) and isinstance(v, (int, str)):
-                return bool(v) if not isinstance(v, str) else v.lower() in ("true", "1")
-            return v
-
-        db = _SL()
-        try:
-            acc_cols = {c.name for c in Account.__table__.columns}
-            wkr_cols = {c.name for c in Worker.__table__.columns}
-            for a in accs:
-                fields = {k: _coerce(Account, k, v) for k, v in a.items() if k in acc_cols}
-                existing = db.get(Account, fields["id"]) if fields.get("id") else None
-                if existing:
-                    for k, v in fields.items():
-                        setattr(existing, k, v)
-                else:
-                    db.add(Account(**fields))
-            for w in wkrs:
-                fields = {k: _coerce(Worker, k, v) for k, v in w.items() if k in wkr_cols}
-                existing = db.get(Worker, fields["id"]) if fields.get("id") else None
-                if existing:
-                    for k, v in fields.items():
-                        setattr(existing, k, v)
-                else:
-                    db.add(Worker(**fields))
-            db.commit()
-            print(f"[Worker] synced local DB: {len(accs)} accounts, {len(wkrs)} workers")
-        finally:
-            db.close()
+    # PR-A: _sync_local_db 제거 — 워커는 envelope 만으로 작동. 서버 = SoT.
+    # 로컬 DB 는 IpLog 등 워커 측 쓰기 로그 전용 (PR-B 에서 IpLog 도 서버화 예정).
 
     async def _async_run(self):
         """Persistent async event loop for Playwright compatibility."""
@@ -113,12 +85,8 @@ class WorkerApp:
             print(f"[Worker] Failed to connect: {e}")
             sys.exit(1)
 
-        # Account/Worker 로컬 DB 동기화 — ensure_safe_ip 가 정상 동작하려면
-        # 로컬 DB 에 account + worker rows 가 있어야 함 (없으면 IP rotation skip).
-        try:
-            self._sync_local_db()
-        except Exception as e:
-            print(f"[Worker] WARNING: local DB sync failed: {e}")
+        # PR-A: 로컬 DB sync 불필요. 워커는 TaskEnvelope (서버 응답) 만 사용.
+        # 서버가 보내는 envelope.account / envelope.worker_config 만으로 동작.
 
         while self.running:
             try:
@@ -243,39 +211,27 @@ class WorkerApp:
         from worker.session import WorkerSession
         from hydra.infra.ip_errors import IPRotationFailed
 
-        db = SessionLocal()
-        try:
-            account = db.get(Account, account_id) if account_id else None
-            token_sha256 = hashlib.sha256(config.worker_token.encode()).hexdigest()
-            worker = (
-                db.query(Worker).filter(Worker.token_sha256 == token_sha256).first()
-                or db.query(Worker).filter(Worker.token_hash == token_sha256).first()
-            )
-            if worker is None:
-                # Fail-secure: refuse task execution rather than silent IP-rotation skip
-                # (anti-detection rule: 1 account = 1 IP, never run without rotation guard)
-                print(f"[Worker] FATAL: worker row not found in local DB (token mismatch). "
-                      f"Refusing tasks to preserve IP rotation invariant.")
-                for task in tasks:
-                    try:
-                        self.client.fail_task(task["id"], "local_worker_row_missing")
-                    except Exception:
-                        pass
-                return
-            if account is None and account_id:
-                print(f"[Worker] FATAL: account_id={account_id} not in local DB. Refusing task.")
-                for task in tasks:
-                    try:
-                        self.client.fail_task(task["id"], "local_account_row_missing")
-                    except Exception:
-                        pass
-                return
+        # PR-A: envelope 우선 사용. envelope 누락된 구버전 서버 응답은
+        # transitional flat 필드 (account_snapshot) 에서 복원.
+        first_envelope = _envelope_from_task(tasks[0]) if tasks else None
+        if first_envelope is None:
+            print("[Worker] FATAL: no envelope nor account_snapshot in fetch response.")
+            for task in tasks:
+                try:
+                    self.client.fail_task(task["id"], "envelope_missing")
+                except Exception:
+                    pass
+            return
+        account_snapshot = first_envelope.account
+        worker_config = first_envelope.worker_config
 
+        db = SessionLocal()  # IpLog 쓰기용 — 워커 측 로그. PR-B 에서 서버화 예정.
+        try:
             session = WorkerSession(
                 profile_id, account_id,
-                device_id=config.adb_device_id,
-                account=account,
-                worker=worker,
+                device_id=worker_config.adb_device_id or config.adb_device_id,
+                account_snapshot=account_snapshot,
+                worker_config=worker_config,
             )
 
             try:

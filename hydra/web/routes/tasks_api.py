@@ -20,6 +20,7 @@ from sqlalchemy import func
 
 from hydra.db import session as _db_session
 from hydra.db.models import Account, ActionLog, ProfileLock, Task, Worker
+from hydra.protocol import AccountSnapshot, TaskEnvelope, WorkerConfig
 from hydra.services.account_limits import can_execute_task
 from hydra.web.routes.worker_api import worker_auth
 
@@ -257,27 +258,51 @@ def fetch_tasks(worker: Worker = Depends(worker_auth)) -> dict:
         ))
         db.commit()
 
-        # Task 35: 로컬 DB 없이도 태스크 실행 가능하도록 account_snapshot 동봉
-        snapshot = {
-            "id": account.id,
-            "gmail": account.gmail,
-            "encrypted_password": account.password,  # 이미 암호화된 채 저장됨
-            "recovery_email": account.recovery_email,
-            "adspower_profile_id": account.adspower_profile_id,
-            "persona": account.persona,  # JSON 문자열
-            "encrypted_totp_secret": account.totp_secret,
-            "status": account.status,
-            "ipp_flagged": account.ipp_flagged,
-            "youtube_channel_id": account.youtube_channel_id,
-        }
+        # PR-A: TaskEnvelope — self-contained dispatch. Worker must not query local
+        # Account/Worker tables. Server is source of truth.
+        # Transitional: keep legacy flat fields (id, account_id, ..., account_snapshot)
+        # alongside `envelope` so old workers still parse the response.
+        account_snapshot = AccountSnapshot(
+            id=account.id,
+            gmail=account.gmail,
+            encrypted_password=account.password,
+            recovery_email=account.recovery_email,
+            adspower_profile_id=account.adspower_profile_id,
+            persona=account.persona,
+            encrypted_totp_secret=account.totp_secret,
+            status=account.status,
+            ipp_flagged=account.ipp_flagged,
+            youtube_channel_id=account.youtube_channel_id,
+        )
+        ip_config_data: dict = {}
+        if worker.ip_config:
+            try:
+                ip_config_data = json.loads(worker.ip_config)
+            except (json.JSONDecodeError, TypeError):
+                ip_config_data = {}
+        worker_config = WorkerConfig(
+            adb_device_id=ip_config_data.get("adb_device_id"),
+        )
+        envelope = TaskEnvelope(
+            task_id=task.id,
+            task_type=task.task_type,
+            priority=task.priority or "normal",
+            payload=task.payload,
+            account=account_snapshot,
+            worker_config=worker_config,
+        )
+        envelope_dump = envelope.model_dump(mode="json")
         return {"tasks": [{
+            # Legacy flat fields — keep for transitional compatibility.
             "id": task.id,
             "account_id": task.account_id,
             "adspower_profile_id": account.adspower_profile_id,
             "task_type": task.task_type,
             "payload": task.payload,
             "priority": task.priority,
-            "account_snapshot": snapshot,
+            "account_snapshot": envelope_dump["account"],
+            # New canonical shape — envelope-based workers parse this.
+            "envelope": envelope_dump,
         }]}
     finally:
         db.close()

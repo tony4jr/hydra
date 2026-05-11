@@ -1,4 +1,8 @@
-"""브라우저 세션 관리 — 프로필 열기/닫기/태스크 루프."""
+"""브라우저 세션 관리 — 프로필 열기/닫기/태스크 루프.
+
+PR-A: WorkerSession 은 AccountSnapshot/WorkerConfig 로만 동작.
+ORM Account/Worker 객체에 의존하지 않는다.
+"""
 import asyncio
 import json
 import random
@@ -8,8 +12,9 @@ from hydra.browser.actions import (
     human_click, random_delay, scroll_page, click_like_button, watch_video, handle_ad,
     set_speed_multiplier, set_typing_style, set_activity_multiplier,
 )
-from hydra.infra.ip import ensure_safe_ip
+from hydra.infra.ip import ensure_safe_ip_from_snapshot
 from hydra.infra.ip_errors import IPRotationFailed
+from hydra.protocol import AccountSnapshot, WorkerConfig
 from worker.youtube_habits import maybe_check_notifications, maybe_visit_own_channel
 
 
@@ -21,20 +26,25 @@ class WorkerSession:
         profile_id: str,
         account_id: int,
         device_id: str | None = None,
-        account=None,
-        worker=None,
+        account_snapshot: AccountSnapshot | None = None,
+        worker_config: WorkerConfig | None = None,
     ):
         self.profile_id = profile_id
         self.account_id = account_id
         self.device_id = device_id
-        self.account = account
-        self.worker = worker
+        self.account_snapshot = account_snapshot
+        self.worker_config = worker_config or WorkerConfig()
         self.browser: BrowserSession | None = None
         self.tasks_completed = 0
-        self.max_tasks_per_session = random.randint(3, 8)
-        self.max_session_minutes = random.randint(20, 45)
+        self.max_tasks_per_session = random.randint(3, self.worker_config.max_tasks_per_session)
+        self.max_session_minutes = random.randint(20, self.worker_config.max_session_minutes)
         self.started_at: datetime | None = None
         self.ip_log_id: int | None = None
+
+    @property
+    def account(self):
+        """Back-compat: 일부 코드가 session.account.persona 등에 접근. snapshot 으로 노출."""
+        return self.account_snapshot
 
     async def start(self, db=None) -> bool:
         """세션 시작: IP 안전 확인 → 프로필 열기 → YouTube 접속.
@@ -45,8 +55,9 @@ class WorkerSession:
         try:
             # persona 기반 세션 템포 + 타이핑 스타일 + 활동량 설정 (anti-detection)
             try:
-                if self.account is not None and self.account.persona:
-                    p = json.loads(self.account.persona)
+                snap = self.account_snapshot
+                if snap is not None and snap.persona:
+                    p = json.loads(snap.persona)
                     set_speed_multiplier(p.get("speed_multiplier") or random.uniform(0.6, 1.8))
                     set_typing_style(p.get("typing_style") or random.choice(["typist", "typist", "paster"]))
                     set_activity_multiplier(p.get("activity_multiplier") or random.uniform(0.6, 1.5))
@@ -59,8 +70,13 @@ class WorkerSession:
                 set_typing_style("typist")
                 set_activity_multiplier(1.0)
 
-            if db is not None and self.account is not None and self.worker is not None:
-                ip_log = await ensure_safe_ip(db, self.account, self.worker)
+            if db is not None and self.account_snapshot is not None:
+                ip_log = await ensure_safe_ip_from_snapshot(
+                    db,
+                    account_id=self.account_id,
+                    adb_device_id=self.worker_config.adb_device_id or self.device_id,
+                    cooldown_minutes=self.worker_config.ip_cooldown_minutes,
+                )
                 self.ip_log_id = getattr(ip_log, "id", None)
 
             self.browser = BrowserSession(self.profile_id)

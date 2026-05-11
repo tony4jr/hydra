@@ -161,13 +161,16 @@ class ServerClient:
 
         절대 예외를 propagate 하지 않음 (에러 리포트 자체가 에러나면 조용히 포기,
         원래 실패가 더 중요).
+
+        PR-A: context 에 envelope 또는 secret 필드가 섞이지 않도록 redact 적용.
         """
         from datetime import datetime, timezone
+        from hydra.protocol import redact_for_logging
         body = {
             "kind": kind,
             "message": message[:2000],
             "traceback": traceback,
-            "context": context or {},
+            "context": redact_for_logging(context or {}),
             "occurred_at": datetime.now(timezone.utc).isoformat(),
         }
         try:
@@ -205,12 +208,13 @@ class ServerClient:
     ) -> None:
         """에러 + 스크린샷 multipart 업로드. 절대 예외 propagate X."""
         import json as _json
+        from hydra.protocol import redact_for_logging
         files = {"screenshot": (filename, screenshot_bytes, "image/png")}
         data: dict = {"kind": kind, "message": message[:2000]}
         if traceback:
             data["traceback"] = traceback
         if context:
-            data["context"] = _json.dumps(context, ensure_ascii=False)
+            data["context"] = _json.dumps(redact_for_logging(context), ensure_ascii=False)
         url = f"{self.base_url}/api/workers/report-error-with-screenshot"
         # multipart 는 기존 _request 흐름(JSON) 과 다르므로 직접 호출 — 간단한 단일 시도
         try:
