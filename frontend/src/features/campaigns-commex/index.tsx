@@ -299,7 +299,7 @@ export function CampaignsCommex() {
                   <div
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: '110px 1fr 14px 1fr',
+                      gridTemplateColumns: '170px 1fr 14px 1fr',
                       gap: 8,
                       alignItems: 'center',
                     }}
