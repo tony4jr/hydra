@@ -16,8 +16,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
 
+from sqlalchemy import func
+
 from hydra.db import session as _db_session
-from hydra.db.models import Account, ProfileLock, Task, Worker
+from hydra.db.models import Account, ActionLog, ProfileLock, Task, Worker
 from hydra.services.account_limits import can_execute_task
 from hydra.web.routes.worker_api import worker_auth
 
@@ -65,21 +67,48 @@ _AUTO_ASSIGN_TYPES = {"comment", "reply", "like", "like_boost", "subscribe"}
 def _auto_assign_account(db, task: "Task") -> bool:
     """Assign an idle active Account to a pending task that has no account_id.
 
-    Returns True if assigned, False if no idle account available.
+    Picked account (LRU + 한도):
+      - status = 'active', not in open ProfileLock, not in identity_challenge cooldown
+      - 오늘 같은 카테고리 액션 수가 daily limit 미만 (hard filter; >=100% 제외)
+      - 정렬: 1) 오늘 액션 수 ASC (load balancing) 2) last_active_at ASC (LRU)
+      - PG: FOR UPDATE SKIP LOCKED 로 다중 워커 동시 선택 방지
 
-    Picked account:
-      - status = 'active'
-      - not in any open ProfileLock
-      - not in identity_challenge cooldown
+    한도 비율(70% 등) hard reject 안 함 — starvation 방지. 자연 정렬로 충분.
     """
     if task.account_id:
         return True
     if task.task_type not in _AUTO_ASSIGN_TYPES:
         return True  # Other task types may legitimately have no account_id
+
     now = datetime.now(UTC)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     dialect = db.bind.dialect.name
+
+    # task_type 카테고리에 따라 카운트할 ActionLog type + 적용할 limit 컬럼 분기.
+    if task.task_type in ("like", "like_boost"):
+        relevant_types = ("like", "like_boost")
+        limit_col = Account.daily_like_limit
+    else:  # comment, reply, subscribe — 댓글 카운트로 통일 (subscribe 는 영향 적어 fallback)
+        relevant_types = ("comment", "reply")
+        limit_col = Account.daily_comment_limit
+
+    today_actions_sub = (
+        db.query(
+            ActionLog.account_id.label("acc_id"),
+            func.count().label("today_n"),
+        )
+        .filter(
+            ActionLog.created_at >= today_start,
+            ActionLog.type.in_(relevant_types),
+        )
+        .group_by(ActionLog.account_id)
+        .subquery()
+    )
+    today_n = func.coalesce(today_actions_sub.c.today_n, 0)
+
     q = (
         db.query(Account)
+        .outerjoin(today_actions_sub, Account.id == today_actions_sub.c.acc_id)
         .filter(
             Account.status == "active",
             ~Account.id.in_(
@@ -91,11 +120,15 @@ def _auto_assign_account(db, task: "Task") -> bool:
             (Account.identity_challenge_until.is_(None))
             | (Account.identity_challenge_until <= now)
         )
+        # 한도 100% 도달한 계정 제외 (단, limit_col 이 NULL 인 경우는 통과)
+        .filter((limit_col.is_(None)) | (today_n < limit_col))
+        .order_by(
+            today_n.asc(),
+            Account.last_active_at.asc().nullsfirst(),
+        )
     )
-    # Postgres: account row 도 FOR UPDATE SKIP LOCKED 로 다중 워커 동시 선택 방지.
-    # 다른 워커가 같은 row 잡고 있으면 skip → 다른 active 계정 선택.
     if dialect == "postgresql":
-        q = q.with_for_update(skip_locked=True)
+        q = q.with_for_update(of=Account, skip_locked=True)
     available = q.first()
     if not available:
         return False
