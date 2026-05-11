@@ -31,9 +31,28 @@ log = get_logger("executor")
 
 
 def reschedule_task_for_ip_failure(db, task):
-    """Bump retry_count and push task forward. Escalate to failed at threshold."""
+    """Bump retry_count and push task forward. Escalate to failed at threshold.
+
+    PR-A B++: Release ProfileLock + worker_id/started_at on reschedule.
+    fetch_tasks marks task running + creates ProfileLock; if the worker's
+    ensure_safe_ip fails (fail-closed) we must unwind both. Otherwise the
+    account is locked indefinitely and no other worker can pick it up.
+    """
+    from hydra.db.models import ProfileLock
+
     task.retry_count = (task.retry_count or 0) + 1
     task.error_message = "ip_rotation_failed"
+
+    # Release lock + clear in-flight markers regardless of escalation path.
+    open_locks = (
+        db.query(ProfileLock)
+        .filter(ProfileLock.task_id == task.id, ProfileLock.released_at.is_(None))
+        .all()
+    )
+    for pl in open_locks:
+        pl.released_at = datetime.now(timezone.utc)
+    task.worker_id = None
+    task.started_at = None
 
     max_retries = settings.ip_rotation_task_retry_max
     if task.retry_count >= max_retries:
