@@ -389,12 +389,10 @@ export function BrandsCommex() {
                     }}
                     onAction={(action) => {
                       if (action === 'preset') {
-                        // 니치 카드 안에서 모달로 프리셋 편집 (이 니치 전용 선택)
-                        setPresetEditing({
-                          brandId: brand.id,
-                          nicheId: n.id,
-                          nicheName: n.name,
-                          presets: [...n.presets],
+                        // 니치 프리셋 편집기 페이지로 이동
+                        navigate({
+                          to: '/brands/$brandId/niches/$nicheId/preset-edit',
+                          params: { brandId: brand.id, nicheId: n.id },
                         })
                         return
                       }

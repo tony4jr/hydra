@@ -50,6 +50,7 @@ import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenti
 import { Route as AuthenticatedBrandsBrandIdIndexRouteImport } from './routes/_authenticated/brands/$brandId/index'
 import { Route as AuthenticatedBrandsBrandIdNichesNicheIdRouteRouteImport } from './routes/_authenticated/brands/$brandId/niches/$nicheId/route'
 import { Route as AuthenticatedBrandsBrandIdNichesNicheIdIndexRouteImport } from './routes/_authenticated/brands/$brandId/niches/$nicheId/index'
+import { Route as AuthenticatedBrandsBrandIdNichesNicheIdPresetEditRouteImport } from './routes/_authenticated/brands/$brandId/niches/$nicheId/preset-edit'
 import { Route as AuthenticatedBrandsBrandIdNichesNicheIdMessagingRouteImport } from './routes/_authenticated/brands/$brandId/niches/$nicheId/messaging'
 import { Route as AuthenticatedBrandsBrandIdNichesNicheIdCollectionRouteImport } from './routes/_authenticated/brands/$brandId/niches/$nicheId/collection'
 import { Route as AuthenticatedBrandsBrandIdNichesNicheIdCampaignsRouteImport } from './routes/_authenticated/brands/$brandId/niches/$nicheId/campaigns'
@@ -287,6 +288,12 @@ const AuthenticatedBrandsBrandIdNichesNicheIdIndexRoute =
     path: '/',
     getParentRoute: () => AuthenticatedBrandsBrandIdNichesNicheIdRouteRoute,
   } as any)
+const AuthenticatedBrandsBrandIdNichesNicheIdPresetEditRoute =
+  AuthenticatedBrandsBrandIdNichesNicheIdPresetEditRouteImport.update({
+    id: '/preset-edit',
+    path: '/preset-edit',
+    getParentRoute: () => AuthenticatedBrandsBrandIdNichesNicheIdRouteRoute,
+  } as any)
 const AuthenticatedBrandsBrandIdNichesNicheIdMessagingRoute =
   AuthenticatedBrandsBrandIdNichesNicheIdMessagingRouteImport.update({
     id: '/messaging',
@@ -356,6 +363,7 @@ export interface FileRoutesByFullPath {
   '/brands/$brandId/niches/$nicheId/campaigns': typeof AuthenticatedBrandsBrandIdNichesNicheIdCampaignsRoute
   '/brands/$brandId/niches/$nicheId/collection': typeof AuthenticatedBrandsBrandIdNichesNicheIdCollectionRoute
   '/brands/$brandId/niches/$nicheId/messaging': typeof AuthenticatedBrandsBrandIdNichesNicheIdMessagingRoute
+  '/brands/$brandId/niches/$nicheId/preset-edit': typeof AuthenticatedBrandsBrandIdNichesNicheIdPresetEditRoute
   '/brands/$brandId/niches/$nicheId/': typeof AuthenticatedBrandsBrandIdNichesNicheIdIndexRoute
 }
 export interface FileRoutesByTo {
@@ -400,6 +408,7 @@ export interface FileRoutesByTo {
   '/brands/$brandId/niches/$nicheId/campaigns': typeof AuthenticatedBrandsBrandIdNichesNicheIdCampaignsRoute
   '/brands/$brandId/niches/$nicheId/collection': typeof AuthenticatedBrandsBrandIdNichesNicheIdCollectionRoute
   '/brands/$brandId/niches/$nicheId/messaging': typeof AuthenticatedBrandsBrandIdNichesNicheIdMessagingRoute
+  '/brands/$brandId/niches/$nicheId/preset-edit': typeof AuthenticatedBrandsBrandIdNichesNicheIdPresetEditRoute
   '/brands/$brandId/niches/$nicheId': typeof AuthenticatedBrandsBrandIdNichesNicheIdIndexRoute
 }
 export interface FileRoutesById {
@@ -448,6 +457,7 @@ export interface FileRoutesById {
   '/_authenticated/brands/$brandId/niches/$nicheId/campaigns': typeof AuthenticatedBrandsBrandIdNichesNicheIdCampaignsRoute
   '/_authenticated/brands/$brandId/niches/$nicheId/collection': typeof AuthenticatedBrandsBrandIdNichesNicheIdCollectionRoute
   '/_authenticated/brands/$brandId/niches/$nicheId/messaging': typeof AuthenticatedBrandsBrandIdNichesNicheIdMessagingRoute
+  '/_authenticated/brands/$brandId/niches/$nicheId/preset-edit': typeof AuthenticatedBrandsBrandIdNichesNicheIdPresetEditRoute
   '/_authenticated/brands/$brandId/niches/$nicheId/': typeof AuthenticatedBrandsBrandIdNichesNicheIdIndexRoute
 }
 export interface FileRouteTypes {
@@ -496,6 +506,7 @@ export interface FileRouteTypes {
     | '/brands/$brandId/niches/$nicheId/campaigns'
     | '/brands/$brandId/niches/$nicheId/collection'
     | '/brands/$brandId/niches/$nicheId/messaging'
+    | '/brands/$brandId/niches/$nicheId/preset-edit'
     | '/brands/$brandId/niches/$nicheId/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -540,6 +551,7 @@ export interface FileRouteTypes {
     | '/brands/$brandId/niches/$nicheId/campaigns'
     | '/brands/$brandId/niches/$nicheId/collection'
     | '/brands/$brandId/niches/$nicheId/messaging'
+    | '/brands/$brandId/niches/$nicheId/preset-edit'
     | '/brands/$brandId/niches/$nicheId'
   id:
     | '__root__'
@@ -587,6 +599,7 @@ export interface FileRouteTypes {
     | '/_authenticated/brands/$brandId/niches/$nicheId/campaigns'
     | '/_authenticated/brands/$brandId/niches/$nicheId/collection'
     | '/_authenticated/brands/$brandId/niches/$nicheId/messaging'
+    | '/_authenticated/brands/$brandId/niches/$nicheId/preset-edit'
     | '/_authenticated/brands/$brandId/niches/$nicheId/'
   fileRoutesById: FileRoutesById
 }
@@ -889,6 +902,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedBrandsBrandIdNichesNicheIdIndexRouteImport
       parentRoute: typeof AuthenticatedBrandsBrandIdNichesNicheIdRouteRoute
     }
+    '/_authenticated/brands/$brandId/niches/$nicheId/preset-edit': {
+      id: '/_authenticated/brands/$brandId/niches/$nicheId/preset-edit'
+      path: '/preset-edit'
+      fullPath: '/brands/$brandId/niches/$nicheId/preset-edit'
+      preLoaderRoute: typeof AuthenticatedBrandsBrandIdNichesNicheIdPresetEditRouteImport
+      parentRoute: typeof AuthenticatedBrandsBrandIdNichesNicheIdRouteRoute
+    }
     '/_authenticated/brands/$brandId/niches/$nicheId/messaging': {
       id: '/_authenticated/brands/$brandId/niches/$nicheId/messaging'
       path: '/messaging'
@@ -954,6 +974,7 @@ interface AuthenticatedBrandsBrandIdNichesNicheIdRouteRouteChildren {
   AuthenticatedBrandsBrandIdNichesNicheIdCampaignsRoute: typeof AuthenticatedBrandsBrandIdNichesNicheIdCampaignsRoute
   AuthenticatedBrandsBrandIdNichesNicheIdCollectionRoute: typeof AuthenticatedBrandsBrandIdNichesNicheIdCollectionRoute
   AuthenticatedBrandsBrandIdNichesNicheIdMessagingRoute: typeof AuthenticatedBrandsBrandIdNichesNicheIdMessagingRoute
+  AuthenticatedBrandsBrandIdNichesNicheIdPresetEditRoute: typeof AuthenticatedBrandsBrandIdNichesNicheIdPresetEditRoute
   AuthenticatedBrandsBrandIdNichesNicheIdIndexRoute: typeof AuthenticatedBrandsBrandIdNichesNicheIdIndexRoute
 }
 
@@ -967,6 +988,8 @@ const AuthenticatedBrandsBrandIdNichesNicheIdRouteRouteChildren: AuthenticatedBr
       AuthenticatedBrandsBrandIdNichesNicheIdCollectionRoute,
     AuthenticatedBrandsBrandIdNichesNicheIdMessagingRoute:
       AuthenticatedBrandsBrandIdNichesNicheIdMessagingRoute,
+    AuthenticatedBrandsBrandIdNichesNicheIdPresetEditRoute:
+      AuthenticatedBrandsBrandIdNichesNicheIdPresetEditRoute,
     AuthenticatedBrandsBrandIdNichesNicheIdIndexRoute:
       AuthenticatedBrandsBrandIdNichesNicheIdIndexRoute,
   }

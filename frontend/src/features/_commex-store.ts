@@ -10,6 +10,8 @@ import {
   AUTO_JOBS as INITIAL_AUTO_JOBS,
   ACTIVITY as INITIAL_ACTIVITY,
   BRANDS as INITIAL_BRANDS,
+  GLOBAL_PRESETS,
+  newSlotId,
   type QueueItem,
   type QueueStatus,
   type Video,
@@ -17,6 +19,8 @@ import {
   type AutoJob,
   type ActivityItem,
   type Brand,
+  type NichePreset,
+  type PresetSlot,
 } from './_commex-mock'
 
 export type NicheContext = { brandName: string; nicheName: string } | null
@@ -47,6 +51,17 @@ type State = {
   updateNichePresets: (brandId: string, nicheId: string, presets: string[]) => void
   deleteBrand: (brandId: string) => void
   deleteNiche: (brandId: string, nicheId: string) => void
+
+  // Niche preset workspace actions
+  nichePresets: Record<string, NichePreset[]> // key: nicheId
+  forkPresetToNiche: (nicheId: string, globalPresetId: string) => string  // returns new niche preset id
+  createNichePreset: (nicheId: string, name: string) => string
+  updateNichePreset: (nichePresetId: string, patch: Partial<Pick<NichePreset, 'name' | 'desc'>>) => void
+  deleteNichePreset: (nichePresetId: string) => void
+  addSlotToNichePreset: (nichePresetId: string, slot: Partial<PresetSlot>) => void
+  updateSlot: (nichePresetId: string, slotUid: string, patch: Partial<PresetSlot>) => void
+  deleteSlot: (nichePresetId: string, slotUid: string) => void
+  duplicateSlot: (nichePresetId: string, slotUid: string) => void
   setNicheContext: (ctx: NicheContext) => void
   clearNicheContext: () => void
 
@@ -100,6 +115,139 @@ export const useCommexStore = create<State>()(
       activity: INITIAL_ACTIVITY,
       brands: INITIAL_BRANDS,
       nicheContext: null,
+      nichePresets: {},
+
+      forkPresetToNiche: (nicheId, globalPresetId) => {
+        const g = GLOBAL_PRESETS.find((p) => p.id === globalPresetId)
+        if (!g) return ''
+        const id = newId('np')
+        const np: NichePreset = {
+          id,
+          niche_id: nicheId,
+          name: `${g.name} (니치)`,
+          desc: g.desc,
+          forked_from: g.id,
+          slots: (g.slots ?? []).map((s) => ({ ...s, uid: newSlotId() })),
+        }
+        set((s) => ({
+          nichePresets: {
+            ...s.nichePresets,
+            [nicheId]: [...(s.nichePresets[nicheId] ?? []), np],
+          },
+        }))
+        get().pushActivity({ kind: 'preset', title: '프리셋 복제', body: np.name })
+        return id
+      },
+      createNichePreset: (nicheId, name) => {
+        const id = newId('np')
+        const np: NichePreset = {
+          id,
+          niche_id: nicheId,
+          name,
+          desc: '',
+          slots: [
+            {
+              uid: newSlotId(),
+              account: 'A', target: '메인 댓글', active: true,
+              intent: '', tone_anchor: '', legacy_text_template: '',
+              length: 'normal', emoji: 'sometimes', ai_freedom: 70,
+              mention_brand: false, mention_solution: true,
+              style_polite: 'natural', style_pov: 'experience', reduce_repetition: true,
+              like_min: 5, like_max: 20,
+            },
+          ],
+        }
+        set((s) => ({
+          nichePresets: {
+            ...s.nichePresets,
+            [nicheId]: [...(s.nichePresets[nicheId] ?? []), np],
+          },
+        }))
+        return id
+      },
+      updateNichePreset: (npId, patch) => {
+        set((s) => ({
+          nichePresets: Object.fromEntries(
+            Object.entries(s.nichePresets).map(([nid, arr]) => [
+              nid,
+              arr.map((np) => (np.id === npId ? { ...np, ...patch } : np)),
+            ])
+          ),
+        }))
+      },
+      deleteNichePreset: (npId) => {
+        set((s) => ({
+          nichePresets: Object.fromEntries(
+            Object.entries(s.nichePresets).map(([nid, arr]) => [
+              nid,
+              arr.filter((np) => np.id !== npId),
+            ])
+          ),
+        }))
+      },
+      addSlotToNichePreset: (npId, slotPartial) => {
+        const slot: PresetSlot = {
+          uid: newSlotId(),
+          account: 'A', target: '메인 댓글', active: true,
+          intent: '', tone_anchor: '', legacy_text_template: '',
+          length: 'normal', emoji: 'sometimes', ai_freedom: 70,
+          mention_brand: false, mention_solution: true,
+          style_polite: 'natural', style_pov: 'experience', reduce_repetition: true,
+          like_min: 5, like_max: 20,
+          ...slotPartial,
+        }
+        set((s) => ({
+          nichePresets: Object.fromEntries(
+            Object.entries(s.nichePresets).map(([nid, arr]) => [
+              nid,
+              arr.map((np) => (np.id === npId ? { ...np, slots: [...np.slots, slot] } : np)),
+            ])
+          ),
+        }))
+      },
+      updateSlot: (npId, slotUid, patch) => {
+        set((s) => ({
+          nichePresets: Object.fromEntries(
+            Object.entries(s.nichePresets).map(([nid, arr]) => [
+              nid,
+              arr.map((np) =>
+                np.id !== npId
+                  ? np
+                  : { ...np, slots: np.slots.map((sl) => (sl.uid === slotUid ? { ...sl, ...patch } : sl)) }
+              ),
+            ])
+          ),
+        }))
+      },
+      deleteSlot: (npId, slotUid) => {
+        set((s) => ({
+          nichePresets: Object.fromEntries(
+            Object.entries(s.nichePresets).map(([nid, arr]) => [
+              nid,
+              arr.map((np) =>
+                np.id !== npId ? np : { ...np, slots: np.slots.filter((sl) => sl.uid !== slotUid) }
+              ),
+            ])
+          ),
+        }))
+      },
+      duplicateSlot: (npId, slotUid) => {
+        set((s) => ({
+          nichePresets: Object.fromEntries(
+            Object.entries(s.nichePresets).map(([nid, arr]) => [
+              nid,
+              arr.map((np) => {
+                if (np.id !== npId) return np
+                const idx = np.slots.findIndex((sl) => sl.uid === slotUid)
+                if (idx < 0) return np
+                const copy: PresetSlot = { ...np.slots[idx], uid: newSlotId() }
+                const slots = [...np.slots.slice(0, idx + 1), copy, ...np.slots.slice(idx + 1)]
+                return { ...np, slots }
+              }),
+            ])
+          ),
+        }))
+      },
 
       addBrand: ({ name, summary }) => {
         const id = newId('b')
