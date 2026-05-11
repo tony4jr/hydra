@@ -27,6 +27,7 @@ export function CampaignsCommex() {
   const toggleStore = useCommexStore((s) => s.toggleAutoJob)
   const upsertAutoJob = useCommexStore((s) => s.upsertAutoJob)
   const duplicateAutoJob = useCommexStore((s) => s.duplicateAutoJob)
+  const deleteAutoJobStore = useCommexStore((s) => s.deleteAutoJob)
   const [formOpen, setFormOpen] = useState(false)
   const [form, setForm] = useState<JobForm>(() => emptyForm())
 
@@ -265,13 +266,50 @@ export function CampaignsCommex() {
                   />
                   생성 후 활성화
                 </label>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                  <button className='cx-btn-soft' onClick={() => setFormOpen(false)}>
-                    취소
-                  </button>
-                  <button className='cx-btn-primary' onClick={submitJob}>
-                    저장
-                  </button>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}
+                >
+                  {/* 편집 모드일 때만 좌측에 삭제 버튼 */}
+                  {form.id ? (
+                    <button
+                      className='cx-btn-soft'
+                      style={{
+                        color: '#d2554c',
+                        borderColor: '#f4cccb',
+                        background: '#fff',
+                      }}
+                      onClick={() => {
+                        if (
+                          !confirm(
+                            `${form.brand} · ${form.niche} 자동 작업을 삭제할까요?\n\n되돌릴 수 없습니다.`
+                          )
+                        )
+                          return
+                        deleteAutoJobStore(form.id!)
+                        toast.success('자동 작업 삭제됨', {
+                          description: `${form.brand} · ${form.niche}`,
+                        })
+                        setFormOpen(false)
+                      }}
+                    >
+                      삭제
+                    </button>
+                  ) : (
+                    <span />
+                  )}
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className='cx-btn-soft' onClick={() => setFormOpen(false)}>
+                      취소
+                    </button>
+                    <button className='cx-btn-primary' onClick={submitJob}>
+                      저장
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

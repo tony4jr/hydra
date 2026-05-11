@@ -100,6 +100,7 @@ type State = {
     nextRun: string
   }) => string
   duplicateAutoJob: (id: string) => string | null
+  deleteAutoJob: (id: string) => void
 
   // Activity helper
   pushActivity: (a: Omit<ActivityItem, 'id' | 'time'>) => void
@@ -609,6 +610,17 @@ export const useCommexStore = create<State>()(
           body: `${clone.brand} · ${clone.niche}`,
         })
         return nextId
+      },
+      deleteAutoJob: (id) => {
+        const target = get().autoJobs.find((j) => j.id === id)
+        set((s) => ({ autoJobs: s.autoJobs.filter((j) => j.id !== id) }))
+        if (target) {
+          get().pushActivity({
+            kind: 'auto',
+            title: '자동 작업 삭제',
+            body: `${target.brand} · ${target.niche}`,
+          })
+        }
       },
 
       pushActivity: (a) => {
