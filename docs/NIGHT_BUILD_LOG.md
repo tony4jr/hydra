@@ -43,3 +43,8 @@ PR-J canary + PR-K mock YouTube + PR-M 백업 + PR-Kill suspend guard, 그 후 2
 - executor.execute() 도 compose phase 로 timeout 래핑 (task 본문 hang 방지)
 - start 실패 경로 _close_session_failed (worker_sessions active 잔류 방지)
 - phase_timeout/envelope_missing 을 worker-env 분류 → 계정 보호
+
+### 2026-05-12 01:08:20 — ✅ PR-C2 deploy (admin gauge)
+- GET /api/admin/phase-gauge (running task + phase + age)
+- GET /api/admin/phase-gauge/sessions (active worker_sessions)
+- GET /api/admin/phase-gauge/recent-history (phase 변경 history)
