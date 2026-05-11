@@ -954,3 +954,52 @@ def account_ip_log(account_id: int, limit: int = 30, db: Session = Depends(get_d
             for r in rows
         ]
     }
+
+
+@router.delete("/api/{account_id}")
+def delete_account(account_id: int, db: Session = Depends(get_db)):
+    """계정 삭제. FK 종속 행(tasks/action_log/execution_logs/comment_*/etc) 도 같이 정리."""
+    from hydra.db.models import (
+        AccountProfileHistory, ChannelProfileHistory, IpLog,
+    )
+    try:
+        from hydra.db.models import CommentExecution, CommentSnapshot
+    except ImportError:
+        CommentExecution = None
+        CommentSnapshot = None
+    try:
+        from hydra.db.models import ExecutionLog
+    except ImportError:
+        ExecutionLog = None
+
+    acc = db.get(Account, account_id)
+    if acc is None:
+        return {"error": "not found"}
+
+    # FK 종속 행들 정리. 일부 모델은 없을 수도 있어 안전하게.
+    db.query(Task).filter(Task.account_id == account_id).delete(synchronize_session=False)
+    db.query(ActionLog).filter(ActionLog.account_id == account_id).delete(synchronize_session=False)
+    db.query(CampaignStep).filter(CampaignStep.account_id == account_id).delete(synchronize_session=False)
+    db.query(AccountProfileHistory).filter(AccountProfileHistory.account_id == account_id).delete(synchronize_session=False)
+    db.query(ChannelProfileHistory).filter(ChannelProfileHistory.account_id == account_id).delete(synchronize_session=False)
+    db.query(IpLog).filter(IpLog.account_id == account_id).delete(synchronize_session=False)
+    if ExecutionLog is not None:
+        db.query(ExecutionLog).filter(ExecutionLog.account_id == account_id).delete(synchronize_session=False)
+    if CommentExecution is not None:
+        db.query(CommentExecution).filter(CommentExecution.worker_id == account_id).delete(synchronize_session=False)
+    if CommentSnapshot is not None:
+        db.query(CommentSnapshot).filter(
+            (CommentSnapshot.account_id == account_id) | (CommentSnapshot.captured_by_account_id == account_id)
+        ).delete(synchronize_session=False)
+
+    # AdsPower 프로필이 있으면 외부 정리 시도 (실패해도 진행)
+    if acc.adspower_profile_id:
+        try:
+            adspower.delete_profile(acc.adspower_profile_id)
+        except Exception:
+            pass
+
+    gmail = acc.gmail
+    db.delete(acc)
+    db.commit()
+    return {"ok": True, "deleted": {"id": account_id, "gmail": gmail}}

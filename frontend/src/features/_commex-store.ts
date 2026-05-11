@@ -44,6 +44,9 @@ type State = {
     keywords: string[]
   }) => string
   updateNicheKeywords: (brandId: string, nicheId: string, keywords: string[]) => void
+  updateNichePresets: (brandId: string, nicheId: string, presets: string[]) => void
+  deleteBrand: (brandId: string) => void
+  deleteNiche: (brandId: string, nicheId: string) => void
   setNicheContext: (ctx: NicheContext) => void
   clearNicheContext: () => void
 
@@ -153,6 +156,49 @@ export const useCommexStore = create<State>()(
                   ...b,
                   niches: b.niches.map((n) =>
                     n.id === nicheId ? { ...n, keywords } : n
+                  ),
+                }
+          ),
+        }))
+      },
+      deleteBrand: (brandId) => {
+        const target = get().brands.find((b) => b.id === brandId)
+        set((s) => ({ brands: s.brands.filter((b) => b.id !== brandId) }))
+        if (target) {
+          get().pushActivity({
+            kind: 'preset',
+            title: '브랜드 삭제',
+            body: target.name,
+          })
+        }
+      },
+      deleteNiche: (brandId, nicheId) => {
+        const brand = get().brands.find((b) => b.id === brandId)
+        const niche = brand?.niches.find((n) => n.id === nicheId)
+        set((s) => ({
+          brands: s.brands.map((b) =>
+            b.id !== brandId
+              ? b
+              : { ...b, niches: b.niches.filter((n) => n.id !== nicheId) }
+          ),
+        }))
+        if (brand && niche) {
+          get().pushActivity({
+            kind: 'preset',
+            title: '니치 삭제',
+            body: `${brand.name} · ${niche.name}`,
+          })
+        }
+      },
+      updateNichePresets: (brandId, nicheId, presets) => {
+        set((s) => ({
+          brands: s.brands.map((b) =>
+            b.id !== brandId
+              ? b
+              : {
+                  ...b,
+                  niches: b.niches.map((n) =>
+                    n.id === nicheId ? { ...n, presets } : n
                   ),
                 }
           ),

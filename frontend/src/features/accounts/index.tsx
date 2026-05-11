@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react'
 import {
   Users, CheckCircle2, Flame, Snowflake, ShieldOff, Ghost,
   ChevronLeft, ChevronRight, ShieldAlert, ShieldCheck, UserCheck,
-  ImageOff, AlertTriangle, Plus,
+  ImageOff, AlertTriangle, Plus, Trash2, Globe, Search,
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -48,9 +49,10 @@ interface AccountStats {
   active: number
   warmup: number
   cooldown: number
-  retired: number
+  retired: number      // retired + suspended 합산 (정지/영구정지)
   ghost: number
   identity_challenge: number
+  registered: number   // registered + profile_set
 }
 
 const warmupGroupDays: Record<string, number> = { A: 2, B: 3, C: 7, D: 14, E: 21 }
@@ -148,7 +150,10 @@ export default function AccountsPage() {
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState<string | null>(null)
   const [page, setPage] = useState(1)
-  const perPage = 20
+  const [perPage, setPerPage] = useState(20)
+  const [search, setSearch] = useState('')
+  const [bulkSelected, setBulkSelected] = useState<Set<number>>(new Set())
+  const [bulkBusy, setBulkBusy] = useState(false)
 
   // Warmup state
   const [warmupSelected, setWarmupSelected] = useState<number[]>([])
@@ -156,7 +161,7 @@ export default function AccountsPage() {
   const [warmupLoading, setWarmupLoading] = useState(false)
   const [warmupMsg, setWarmupMsg] = useState('')
 
-  const [stats, setStats] = useState<AccountStats>({ total: 0, active: 0, warmup: 0, cooldown: 0, retired: 0, ghost: 0, identity_challenge: 0 })
+  const [stats, setStats] = useState<AccountStats>({ total: 0, active: 0, warmup: 0, cooldown: 0, retired: 0, ghost: 0, identity_challenge: 0, registered: 0 })
 
   const [regOpen, setRegOpen] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
@@ -177,9 +182,10 @@ export default function AccountsPage() {
           active: rawStats['active'] || 0,
           warmup: rawStats['warmup'] || 0,
           cooldown: rawStats['cooldown'] || 0,
-          retired: rawStats['retired'] || 0,
-          ghost: (rawStats['ghost'] || 0) + (rawStats['suspended'] || 0),
+          retired: (rawStats['retired'] || 0) + (rawStats['suspended'] || 0),
+          ghost: rawStats['ghost'] || 0,
           identity_challenge: rawStats['identity_challenge'] || 0,
+          registered: (rawStats['registered'] || 0) + (rawStats['profile_set'] || 0),
         })
         setAccounts(a.items || [])
       } finally {
@@ -202,24 +208,69 @@ export default function AccountsPage() {
     a.status === 'registered' || a.status === 'profile_set' || a.status === 'warmup'
   )
 
-  const filteredAccounts = statusFilter
-    ? accounts.filter(a => a.status === statusFilter)
-    : accounts
+  // 상태 필터: 일부 키는 여러 status 를 묶음
+  const statusGroupMatches: Record<string, (s: string) => boolean> = {
+    retired: s => s === 'retired' || s === 'suspended',
+    registered: s => s === 'registered' || s === 'profile_set',
+  }
+  const filteredAccounts = accounts.filter(a => {
+    const statusMatch = !statusFilter
+      ? true
+      : (statusGroupMatches[statusFilter]?.(a.status) ?? a.status === statusFilter)
+    if (!statusMatch) return false
+    if (search.trim() && !a.gmail.toLowerCase().includes(search.trim().toLowerCase())) return false
+    return true
+  })
 
-  const totalPages = Math.ceil(filteredAccounts.length / perPage)
+  const totalPages = Math.max(1, Math.ceil(filteredAccounts.length / perPage))
   const pagedAccounts = filteredAccounts.slice((page - 1) * perPage, page * perPage)
+  // 필터 변경 시 페이지 리셋
+  useEffect(() => { setPage(1) }, [statusFilter, search, perPage])
 
   const problemAccounts = accounts.filter(a => a.status === 'retired' || a.status === 'ghost')
 
   const statCards = [
     { label: '전체', value: stats.total, icon: Users, color: 'text-muted-foreground', key: null as string | null },
+    { label: '등록됨', value: stats.registered, icon: UserCheck, color: 'text-slate-400', key: 'registered' },
     { label: '활성', value: stats.active, icon: CheckCircle2, color: 'text-green-500', key: 'active' },
     { label: '워밍업', value: stats.warmup, icon: Flame, color: 'text-yellow-500', key: 'warmup' },
     { label: '본인 인증', value: stats.identity_challenge, icon: ShieldAlert, color: 'text-rose-500', key: 'identity_challenge' },
     { label: '쿨다운', value: stats.cooldown, icon: Snowflake, color: 'text-blue-500', key: 'cooldown' },
-    { label: '정지', value: stats.retired, icon: ShieldOff, color: 'text-red-500', key: 'retired' },
+    { label: '정지/영구정지', value: stats.retired, icon: ShieldOff, color: 'text-red-500', key: 'retired' },
     { label: '고스트', value: stats.ghost, icon: Ghost, color: 'text-orange-500', key: 'ghost' },
   ]
+
+  const visibleIds = pagedAccounts.map(a => a.id)
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => bulkSelected.has(id))
+  const toggleAllVisible = () => {
+    const next = new Set(bulkSelected)
+    if (allVisibleSelected) visibleIds.forEach(id => next.delete(id))
+    else visibleIds.forEach(id => next.add(id))
+    setBulkSelected(next)
+  }
+  const toggleOne = (id: number) => {
+    const next = new Set(bulkSelected)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    setBulkSelected(next)
+  }
+  const bulkDelete = async () => {
+    const ids = Array.from(bulkSelected)
+    if (!ids.length) return
+    if (!confirm(`선택한 ${ids.length}개 계정을 삭제할까요?\n관련 작업/로그도 함께 정리됩니다. 되돌릴 수 없습니다.`)) return
+    setBulkBusy(true)
+    let ok = 0, fail = 0
+    for (const id of ids) {
+      try {
+        await fetchApi(`/accounts/api/${id}`, { method: 'DELETE' })
+        ok++
+      } catch { fail++ }
+    }
+    setBulkSelected(new Set())
+    setBulkBusy(false)
+    setReloadKey(k => k + 1)
+    if (fail === 0) toast.success(`${ok}개 계정 삭제됨`)
+    else toast.warning(`${ok}개 성공 / ${fail}개 실패`)
+  }
 
   const renderTable = (items: Account[]) => (
     <div className='bg-card border border-border rounded-xl overflow-hidden'>
@@ -227,20 +278,29 @@ export default function AccountsPage() {
         <table className='w-full text-sm'>
           <thead>
             <tr className='border-b border-border bg-muted/30'>
+              <th className='w-10 p-3'>
+                <Checkbox
+                  checked={allVisibleSelected}
+                  onCheckedChange={toggleAllVisible}
+                  aria-label='페이지 내 전체 선택'
+                />
+              </th>
               <th className='p-3 text-left font-medium text-[12px] text-muted-foreground'>계정명</th>
               <th className='p-3 text-left font-medium text-[12px] text-muted-foreground'>페르소나</th>
+              <th className='p-3 text-center font-medium text-[12px] text-muted-foreground'>AdsPower</th>
               <th className='p-3 text-center font-medium text-[12px] text-muted-foreground'>상태</th>
               <th className='p-3 text-center font-medium text-[12px] text-muted-foreground'>워밍업</th>
               <th className='p-3 text-center font-medium text-[12px] text-muted-foreground'>온보딩</th>
               <th className='p-3 text-center font-medium text-[12px] text-muted-foreground'>2FA</th>
               <th className='p-3 text-center font-medium text-[12px] text-muted-foreground'>성공률</th>
               <th className='p-3 text-right font-medium text-[12px] text-muted-foreground'>마지막 활동</th>
+              <th className='p-3 text-right font-medium text-[12px] text-muted-foreground'>작업</th>
             </tr>
           </thead>
           <tbody>
             {items.length === 0 ? (
               <tr>
-                <td colSpan={8} className='py-12 text-center text-muted-foreground text-[13px]'>
+                <td colSpan={11} className='py-12 text-center text-muted-foreground text-[13px]'>
                   해당하는 계정이 없어요
                 </td>
               </tr>
@@ -253,6 +313,13 @@ export default function AccountsPage() {
                   className='border-b border-border/30 cursor-pointer hydra-row-hover'
                   onClick={() => { setSelectedAccountId(acc.id); setSheetOpen(true) }}
                 >
+                  <td className='p-3' onClick={e => e.stopPropagation()}>
+                    <Checkbox
+                      checked={bulkSelected.has(acc.id)}
+                      onCheckedChange={() => toggleOne(acc.id)}
+                      aria-label={`${acc.gmail} 선택`}
+                    />
+                  </td>
                   <td className='p-3'>
                     <div className='flex items-center gap-2'>
                       <span className={`inline-block h-2 w-2 rounded-full ${statusDot[acc.status] || 'bg-gray-500'}`} />
@@ -260,6 +327,19 @@ export default function AccountsPage() {
                     </div>
                   </td>
                   <td className='p-3 text-muted-foreground text-[13px]'>{acc.persona_name || '-'}</td>
+                  <td className='p-3 text-center'>
+                    {acc.adspower_profile_id ? (
+                      <span
+                        className='inline-flex items-center gap-1 px-2 py-0.5 rounded font-mono text-[11px] bg-blue-500/10 text-blue-500 border border-blue-500/20'
+                        title={`AdsPower 프로필: ${acc.adspower_profile_id}`}
+                      >
+                        <Globe className='h-3 w-3' />
+                        {acc.adspower_profile_id}
+                      </span>
+                    ) : (
+                      <span className='text-muted-foreground text-[12px]'>미연결</span>
+                    )}
+                  </td>
                   <td className='p-3 text-center'>
                     <span className={`hydra-tag ${statusTagClass[acc.status] || 'hydra-tag-muted'}`}>
                       {statusLabels[acc.status] || acc.status}
@@ -284,6 +364,28 @@ export default function AccountsPage() {
                   <td className='p-3 text-center text-[13px]'>{acc.success_rate}%</td>
                   <td className='p-3 text-right text-muted-foreground text-[12px]'>
                     {acc.last_active_at ? new Date(acc.last_active_at).toLocaleString('ko') : '-'}
+                  </td>
+                  <td className='p-3 text-right' onClick={e => e.stopPropagation()}>
+                    <Button
+                      variant='ghost'
+                      size='icon'
+                      className='h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive'
+                      title={`${acc.gmail} 삭제`}
+                      onClick={async () => {
+                        if (!confirm(`${acc.gmail} 계정을 삭제할까요?\n\n관련된 작업 큐, 액션 로그, IP 로그도 함께 정리됩니다. 되돌릴 수 없습니다.`)) return
+                        try {
+                          await fetchApi(`/accounts/api/${acc.id}`, { method: 'DELETE' })
+                          toast.success('계정 삭제됨', { description: acc.gmail })
+                          setReloadKey(k => k + 1)
+                        } catch (err) {
+                          toast.error('삭제 실패', {
+                            description: err instanceof Error ? err.message : String(err),
+                          })
+                        }
+                      }}
+                    >
+                      <Trash2 className='h-4 w-4' />
+                    </Button>
                   </td>
                 </tr>
               )
@@ -318,11 +420,11 @@ export default function AccountsPage() {
 
           {/* Stat cards */}
           {loading ? (
-            <div className='grid gap-3 grid-cols-3 lg:grid-cols-7 mb-5'>
-              {[1, 2, 3, 4, 5, 6, 7].map(i => <Skeleton key={i} className='h-20 rounded-xl' />)}
+            <div className='grid gap-3 grid-cols-3 lg:grid-cols-8 mb-5'>
+              {[1, 2, 3, 4, 5, 6, 7, 8].map(i => <Skeleton key={i} className='h-20 rounded-xl' />)}
             </div>
           ) : (
-            <div className='grid gap-3 grid-cols-3 lg:grid-cols-7 mb-5'>
+            <div className='grid gap-3 grid-cols-3 lg:grid-cols-8 mb-5'>
               {statCards.map(card => (
                 <StatCardClickable
                   key={card.label}
@@ -357,6 +459,57 @@ export default function AccountsPage() {
                 <Skeleton className='h-64 rounded-xl' />
               ) : (
                 <>
+                  {/* Toolbar: search + bulk actions + page size */}
+                  <div className='flex flex-wrap items-center gap-3 mb-3'>
+                    <div className='relative flex-1 min-w-[220px] max-w-md'>
+                      <Search className='absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none' />
+                      <input
+                        type='text'
+                        value={search}
+                        onChange={e => setSearch(e.target.value)}
+                        placeholder='gmail 검색…'
+                        className='h-9 w-full pl-9 pr-3 rounded-lg bg-background border border-border text-[13px] outline-none focus:border-primary'
+                      />
+                    </div>
+                    {bulkSelected.size > 0 && (
+                      <div className='flex items-center gap-2 px-3 h-9 rounded-lg bg-primary/10 border border-primary/30'>
+                        <span className='text-[13px] text-primary font-medium'>{bulkSelected.size}개 선택됨</span>
+                        <Button
+                          size='sm'
+                          variant='destructive'
+                          className='h-7 px-3'
+                          disabled={bulkBusy}
+                          onClick={bulkDelete}
+                        >
+                          <Trash2 className='h-3.5 w-3.5 mr-1' />
+                          {bulkBusy ? '삭제 중…' : '일괄 삭제'}
+                        </Button>
+                        <Button
+                          size='sm'
+                          variant='ghost'
+                          className='h-7 px-2 text-[12px]'
+                          onClick={() => setBulkSelected(new Set())}
+                        >
+                          선택 해제
+                        </Button>
+                      </div>
+                    )}
+                    <div className='ml-auto flex items-center gap-2 text-[12px] text-muted-foreground'>
+                      <span>페이지당</span>
+                      <Select value={String(perPage)} onValueChange={v => setPerPage(Number(v))}>
+                        <SelectTrigger className='w-20 h-9'>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value='20'>20</SelectItem>
+                          <SelectItem value='50'>50</SelectItem>
+                          <SelectItem value='100'>100</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <span>· 총 {filteredAccounts.length}개</span>
+                    </div>
+                  </div>
+
                   {renderTable(pagedAccounts)}
                   {totalPages > 1 && (
                     <div className='flex items-center justify-center gap-2 mt-4'>

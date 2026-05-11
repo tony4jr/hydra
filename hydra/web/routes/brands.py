@@ -405,3 +405,121 @@ def preview_comments(
         return out
     finally:
         db.close()
+
+
+@router.get("/api/niches/{niche_id}/presets")
+def get_niche_presets(niche_id: int, db: Session = Depends(get_db)):
+    """니치에 할당된 프리셋 + 추가 가능한 글로벌 프리셋 목록."""
+    from hydra.db.models import Niche, CommentPreset, NichePresetSelection
+
+    niche = db.get(Niche, niche_id)
+    if niche is None:
+        return {"error": "niche not found"}
+
+    selections = (
+        db.query(NichePresetSelection)
+        .filter(NichePresetSelection.niche_id == niche_id)
+        .all()
+    )
+    selected_ids = {s.preset_id for s in selections if s.enabled}
+    enabled_by_pid = {s.preset_id: s.enabled for s in selections}
+
+    all_presets = (
+        db.query(CommentPreset)
+        .filter(CommentPreset.is_global.is_(True))
+        .order_by(CommentPreset.id)
+        .all()
+    )
+    return {
+        "niche_id": niche_id,
+        "niche_name": niche.name,
+        "selected": [
+            {
+                "preset_id": p.id,
+                "name": p.name,
+                "description": p.description,
+                "enabled": enabled_by_pid.get(p.id, False),
+            }
+            for p in all_presets
+            if p.id in {s.preset_id for s in selections}
+        ],
+        "available": [
+            {
+                "preset_id": p.id,
+                "name": p.name,
+                "description": p.description,
+                "selected": p.id in selected_ids,
+            }
+            for p in all_presets
+        ],
+    }
+
+
+class NichePresetUpdateInput(BaseModel):
+    preset_ids: list[int]  # 새로 enabled 로 둘 preset id 목록
+
+
+@router.post("/api/niches/{niche_id}/presets")
+def set_niche_presets(
+    niche_id: int,
+    data: NichePresetUpdateInput,
+    db: Session = Depends(get_db),
+):
+    """니치 프리셋 선택 일괄 교체. preset_ids 안에 있는 것만 enabled, 나머지는 disabled.
+    weight 는 default 10 으로 신규 생성 시 자동.
+    """
+    from hydra.db.models import Niche, NichePresetSelection
+
+    niche = db.get(Niche, niche_id)
+    if niche is None:
+        return {"error": "niche not found"}
+
+    target = set(data.preset_ids)
+    existing = {
+        s.preset_id: s
+        for s in db.query(NichePresetSelection)
+        .filter(NichePresetSelection.niche_id == niche_id)
+        .all()
+    }
+
+    # 새로 추가
+    for pid in target - set(existing.keys()):
+        db.add(NichePresetSelection(niche_id=niche_id, preset_id=pid, weight=10, enabled=True))
+
+    # 기존: enabled 상태 갱신
+    for pid, sel in existing.items():
+        sel.enabled = pid in target
+
+    db.commit()
+
+    return {
+        "ok": True,
+        "niche_id": niche_id,
+        "enabled_count": len(target),
+    }
+
+
+@router.delete("/api/{brand_id}")
+def delete_brand(brand_id: int, db: Session = Depends(get_db)):
+    """브랜드 삭제. niches 는 CASCADE, 하위 videos/campaigns 의 brand_id 는
+    FK 정책대로 NULL/CASCADE 처리됨. 신중한 destructive op."""
+    b = db.get(Brand, brand_id)
+    if b is None:
+        return {"error": "not found"}
+    name = b.name
+    db.delete(b)
+    db.commit()
+    return {"ok": True, "deleted": {"id": brand_id, "name": name}}
+
+
+@router.delete("/api/niches/{niche_id}")
+def delete_niche(niche_id: int, db: Session = Depends(get_db)):
+    """니치 삭제. niche_preset_selections 는 CASCADE, videos/campaigns 의
+    niche_id 는 SET NULL 로 빠짐."""
+    n = db.get(Niche, niche_id)
+    if n is None:
+        return {"error": "not found"}
+    name = n.name
+    db.delete(n)
+    db.commit()
+    return {"ok": True, "deleted": {"id": niche_id, "name": name}}
