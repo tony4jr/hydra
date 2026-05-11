@@ -398,6 +398,16 @@ export function BrandsCommex() {
                       useCommexStore.getState().updateNichePromotedKeywords(brand.id, n.id, kws)
                     }
                     onToggleAuto={(jobId) => toggleAutoJob(jobId)}
+                    onCreateAutoJob={() => {
+                      useCommexStore.getState().setNewAutoJobIntent({
+                        brandName: brand.name,
+                        nicheName: n.name,
+                      })
+                      navigate({ to: '/campaigns' })
+                      toast.success(`${n.name} 자동 작업 만들기`, {
+                        description: `${brand.name} · ${n.name} 미리 입력됨`,
+                      })
+                    }}
                     onDelete={() => {
                       deleteNiche(brand.id, n.id)
                       toast.success(`${n.name} 니치 삭제됨`)
@@ -802,6 +812,7 @@ function NicheCard({
   onUpdateKeywords,
   onUpdatePromotedKeywords,
   onToggleAuto,
+  onCreateAutoJob,
   onAction,
   onDelete,
 }: {
@@ -815,6 +826,7 @@ function NicheCard({
   onUpdateKeywords: (keywords: string[]) => void
   onUpdatePromotedKeywords: (keywords: string[]) => void
   onToggleAuto: (jobId: string) => void
+  onCreateAutoJob: () => void
   onAction: (action: 'videos' | 'quick' | 'auto' | 'preset') => void
   onDelete: () => void
 }) {
@@ -977,15 +989,26 @@ function NicheCard({
                     color: 'var(--cx-sub)',
                     marginTop: 1,
                   }}
+                  title='시간대(예: 평일 10:00~18:00) 안에서 하루 한도(예: 12건)만큼 분산 발행. 14:00은 다음 1건 발행 예정 시각이며 한 번에 다 처리하는 게 아님.'
                 >
-                  다음 실행 · {autoJob.nextRun}
+                  다음 실행 · {autoJob.nextRun} <span style={{ opacity: 0.6 }}>ⓘ</span>
                 </div>
               </div>
             </>
           ) : (
-            <span style={{ fontSize: 12, color: 'var(--cx-sub)' }}>
-              자동 작업 미설정
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 12, color: 'var(--cx-sub)' }}>
+                자동 작업 미설정
+              </span>
+              <button
+                onClick={onCreateAutoJob}
+                className='cx-btn-mini'
+                style={{ height: 24, fontSize: 11, padding: '0 8px' }}
+                title='이 니치로 새 자동 작업 만들기'
+              >
+                + 만들기
+              </button>
+            </div>
           )}
         </div>
         <div style={{ display: 'flex', gap: 12, fontSize: 11, fontWeight: 700 }}>

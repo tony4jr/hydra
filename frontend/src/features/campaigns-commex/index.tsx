@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Plus, Edit3, Copy } from 'lucide-react'
 import { toast } from 'sonner'
 import { Header } from '@/components/layout/header'
@@ -30,6 +30,17 @@ export function CampaignsCommex() {
   const deleteAutoJobStore = useCommexStore((s) => s.deleteAutoJob)
   const [formOpen, setFormOpen] = useState(false)
   const [form, setForm] = useState<JobForm>(() => emptyForm())
+  const newAutoJobIntent = useCommexStore((s) => s.newAutoJobIntent)
+  const setNewAutoJobIntent = useCommexStore((s) => s.setNewAutoJobIntent)
+
+  // 브랜드/니치 페이지에서 '+ 자동 작업 만들기' 진입 시 폼 자동 오픈 + 미리 입력
+  useEffect(() => {
+    if (!newAutoJobIntent) return
+    setForm(emptyForm(newAutoJobIntent.brandName, newAutoJobIntent.nicheName))
+    setFormOpen(true)
+    setNewAutoJobIntent(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const active = jobs.filter((j) => j.active).length
   const todayDrafts = queue.filter((q) => q.status === 'draft').length
@@ -130,6 +141,9 @@ export function CampaignsCommex() {
             <MiniStat label='오늘 생성 초안' value={todayDrafts} />
             <MiniStat label='다음 예약 실행' value={nextRun} />
           </div>
+
+          {/* Workload distribution dashboard */}
+          <WorkloadDashboard jobs={jobs} />
 
           {/* Auto job list */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -346,6 +360,189 @@ function Field({
       </span>
       {children}
     </label>
+  )
+}
+
+// =================================================================
+// 통합 작업량 대시보드 — 시간대별 task 발행 분포 + 브랜드별 + 워커
+// =================================================================
+
+function WorkloadDashboard({ jobs }: { jobs: AutoJob[] }) {
+  // 시간대 문자열에서 시작·끝 시간 파싱 (예: "평일 10:00 ~ 18:00" → [10, 18])
+  const parseRange = (s: string): [number, number] | null => {
+    const m = s.match(/(\d{1,2}):\d{2}\s*~\s*(\d{1,2}):\d{2}/)
+    if (!m) return null
+    return [Number(m[1]), Number(m[2])]
+  }
+  // 하루 한도에서 숫자만
+  const parseLimit = (s: string): number => {
+    const m = s.match(/(\d+)/)
+    return m ? Number(m[1]) : 0
+  }
+  // 0~23 시간대별 발행 예정 task 누적
+  const hourly = Array(24).fill(0)
+  let todayTotalPredicted = 0
+  const brandTotals: Record<string, number> = {}
+  for (const j of jobs) {
+    if (!j.active) continue
+    const lim = parseLimit(j.limit)
+    todayTotalPredicted += lim
+    brandTotals[j.brand] = (brandTotals[j.brand] ?? 0) + lim
+    const range = parseRange(j.time)
+    if (!range) continue
+    const [start, end] = range
+    const hours = Math.max(1, end - start)
+    const perHour = lim / hours
+    for (let h = start; h < end; h++) hourly[h] += perHour
+  }
+  const maxHour = Math.max(...hourly, 1)
+  const workersOnline = 6 // mock — 실제론 store.workers
+
+  return (
+    <div className='cx-card cx-card-pad' style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          flexWrap: 'wrap',
+          gap: 12,
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--cx-text)' }}>
+            오늘 발행 예정 작업량
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--cx-sub)', marginTop: 2 }}>
+            활성 자동 작업의 시간대·한도 기준 예측 분포. 워커가 시간대 안에서 분산 처리.
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 11, color: 'var(--cx-sub)', fontWeight: 700 }}>
+              오늘 총
+            </div>
+            <div
+              style={{
+                fontSize: 22,
+                fontWeight: 900,
+                color: 'var(--cx-primary)',
+                letterSpacing: '-0.02em',
+              }}
+            >
+              {todayTotalPredicted}
+              <span style={{ fontSize: 12, color: 'var(--cx-sub)', fontWeight: 700, marginLeft: 4 }}>
+                건
+              </span>
+            </div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 11, color: 'var(--cx-sub)', fontWeight: 700 }}>
+              워커 온라인
+            </div>
+            <div
+              style={{
+                fontSize: 22,
+                fontWeight: 900,
+                color: 'var(--cx-green)',
+                letterSpacing: '-0.02em',
+              }}
+            >
+              {workersOnline}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 시간대 분포 막대 */}
+      <div>
+        <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--cx-sub)', marginBottom: 6 }}>
+          시간대별 발행 예측 (0~24시)
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'flex-end',
+            gap: 2,
+            height: 64,
+            padding: 4,
+            borderRadius: 10,
+            background: '#fbfcff',
+            border: '1px solid var(--cx-line-2)',
+          }}
+        >
+          {hourly.map((v, h) => {
+            const heightPct = (v / maxHour) * 100
+            const business = h >= 9 && h <= 18
+            return (
+              <div
+                key={h}
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  height: '100%',
+                  justifyContent: 'flex-end',
+                  gap: 2,
+                }}
+                title={`${h}:00 ~ ${h + 1}:00 · 예측 ${v.toFixed(1)}건`}
+              >
+                <div
+                  style={{
+                    width: '100%',
+                    height: `${Math.max(2, heightPct)}%`,
+                    background: business
+                      ? 'linear-gradient(180deg,#7d8aff,#4b63ff)'
+                      : 'linear-gradient(180deg,#d3dcfb,#a3b1ff)',
+                    borderRadius: 2,
+                    transition: 'height 0.3s ease',
+                  }}
+                />
+                {h % 3 === 0 && (
+                  <div style={{ fontSize: 9, color: 'var(--cx-sub)', fontWeight: 700 }}>
+                    {h}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* 브랜드별 분포 */}
+      {Object.keys(brandTotals).length > 0 && (
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--cx-sub)', marginBottom: 6 }}>
+            브랜드별 분포
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {Object.entries(brandTotals)
+              .sort(([, a], [, b]) => b - a)
+              .map(([brand, count]) => (
+                <span
+                  key={brand}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '6px 12px',
+                    borderRadius: 999,
+                    background: '#f6f8ff',
+                    border: '1px solid #d9dffd',
+                    fontSize: 12,
+                    fontWeight: 800,
+                    color: 'var(--cx-primary)',
+                  }}
+                >
+                  {brand}
+                  <span style={{ color: 'var(--cx-text)' }}>{count}건</span>
+                </span>
+              ))}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
