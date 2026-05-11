@@ -141,8 +141,24 @@ def reset_worker_failure_counter(worker_id: int, session: Session) -> None:
         session.flush()
 
 
+def _suspend_account(account: Account, session: Session) -> None:
+    """계정 정지 + PR-Kill suspend_guard 가 정확히 카운트 하도록 last_active_at 갱신.
+
+    last_active_at 갱신은 'suspended 진입 시각'을 근사하는 marker — audit 테이블 신설 비용 회피.
+    suspend_guard.collect_signals 가 status='suspended' AND last_active_at >= window 으로 신규 진입
+    카운트한다.
+    """
+    account.status = "suspended"
+    account.last_active_at = datetime.now(UTC).replace(tzinfo=None)
+    session.flush()
+
+
 def on_task_fail(task_id: int, session: Session) -> None:
-    """task가 failed 로 커밋되기 직전 호출. 같은 세션 공유."""
+    """task가 failed 로 커밋되기 직전 호출. 같은 세션 공유.
+
+    PR-Kill v2: 모든 early return 경로에서 마지막에 suspend_guard.evaluate() 호출되도록
+    try/finally 패턴. 어떤 종료 경로든 kill switch 평가 누락 안 함.
+    """
     task = session.get(Task, task_id)
     if task is None or task.account_id is None:
         return
@@ -155,56 +171,63 @@ def on_task_fail(task_id: int, session: Session) -> None:
     if account is None:
         return
 
-    if account.status in ("suspended", "banned", "retired"):
-        return  # terminal — 더 이상 전이 없음
+    try:
+        if account.status in ("suspended", "banned", "retired"):
+            return  # terminal — 더 이상 전이 없음
 
-    # 워커/인프라 귀속 에러 → 계정 무책임. retry_count 증가 없이 같은 priority/type 으로 재큐.
-    # circuit-breaker는 이미 위에서 워커 카운트 잡았으므로 워커 격리는 별도로 동작.
-    if _is_worker_environment_error(task.error_message):
+        # 워커/인프라 귀속 에러 → 계정 무책임. retry_count 증가 없이 같은 priority/type 으로 재큐.
+        # circuit-breaker는 이미 위에서 워커 카운트 잡았으므로 워커 격리는 별도로 동작.
+        if _is_worker_environment_error(task.error_message):
+            session.add(Task(
+                account_id=account.id,
+                task_type=task.task_type,
+                status="pending",
+                priority=task.priority,
+                retry_count=task.retry_count,  # 증가 안 함
+                max_retries=task.max_retries,
+                campaign_id=task.campaign_id,
+                slot_id=task.slot_id,
+                slot_label=task.slot_label,
+                parent_task_id=task.parent_task_id,
+                payload=task.payload,
+                scheduled_at=task.scheduled_at,
+            ))
+            session.flush()
+            return
+
+        # T10: 영구 에러 → 재시도 없이 즉시 격리
+        if _is_permanent_error(task.error_message):
+            _suspend_account(account, session)
+            return
+
+        # T10: task_type 별 max_retries 차등.
+        # 정책은 상한, task.max_retries 는 추가 하한 — min() 으로 결합.
+        policy_max = _max_retries_for(task.task_type)
+        explicit = task.max_retries if task.max_retries is not None else policy_max
+        max_retries = min(explicit, policy_max)
+        if task.retry_count >= max_retries:
+            _suspend_account(account, session)
+            return
+
+        # 재시도: 같은 task_type 으로 새 태스크 (retry_count + 1)
         session.add(Task(
             account_id=account.id,
             task_type=task.task_type,
             status="pending",
             priority=task.priority,
-            retry_count=task.retry_count,  # 증가 안 함
-            max_retries=task.max_retries,
-            campaign_id=task.campaign_id,
-            slot_id=task.slot_id,
-            slot_label=task.slot_label,
-            parent_task_id=task.parent_task_id,
-            payload=task.payload,
-            scheduled_at=task.scheduled_at,
+            retry_count=task.retry_count + 1,
+            max_retries=max_retries,
         ))
         session.flush()
-        return
-
-    # T10: 영구 에러 → 재시도 없이 즉시 격리
-    if _is_permanent_error(task.error_message):
-        account.status = "suspended"
-        session.flush()
-        return
-
-    # T10: task_type 별 max_retries 차등.
-    # 정책은 상한, task.max_retries 는 추가 하한 — min() 으로 결합.
-    # 안티디텍션 위해 정책보다 더 retry 못 하게 하되, 명시적으로 더 적게 설정한 건 존중.
-    policy_max = _max_retries_for(task.task_type)
-    explicit = task.max_retries if task.max_retries is not None else policy_max
-    max_retries = min(explicit, policy_max)
-    if task.retry_count >= max_retries:
-        account.status = "suspended"
-        session.flush()
-        return
-
-    # 재시도: 같은 task_type 으로 새 태스크 (retry_count + 1)
-    session.add(Task(
-        account_id=account.id,
-        task_type=task.task_type,
-        status="pending",
-        priority=task.priority,
-        retry_count=task.retry_count + 1,
-        max_retries=max_retries,
-    ))
-    session.flush()
+    finally:
+        # PR-Kill: 어떤 종료 경로든 kill switch 평가. 이미 paused 이면 evaluate no-op.
+        # evaluate 실패가 on_task_fail 전체 흐름을 막지 않도록 except 로 차단.
+        try:
+            from hydra.core import suspend_guard
+            suspend_guard.evaluate(session=session)
+        except Exception as e:
+            from hydra.core.logger import get_logger
+            get_logger("orchestrator").warning(f"suspend_guard.evaluate failed: {e}")
 
 
 _ACTIVE_STATUSES = ("registered", "warmup")

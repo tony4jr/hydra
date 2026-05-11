@@ -71,6 +71,47 @@ def system_status(db: Session = Depends(get_db)):
     }
 
 
+# --- PR-Kill: suspend guard endpoints ---
+
+@router.get("/api/kill-switch")
+def get_kill_switch(db: Session = Depends(get_db)):
+    """현재 kill switch 상태 + 최근 시그널."""
+    from hydra.core import server_config as scfg
+    from hydra.core import suspend_guard
+    signal = suspend_guard.collect_signals(db)
+    return {
+        "paused": scfg.is_paused(session=db),
+        "reason": suspend_guard.get_kill_reason(session=db),
+        "thresholds": suspend_guard._load_thresholds(),
+        "window_minutes": suspend_guard.DEFAULT_WINDOW_MINUTES,
+        "current_signals": {
+            "account_suspended": signal.account_suspended,
+            "phase_timeout": signal.phase_timeout,
+            "task_failed": signal.task_failed,
+            "task_attempts": signal.task_attempts,
+            "fail_rate_pct": signal.fail_rate_pct,
+        },
+    }
+
+
+@router.delete("/api/kill-switch")
+def reset_kill_switch(db: Session = Depends(get_db)):
+    """수동 reset — paused=False + reason 클리어. 운영자 결정 후 호출."""
+    from hydra.core import suspend_guard
+    suspend_guard.reset(session=db)
+    db.commit()
+    return {"ok": True, "message": "kill switch reset, paused=False"}
+
+
+@router.post("/api/kill-switch/trigger")
+def trigger_kill_switch_check(db: Session = Depends(get_db)):
+    """현재 시그널 기준 즉시 evaluate (관리자 수동 트리거 — 테스트/운영용)."""
+    from hydra.core import suspend_guard
+    reason = suspend_guard.evaluate(session=db, notify=False)
+    db.commit()
+    return {"ok": True, "tripped": reason is not None, "reason": reason}
+
+
 # --- #18: Data Cleanup ---
 
 class CleanupInput(BaseModel):
