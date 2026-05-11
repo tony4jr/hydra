@@ -958,9 +958,10 @@ def account_ip_log(account_id: int, limit: int = 30, db: Session = Depends(get_d
 
 @router.delete("/api/{account_id}")
 def delete_account(account_id: int, db: Session = Depends(get_db)):
-    """계정 삭제. FK 종속 행(tasks/action_log/execution_logs/comment_*/etc) 도 같이 정리."""
+    """계정 삭제. FK 종속 행 모두 정리. 외부 AdsPower 프로필도 best-effort 삭제."""
     from hydra.db.models import (
         AccountProfileHistory, ChannelProfileHistory, IpLog,
+        WeeklyGoal, RecoveryEmail, PersonaSlot, ProfileLock,
     )
     try:
         from hydra.db.models import CommentExecution, CommentSnapshot
@@ -976,13 +977,24 @@ def delete_account(account_id: int, db: Session = Depends(get_db)):
     if acc is None:
         return {"error": "not found"}
 
-    # FK 종속 행들 정리. 일부 모델은 없을 수도 있어 안전하게.
+    # FK 종속 행 정리. 누락된 모델은 없을 수도 있어 안전하게.
     db.query(Task).filter(Task.account_id == account_id).delete(synchronize_session=False)
     db.query(ActionLog).filter(ActionLog.account_id == account_id).delete(synchronize_session=False)
     db.query(CampaignStep).filter(CampaignStep.account_id == account_id).delete(synchronize_session=False)
     db.query(AccountProfileHistory).filter(AccountProfileHistory.account_id == account_id).delete(synchronize_session=False)
     db.query(ChannelProfileHistory).filter(ChannelProfileHistory.account_id == account_id).delete(synchronize_session=False)
     db.query(IpLog).filter(IpLog.account_id == account_id).delete(synchronize_session=False)
+    db.query(WeeklyGoal).filter(WeeklyGoal.account_id == account_id).delete(synchronize_session=False)
+    db.query(ProfileLock).filter(ProfileLock.account_id == account_id).delete(synchronize_session=False)
+    # nullable FK: NULL 로 풀어두기 (이력 보존)
+    db.query(RecoveryEmail).filter(RecoveryEmail.used_by_account_id == account_id).update(
+        {RecoveryEmail.used_by_account_id: None, RecoveryEmail.used_at: None},
+        synchronize_session=False,
+    )
+    db.query(PersonaSlot).filter(PersonaSlot.assigned_account_id == account_id).update(
+        {PersonaSlot.assigned_account_id: None, PersonaSlot.used_at: None, PersonaSlot.used: False},
+        synchronize_session=False,
+    )
     if ExecutionLog is not None:
         db.query(ExecutionLog).filter(ExecutionLog.account_id == account_id).delete(synchronize_session=False)
     if CommentExecution is not None:

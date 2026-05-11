@@ -52,6 +52,12 @@ class FakePage:
     def locator(self, selector):
         loc = MagicMock()
         loc.wait_for = AsyncMock()
+        # 일부 호출은 `.first` 체인 후 evaluate/wait_for 를 await — 둘 다 AsyncMock 으로
+        first = MagicMock()
+        first.wait_for = AsyncMock()
+        first.evaluate = AsyncMock(return_value='lang-search-input')
+        loc.first = first
+        loc.evaluate = AsyncMock(return_value='lang-search-input')
         return loc
 
 
