@@ -37,3 +37,9 @@ PR-J canary + PR-K mock YouTube + PR-M 백업 + PR-Kill suspend guard, 그 후 2
 - phase reporter + worker_sessions + worker_progress + COALESCE zombie
 - 단위 8 + 통합 2 = 10 통과. v2 수정: NULL worker_id 차단, auth.worker_id 만 사용, 복합 인덱스
 - alembic upgrade x5y6workersess 적용, 신규 2 테이블 + tasks 컬럼 + 인덱스 생성
+
+### 2026-05-12 01:05:37 — ✅ PR-E deploy (Codex OK v2)
+- phase별 wait_for + PhaseTimeout + retry policy
+- executor.execute() 도 compose phase 로 timeout 래핑 (task 본문 hang 방지)
+- start 실패 경로 _close_session_failed (worker_sessions active 잔류 방지)
+- phase_timeout/envelope_missing 을 worker-env 분류 → 계정 보호

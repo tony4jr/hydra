@@ -17,6 +17,7 @@ from hydra.browser.actions import (
 from hydra.infra.ip import ensure_safe_ip_from_snapshot
 from hydra.infra.ip_errors import IPRotationFailed
 from hydra.protocol import AccountSnapshot, WorkerConfig
+from hydra.protocol.phase_config import PhaseTimeout, get_phase_spec
 from worker.youtube_habits import maybe_check_notifications, maybe_visit_own_channel
 
 
@@ -73,6 +74,26 @@ class WorkerSession:
         except Exception:
             pass
 
+    async def run_phase(self, phase: str, coro):
+        """PR-E: phase 별 wait_for timeout + phase-tagged 에러.
+
+        - emit phase 진입
+        - asyncio.wait_for(coro, timeout=phase_spec.timeout_sec)
+        - timeout 시 PhaseTimeout(phase, elapsed, threshold, policy) raise
+
+        호출자가 PhaseTimeout 잡아서 정책별 처리 (reschedule/fail/unknown).
+        """
+        spec = get_phase_spec(phase)
+        self._emit_phase(phase)
+        start = datetime.now(UTC)
+        try:
+            return await asyncio.wait_for(coro, timeout=spec.timeout_sec)
+        except asyncio.TimeoutError:
+            elapsed = (datetime.now(UTC) - start).total_seconds()
+            err = PhaseTimeout(phase, elapsed, spec.timeout_sec, spec.policy)
+            self._emit_phase(phase, message=err.to_error_message())
+            raise err
+
     @property
     def account(self):
         """Back-compat: 일부 코드가 session.account.persona 등에 접근. snapshot 으로 노출."""
@@ -82,11 +103,15 @@ class WorkerSession:
         """세션 시작: IP 안전 확인 → 프로필 열기 → YouTube 접속.
 
         PR-C: 각 step 마다 phase 보고.
+        PR-E: 각 step asyncio.wait_for(timeout). PhaseTimeout 발생 시
+              호출자가 정책(reschedule/fail/unknown) 처리.
+
         IPRotationFailed from ensure_safe_ip propagates so the caller can
         reschedule the task.
         """
         self._emit_phase("session_start")
         try:
+            # persona 기반 세팅 — 매우 빠른 동작이라 wait_for 안 씀.
             try:
                 snap = self.account_snapshot
                 if snap is not None and snap.persona:
@@ -104,22 +129,22 @@ class WorkerSession:
                 set_activity_multiplier(1.0)
 
             if db is not None and self.account_snapshot is not None:
-                self._emit_phase("ip_rotate")
-                ip_log = await ensure_safe_ip_from_snapshot(
-                    db,
-                    account_id=self.account_id,
-                    adb_device_id=self.worker_config.adb_device_id or self.device_id,
-                    cooldown_minutes=self.worker_config.ip_cooldown_minutes,
+                ip_log = await self.run_phase(
+                    "ip_rotate",
+                    ensure_safe_ip_from_snapshot(
+                        db,
+                        account_id=self.account_id,
+                        adb_device_id=self.worker_config.adb_device_id or self.device_id,
+                        cooldown_minutes=self.worker_config.ip_cooldown_minutes,
+                    ),
                 )
                 self.ip_log_id = getattr(ip_log, "id", None)
 
-            self._emit_phase("adspower_open")
             self.browser = BrowserSession(self.profile_id)
-            await self.browser.start()
+            await self.run_phase("adspower_open", self.browser.start())
 
             if self.browser.page is not None:
-                self._emit_phase("video_goto", message="https://www.youtube.com")
-                await self.browser.goto("https://www.youtube.com")
+                await self.run_phase("video_goto", self.browser.goto("https://www.youtube.com"))
                 await random_delay(2.0, 4.0)
 
             self.started_at = datetime.now(UTC)
@@ -127,6 +152,10 @@ class WorkerSession:
             return True
         except IPRotationFailed:
             self._emit_phase("ip_rotate", message="failed", is_change=True)
+            raise
+        except PhaseTimeout:
+            # PR-E: timeout 은 호출자가 정책별 처리. 그대로 raise.
+            await self.close()
             raise
         except Exception as e:
             print(f"[Session] Failed to start: {type(e).__name__}")
