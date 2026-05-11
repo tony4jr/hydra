@@ -138,14 +138,20 @@ def _auto_assign_account(db, task: "Task") -> bool:
     return True
 
 
-_FETCH_SQL_PG = text("""
+# PR-A B++:
+# - role pre-filter: 워커 role(allow_preparation/allow_campaign) 과 일치하지 않는
+#   task_type 은 LIMIT 점유 못 하도록 SQL 단계에서 제외. 어제 사고 — pc-01 이
+#   allow_preparation=False 인데 warmup task 가 scheduled_at NULLS FIRST 정렬로
+#   LIMIT 10 을 점유해 campaign task 가 도달하지 못한 회귀 방지.
+# - NULLS LAST: 미정렬 scheduled_at(NULL) 은 뒤로 — explicit 시간 잡힌 task 가 우선.
+_PREPARATION_SQL_TUPLE = "('login', 'channel_setup', 'warmup', 'onboard')"
+_FETCH_SQL_PG = text(f"""
     SELECT t.id
       FROM tasks t
       LEFT JOIN accounts a ON a.id = t.account_id
      WHERE t.status = 'pending'
        AND (t.scheduled_at IS NULL OR t.scheduled_at <= NOW())
        AND (
-         -- already-assigned: account exists and has a profile and isn't locked
          (
            t.account_id IS NOT NULL
            AND a.adspower_profile_id IS NOT NULL
@@ -153,8 +159,12 @@ _FETCH_SQL_PG = text("""
              SELECT account_id FROM profile_locks WHERE released_at IS NULL
            )
          )
-         -- unassigned: scenario/campaign tasks pending account auto-assignment
          OR t.account_id IS NULL
+       )
+       -- role pre-filter — 워커가 처리 못 할 task 는 후보에서 제외.
+       AND (
+         (:allow_prep AND t.task_type IN {_PREPARATION_SQL_TUPLE})
+         OR (:allow_camp AND t.task_type NOT IN {_PREPARATION_SQL_TUPLE})
        )
      ORDER BY
        CASE t.priority
@@ -164,13 +174,13 @@ _FETCH_SQL_PG = text("""
          WHEN 'low' THEN 1
          ELSE 2
        END DESC,
-       t.scheduled_at ASC NULLS FIRST,
+       t.scheduled_at ASC NULLS LAST,
        t.id ASC
      LIMIT 10
      FOR UPDATE OF t SKIP LOCKED
 """)
 
-_FETCH_SQL_SQLITE = text("""
+_FETCH_SQL_SQLITE = text(f"""
     SELECT t.id
       FROM tasks t
       LEFT JOIN accounts a ON a.id = t.account_id
@@ -186,6 +196,10 @@ _FETCH_SQL_SQLITE = text("""
          )
          OR t.account_id IS NULL
        )
+       AND (
+         (:allow_prep AND t.task_type IN {_PREPARATION_SQL_TUPLE})
+         OR (:allow_camp AND t.task_type NOT IN {_PREPARATION_SQL_TUPLE})
+       )
      ORDER BY
        CASE t.priority
          WHEN 'urgent' THEN 4
@@ -194,6 +208,8 @@ _FETCH_SQL_SQLITE = text("""
          WHEN 'low' THEN 1
          ELSE 2
        END DESC,
+       -- SQLite: NULL is "smallest", but we want it last → CASE-coalesce.
+       CASE WHEN t.scheduled_at IS NULL THEN 1 ELSE 0 END ASC,
        t.scheduled_at ASC,
        t.id ASC
      LIMIT 10
@@ -202,11 +218,25 @@ _FETCH_SQL_SQLITE = text("""
 
 @router.post("/fetch")
 def fetch_tasks(worker: Worker = Depends(worker_auth)) -> dict:
+    # PR-A B++: paused worker 가드 (legacy fetch_tasks 패리티 회복).
+    # 어제 사고 — mac-dryrun 이 status=paused 인데 v2/fetch 에 가드가 없어
+    # task 가로채고 실세션 실패 → 계정 mass suspended 트리거.
+    if worker.status == "paused":
+        return {"tasks": []}
+
     db = _db_session.SessionLocal()
     try:
         dialect = db.bind.dialect.name
         q = _FETCH_SQL_PG if dialect == "postgresql" else _FETCH_SQL_SQLITE
-        rows = db.execute(q).fetchall()  # 최대 10개 후보
+        # SQL role pre-filter — 워커 권한 binding
+        params = {
+            "allow_prep": bool(worker.allow_preparation),
+            "allow_camp": bool(worker.allow_campaign),
+        }
+        # 양쪽 다 False 면 후보 0 — 일찍 종료해서 SQL 도 안 때림.
+        if not params["allow_prep"] and not params["allow_camp"]:
+            return {"tasks": []}
+        rows = db.execute(q, params).fetchall()  # 최대 10개 후보
         if not rows:
             return {"tasks": []}
 

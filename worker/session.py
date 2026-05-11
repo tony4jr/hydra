@@ -36,8 +36,11 @@ class WorkerSession:
         self.worker_config = worker_config or WorkerConfig()
         self.browser: BrowserSession | None = None
         self.tasks_completed = 0
-        self.max_tasks_per_session = random.randint(3, self.worker_config.max_tasks_per_session)
-        self.max_session_minutes = random.randint(20, self.worker_config.max_session_minutes)
+        # 가드 — WorkerConfig 가 잘못 설정돼 max < 하한이어도 random.randint 가 ValueError 안 나게.
+        _max_tasks = max(3, self.worker_config.max_tasks_per_session)
+        _max_minutes = max(20, self.worker_config.max_session_minutes)
+        self.max_tasks_per_session = random.randint(3, _max_tasks)
+        self.max_session_minutes = random.randint(20, _max_minutes)
         self.started_at: datetime | None = None
         self.ip_log_id: int | None = None
 

@@ -32,8 +32,14 @@ class AccountSnapshot:
 
         crypto_key 인자는 시그니처 호환용 — 실제 복호화는 hydra.core.crypto 가
         env(HYDRA_ENCRYPTION_KEY) 기반으로 수행.
+
+        PR-A B++: envelope 우선, legacy account_snapshot fallback. 미래에 transitional
+        flat 필드를 폐기해도 onboard executor 가 깨지지 않게.
         """
-        enc = payload.get("account_snapshot") or {}
+        env = payload.get("envelope") or {}
+        enc = env.get("account") if env else None
+        if not enc:
+            enc = payload.get("account_snapshot") or {}
 
         pwd_cipher = enc.get("encrypted_password")
         totp_cipher = enc.get("encrypted_totp_secret")

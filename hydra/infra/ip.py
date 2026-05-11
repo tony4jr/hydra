@@ -185,17 +185,25 @@ async def ensure_safe_ip_from_snapshot(
 
     Preferred entrypoint after PR-A. Workers receive `adb_device_id` from
     `TaskEnvelope.worker_config` and call this directly.
+
+    **Fail-closed**: if no adb_device_id is configured anywhere, raise
+    IPRotationFailed instead of silently using whatever external IP the
+    worker box happens to have. Silent skip violates the 1-account-1-IP
+    anti-detection invariant — a misconfigured worker would happily run
+    multiple accounts behind the same datacenter/VPS IP.
     """
     device_id = adb_device_id or settings.adb_device_id or None
     cooldown = cooldown_minutes or settings.ip_rotation_cooldown_minutes
 
     if not device_id:
-        log.warning(
+        log.error(
             f"ensure_safe_ip: no adb_device_id for account={account_id} "
-            "(envelope.worker_config + settings.adb_device_id both empty) — IP rotation skipped"
+            "(envelope.worker_config + settings.adb_device_id both empty) — "
+            "refusing to proceed (1-account-1-IP invariant)"
         )
-        current_ip = await _get_worker_external_ip()
-        return log_ip_usage(db, account_id, current_ip, "none")
+        raise IPRotationFailed(
+            "no_adb_device_configured: cannot guarantee per-account IP isolation"
+        )
 
     current_ip = await _get_current_ip(device_id)
 

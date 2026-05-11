@@ -30,7 +30,9 @@ def _envelope_from_task(task: dict) -> TaskEnvelope | None:
         try:
             return TaskEnvelope.model_validate(env)
         except Exception as e:
-            print(f"[Worker] envelope parse failed, trying legacy shape: {e}")
+            # PR-A B++: pydantic ValidationError 가 input data 를 메시지에 넣을 수 있으므로
+            # 클래스명만 노출. encrypted_password 같은 secret 이 print 로 새지 않게.
+            print(f"[Worker] envelope parse failed ({type(e).__name__}), trying legacy shape")
     snap = task.get("account_snapshot")
     if not snap or task.get("id") is None or not task.get("task_type"):
         return None
@@ -44,7 +46,7 @@ def _envelope_from_task(task: dict) -> TaskEnvelope | None:
             worker_config=WorkerConfig(),
         )
     except Exception as e:
-        print(f"[Worker] legacy envelope construction failed: {e}")
+        print(f"[Worker] legacy envelope construction failed ({type(e).__name__})")
         return None
 
 
@@ -166,13 +168,25 @@ class WorkerApp:
         except Exception as e:
             print(f"[Worker] updater error: {e}")
 
-        # Fetch tasks & group by account
+        # Fetch tasks & group by envelope (canonical source).
+        # PR-A B++: flat 필드(adspower_profile_id, account_id) 로 그룹핑하면
+        # envelope 과 불일치 시 flat 기준으로 세션이 열려 envelope 의 보장이 깨짐.
+        # envelope 우선으로 그룹핑하고, 파싱 실패 task 는 즉시 fail 처리.
         try:
             tasks = self.client.fetch_tasks()
             if tasks:
-                tasks_by_account = defaultdict(list)
+                tasks_by_account: defaultdict = defaultdict(list)
                 for task in tasks:
-                    key = (task.get("adspower_profile_id") or "", task.get("account_id", 0))
+                    env = _envelope_from_task(task)
+                    if env is None:
+                        try:
+                            self.client.fail_task(task["id"], "envelope_missing")
+                        except Exception:
+                            pass
+                        continue
+                    key = (env.account.adspower_profile_id or "", env.account.id)
+                    # task dict 에 parsed envelope 동봉 — 하위에서 재파싱 안 하게.
+                    task["_envelope"] = env
                     tasks_by_account[key].append(task)
 
                 for (profile_id, account_id), account_tasks in tasks_by_account.items():
@@ -211,11 +225,11 @@ class WorkerApp:
         from worker.session import WorkerSession
         from hydra.infra.ip_errors import IPRotationFailed
 
-        # PR-A: envelope 우선 사용. envelope 누락된 구버전 서버 응답은
-        # transitional flat 필드 (account_snapshot) 에서 복원.
-        first_envelope = _envelope_from_task(tasks[0]) if tasks else None
+        # PR-A B++: envelope 은 위 그룹핑에서 이미 파싱·검증된 상태로 task["_envelope"] 에 동봉.
+        first_envelope = tasks[0].get("_envelope") if tasks else None
         if first_envelope is None:
-            print("[Worker] FATAL: no envelope nor account_snapshot in fetch response.")
+            # 호출 경로상 도달 불가 (그룹핑이 envelope 없는 task 를 걸러냄). 방어 코드.
+            print("[Worker] FATAL: missing parsed envelope on task.")
             for task in tasks:
                 try:
                     self.client.fail_task(task["id"], "envelope_missing")
