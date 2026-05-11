@@ -53,6 +53,8 @@ type State = {
   updateNichePromotedKeywords: (brandId: string, nicheId: string, keywords: string[]) => void
   deleteBrand: (brandId: string) => void
   deleteNiche: (brandId: string, nicheId: string) => void
+  /** mock 의 기본 브랜드(현재: 모렉신, 노마셀) 중 사용자 store 에서 빠진 것만 추가. 기존 데이터는 보존. */
+  syncDefaultBrands: () => number
 
   // Niche preset workspace actions
   nichePresets: Record<string, NichePreset[]> // key: nicheId
@@ -310,6 +312,18 @@ export const useCommexStore = create<State>()(
                 }
           ),
         }))
+      },
+      syncDefaultBrands: () => {
+        const existing = new Set(get().brands.map((b) => b.id))
+        const toAdd = INITIAL_BRANDS.filter((b) => !existing.has(b.id))
+        if (!toAdd.length) return 0
+        set((s) => ({ brands: [...s.brands, ...toAdd] }))
+        get().pushActivity({
+          kind: 'preset',
+          title: '기본 브랜드 동기화',
+          body: toAdd.map((b) => b.name).join(', ') + ' 추가됨',
+        })
+        return toAdd.length
       },
       deleteBrand: (brandId) => {
         const target = get().brands.find((b) => b.id === brandId)
