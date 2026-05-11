@@ -1,0 +1,19 @@
+[Unit]
+Description=HYDRA hourly pg_dump backup
+After=network-online.target hydra-server.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/hydra
+ExecStart=/opt/hydra/scripts/backup_hourly.sh
+# Run as deployer (or root if needed for backup dir perms).
+User=deployer
+Group=deployer
+# Environment: HYDRA_RETAIN_DAYS, HYDRA_BACKUP_DIR override 가능.
+Environment=HYDRA_DIR=/opt/hydra
+Environment=HYDRA_BACKUP_DIR=/opt/hydra/data/backup
+Environment=HYDRA_RETAIN_DAYS=7
+# Log to journal.
+StandardOutput=journal
+StandardError=journal

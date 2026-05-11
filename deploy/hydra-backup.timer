@@ -1,0 +1,11 @@
+[Unit]
+Description=HYDRA hourly backup timer
+
+[Timer]
+# 매시간 정각에 실행. Persistent=true 면 호스트 다운 후에도 누락 분 catch-up.
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target
