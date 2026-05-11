@@ -342,6 +342,17 @@ export function BrandsCommex() {
                 </div>
               </div>
 
+              {/* 핵심 검색 키워드 (브랜드 수준) */}
+              {brand && (
+                <PromotedKeywordsBar
+                  brandName={brand.name}
+                  keywords={brand.promotedKeywords ?? []}
+                  onChange={(kws) =>
+                    useCommexStore.getState().updateBrandPromotedKeywords(brand.id, kws)
+                  }
+                />
+              )}
+
               <div
                 style={{
                   display: 'grid',
@@ -644,6 +655,174 @@ function PresetEditorModal({
 // =================================================================
 // Niche Card
 // =================================================================
+
+// =================================================================
+// 브랜드 핵심 검색 키워드 인라인 편집 바
+// =================================================================
+function PromotedKeywordsBar({
+  brandName,
+  keywords,
+  onChange,
+}: {
+  brandName: string
+  keywords: string[]
+  onChange: (kws: string[]) => void
+}) {
+  const [adding, setAdding] = useState(false)
+  const [newKw, setNewKw] = useState('')
+
+  const remove = (kw: string) => {
+    onChange(keywords.filter((k) => k !== kw))
+    toast.success(`${kw} 키워드 제거`)
+  }
+  const add = () => {
+    const t = newKw.trim()
+    if (!t) return
+    if (keywords.includes(t)) {
+      toast.warning('이미 있는 키워드')
+      return
+    }
+    onChange([...keywords, t])
+    setNewKw('')
+    setAdding(false)
+    toast.success(`${t} 키워드 추가`)
+  }
+
+  return (
+    <div
+      style={{
+        marginBottom: 14,
+        padding: '12px 14px',
+        borderRadius: 14,
+        background: 'linear-gradient(180deg,#fff8eb,#fff)',
+        border: '1px solid #f0d18f',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 8,
+          marginBottom: 8,
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 800, color: '#9a6e1c' }}>
+            💡 핵심 검색 키워드 ({brandName})
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--cx-sub)', marginTop: 2 }}>
+            댓글에 녹여서 시청자가 검색하도록 유도할 단어. 예: 모렉신 → '체성케라틴'
+          </div>
+        </div>
+        {!adding && (
+          <button
+            className='cx-btn-mini'
+            onClick={() => setAdding(true)}
+            style={{ height: 26, fontSize: 11, padding: '0 10px' }}
+          >
+            + 추가
+          </button>
+        )}
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {keywords.length === 0 && !adding && (
+          <span style={{ fontSize: 11, color: 'var(--cx-sub)', fontStyle: 'italic' }}>
+            아직 핵심 키워드가 없습니다. 시청자 검색 유도용 키워드를 추가하세요.
+          </span>
+        )}
+        {keywords.map((k) => (
+          <span
+            key={k}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '4px 4px 4px 12px',
+              borderRadius: 999,
+              background: '#fff',
+              border: '1px solid #f0d18f',
+              color: '#9a6e1c',
+              fontSize: 12,
+              fontWeight: 800,
+            }}
+          >
+            🔍 {k}
+            <button
+              onClick={() => remove(k)}
+              title='제거'
+              style={{
+                width: 18,
+                height: 18,
+                borderRadius: 999,
+                border: 'none',
+                background: 'rgba(154,110,28,0.1)',
+                color: '#9a6e1c',
+                cursor: 'pointer',
+                display: 'grid',
+                placeItems: 'center',
+                fontSize: 11,
+                fontWeight: 900,
+              }}
+            >
+              ×
+            </button>
+          </span>
+        ))}
+        {adding && (
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '2px 4px 2px 10px',
+              borderRadius: 999,
+              background: '#fff',
+              border: '1px solid #9a6e1c',
+            }}
+          >
+            <input
+              autoFocus
+              value={newKw}
+              onChange={(e) => setNewKw(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') add()
+                if (e.key === 'Escape') {
+                  setNewKw('')
+                  setAdding(false)
+                }
+              }}
+              placeholder='유도 검색어 (예: 체성케라틴)'
+              style={{
+                border: 'none',
+                outline: 'none',
+                fontSize: 12,
+                width: 180,
+                background: 'transparent',
+              }}
+            />
+            <button
+              onClick={add}
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: 999,
+                border: 'none',
+                background: '#9a6e1c',
+                color: '#fff',
+                cursor: 'pointer',
+                fontSize: 12,
+                fontWeight: 900,
+              }}
+            >
+              ✓
+            </button>
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
 
 function NicheCard({
   brandId: _brandId,
