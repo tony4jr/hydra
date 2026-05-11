@@ -8,6 +8,7 @@ import {
   RefreshCw,
   X,
   AlertCircle,
+  Trash2,
 } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
@@ -80,6 +81,8 @@ export function BrandsCommex() {
   const addBrand = useCommexStore((s) => s.addBrand)
   const addNiche = useCommexStore((s) => s.addNiche)
   const updateNichePresets = useCommexStore((s) => s.updateNichePresets)
+  const deleteBrand = useCommexStore((s) => s.deleteBrand)
+  const deleteNiche = useCommexStore((s) => s.deleteNiche)
   const navigate = useNavigate()
 
   const [selectedId, setSelectedId] = useState(brands[0]?.id ?? '')
@@ -222,24 +225,73 @@ export function BrandsCommex() {
                         position: 'relative',
                       }}
                     >
-                      {pendingCount > 0 && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: 8,
+                          right: 8,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 4,
+                        }}
+                      >
+                        {pendingCount > 0 && (
+                          <span
+                            style={{
+                              padding: '2px 8px',
+                              borderRadius: 999,
+                              background: '#fff0ef',
+                              color: '#d2554c',
+                              fontSize: 10,
+                              fontWeight: 900,
+                              border: '1px solid #f4cccb',
+                            }}
+                          >
+                            ⚠ {pendingCount}
+                          </span>
+                        )}
                         <span
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            const totalVideos = b.niches.reduce(
+                              (a, n) => a + n.videos,
+                              0
+                            )
+                            if (
+                              !confirm(
+                                `${b.name} 브랜드를 삭제할까요?\n\n니치 ${b.niches.length}개, 누적 영상 ${totalVideos}개와 함께 제거됩니다. 되돌릴 수 없습니다.`
+                              )
+                            )
+                              return
+                            deleteBrand(b.id)
+                            if (selectedId === b.id) {
+                              const next = brands.find((x) => x.id !== b.id)
+                              setSelectedId(next?.id ?? '')
+                            }
+                            toast.success(`${b.name} 삭제됨`)
+                          }}
+                          title='브랜드 삭제'
+                          role='button'
                           style={{
-                            position: 'absolute',
-                            top: 12,
-                            right: 12,
-                            padding: '2px 8px',
-                            borderRadius: 999,
-                            background: '#fff0ef',
+                            width: 24,
+                            height: 24,
+                            borderRadius: 8,
+                            display: 'grid',
+                            placeItems: 'center',
                             color: '#d2554c',
-                            fontSize: 10,
-                            fontWeight: 900,
-                            border: '1px solid #f4cccb',
+                            cursor: 'pointer',
+                            transition: 'background 0.14s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = '#fff0ef'
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = ''
                           }}
                         >
-                          ⚠ {pendingCount}
+                          <Trash2 className='h-3.5 w-3.5' />
                         </span>
-                      )}
+                      </div>
                       <h4
                         style={{
                           margin: '0 0 4px',
@@ -331,6 +383,10 @@ export function BrandsCommex() {
                       updateKeywords(brand.id, n.id, keywords)
                     }
                     onToggleAuto={(jobId) => toggleAutoJob(jobId)}
+                    onDelete={() => {
+                      deleteNiche(brand.id, n.id)
+                      toast.success(`${n.name} 니치 삭제됨`)
+                    }}
                     onAction={(action) => {
                       if (action === 'preset') {
                         // 니치 카드 안에서 모달로 프리셋 편집 (이 니치 전용 선택)
@@ -602,6 +658,7 @@ function NicheCard({
   onUpdateKeywords,
   onToggleAuto,
   onAction,
+  onDelete,
 }: {
   brandId: string
   brandName: string
@@ -613,6 +670,7 @@ function NicheCard({
   onUpdateKeywords: (keywords: string[]) => void
   onToggleAuto: (jobId: string) => void
   onAction: (action: 'videos' | 'quick' | 'auto' | 'preset') => void
+  onDelete: () => void
 }) {
   const [adding, setAdding] = useState(false)
   const [newKw, setNewKw] = useState('')
@@ -691,6 +749,38 @@ function NicheCard({
                 승인 대기 {pending}
               </button>
             )}
+            <button
+              onClick={() => {
+                if (
+                  !confirm(
+                    `${niche.name} 니치를 삭제할까요?\n\n포함된 프리셋 ${niche.presets.length}개, 키워드 ${niche.keywords.length}개와의 연결이 끊어지고 누적 영상 ${niche.videos}개의 니치 라벨이 사라집니다. 되돌릴 수 없습니다.`
+                  )
+                )
+                  return
+                onDelete()
+              }}
+              title='니치 삭제'
+              style={{
+                width: 24,
+                height: 24,
+                borderRadius: 8,
+                border: 'none',
+                background: 'transparent',
+                color: '#d2554c',
+                cursor: 'pointer',
+                display: 'inline-grid',
+                placeItems: 'center',
+                marginLeft: 'auto',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = '#fff0ef'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent'
+              }}
+            >
+              <Trash2 className='h-3.5 w-3.5' />
+            </button>
           </div>
           <p
             style={{

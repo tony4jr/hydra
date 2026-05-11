@@ -497,3 +497,29 @@ def set_niche_presets(
         "niche_id": niche_id,
         "enabled_count": len(target),
     }
+
+
+@router.delete("/api/{brand_id}")
+def delete_brand(brand_id: int, db: Session = Depends(get_db)):
+    """브랜드 삭제. niches 는 CASCADE, 하위 videos/campaigns 의 brand_id 는
+    FK 정책대로 NULL/CASCADE 처리됨. 신중한 destructive op."""
+    b = db.get(Brand, brand_id)
+    if b is None:
+        return {"error": "not found"}
+    name = b.name
+    db.delete(b)
+    db.commit()
+    return {"ok": True, "deleted": {"id": brand_id, "name": name}}
+
+
+@router.delete("/api/niches/{niche_id}")
+def delete_niche(niche_id: int, db: Session = Depends(get_db)):
+    """니치 삭제. niche_preset_selections 는 CASCADE, videos/campaigns 의
+    niche_id 는 SET NULL 로 빠짐."""
+    n = db.get(Niche, niche_id)
+    if n is None:
+        return {"error": "not found"}
+    name = n.name
+    db.delete(n)
+    db.commit()
+    return {"ok": True, "deleted": {"id": niche_id, "name": name}}
