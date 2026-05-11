@@ -282,10 +282,27 @@ class WorkerApp:
 
             try:
                 started = await session.start(db=db)
-            except IPRotationFailed:
-                # IP rotation failed — reschedule each task via server API
-                print(f"[Worker] IP rotation failed, rescheduling {len(tasks)} task(s)")
+            except IPRotationFailed as ipre:
+                # IP rotation failed — reschedule + worker_error 보고 (PR-Kill 시그널).
+                # 어제 ADB 미연결로 무한 reschedule 루프 사고 후, IPRotationFailed 도
+                # worker_error 에 기록하고 phase_timeout 류 시그널로 카운트.
+                ip_msg = f"ip_rotation_failed: {ipre}"
+                print(f"[Worker] {ip_msg}")
                 _close_session_failed("ip_rotation_failed")
+                try:
+                    self.client.report_error(
+                        kind="phase_timeout",  # PR-Kill suspend_guard 가 카운트하는 kind
+                        message=ip_msg[:200],
+                        context={
+                            "phase": "ip_rotate",
+                            "reason": "ip_rotation_failed",
+                            "task_count": len(tasks),
+                            "profile_id": profile_id,
+                            "account_id": account_id,
+                        },
+                    )
+                except Exception:
+                    pass
                 for task in tasks:
                     try:
                         self.client.reschedule_task(task["id"], reason="ip_rotation_failed")
