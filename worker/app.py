@@ -231,6 +231,7 @@ class WorkerApp:
 
         from worker.session import WorkerSession
         from hydra.infra.ip_errors import IPRotationFailed
+        from hydra.protocol.phase_config import PhaseTimeout
 
         # PR-A B++: envelope 은 위 그룹핑에서 이미 파싱·검증된 상태로 task["_envelope"] 에 동봉.
         first_envelope = tasks[0].get("_envelope") if tasks else None
@@ -267,19 +268,66 @@ class WorkerApp:
                 status="active",
             )
 
+            def _close_session_failed(reason: str):
+                """세션 시작 실패 경로 공통 처리 — worker_sessions status='failed'."""
+                try:
+                    self.client.session_heartbeat(
+                        session_uuid=session.session_uuid,
+                        worker_id=self._worker_id_cache(),
+                        account_id=account_id,
+                        status="failed",
+                    )
+                except Exception:
+                    pass
+
             try:
                 started = await session.start(db=db)
             except IPRotationFailed:
                 # IP rotation failed — reschedule each task via server API
                 print(f"[Worker] IP rotation failed, rescheduling {len(tasks)} task(s)")
+                _close_session_failed("ip_rotation_failed")
                 for task in tasks:
                     try:
                         self.client.reschedule_task(task["id"], reason="ip_rotation_failed")
                     except Exception as e:
                         print(f"[Worker] Failed to reschedule task {task['id']}: {e}")
                 return
+            except PhaseTimeout as pt:
+                # PR-E: phase timeout — 정책별 처리.
+                # reschedule/unknown → reschedule (워커-환경 책임).
+                # fail → task fail (의도된 실패 — 현재 start phase 들엔 fail 없음).
+                err_msg = pt.to_error_message()
+                print(f"[Worker] {err_msg}")
+                # worker_error 보고 (phase 정보 포함).
+                try:
+                    self.client.report_error(
+                        kind="phase_timeout",
+                        message=err_msg,
+                        context={
+                            "phase": pt.phase,
+                            "elapsed_sec": pt.elapsed_sec,
+                            "threshold_sec": pt.threshold_sec,
+                            "policy": pt.policy,
+                            "task_count": len(tasks),
+                            "profile_id": profile_id,
+                            "account_id": account_id,
+                        },
+                    )
+                except Exception:
+                    pass
+                _close_session_failed(err_msg)
+                for task in tasks:
+                    try:
+                        if pt.policy == "fail":
+                            self.client.fail_task(task["id"], err_msg)
+                        else:
+                            self.client.reschedule_task(task["id"], reason=err_msg)
+                    except Exception:
+                        pass
+                return
 
             if not started:
+                _close_session_failed("session_start_failed")
                 for task in tasks:
                     try:
                         self.client.fail_task(task["id"], "Session start failed")
@@ -302,14 +350,44 @@ class WorkerApp:
 
                     self._current_task_id = task_id
                     session.current_task_id = task_id
-                    session._emit_phase("compose", message=f"task={task_id} type={task_type}")
                     try:
                         try:
-                            result = await self.executor.execute(task, session)
+                            # PR-E: executor.execute() 전체를 phase=compose timeout 으로 래핑.
+                            # 본문 hang (캡차, AI gen 무한 대기, playwright deadlock) 방지.
+                            result = await session.run_phase(
+                                "compose",
+                                self.executor.execute(task, session),
+                            )
                             session._emit_phase("submit", message=f"task={task_id} done")
                             self.client.complete_task(task_id, result)
                             session.tasks_completed += 1
                             print(f"[Worker] Task {task_id} completed")
+                        except PhaseTimeout as pt:
+                            # PR-E: task 실행 중 phase timeout.
+                            err_msg = pt.to_error_message()
+                            print(f"[Worker] Task {task_id} {err_msg}")
+                            try:
+                                self.client.report_error(
+                                    kind="phase_timeout",
+                                    message=err_msg,
+                                    context={
+                                        "task_id": task_id,
+                                        "task_type": task_type,
+                                        "phase": pt.phase,
+                                        "elapsed_sec": pt.elapsed_sec,
+                                        "threshold_sec": pt.threshold_sec,
+                                        "policy": pt.policy,
+                                    },
+                                )
+                            except Exception:
+                                pass
+                            try:
+                                if pt.policy == "fail":
+                                    self.client.fail_task(task_id, err_msg)
+                                else:
+                                    self.client.reschedule_task(task_id, reason=err_msg)
+                            except Exception:
+                                pass
                         except Exception as e:
                             error = str(e)
                             print(f"[Worker] Task {task_id} failed: {error}")

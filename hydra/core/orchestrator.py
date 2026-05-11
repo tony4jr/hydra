@@ -76,6 +76,8 @@ WORKER_ENVIRONMENT_ERROR_PATTERNS = (
     "adspower_api_error",
     "playwright_launch_failed",
     "browser_disconnected",
+    "phase_timeout",   # PR-E: 단계별 timeout 도 워커-환경 책임 (계정 보호)
+    "envelope_missing",
 )
 # task_type → max_retries (None = 모델 기본값 사용)
 TASK_RETRY_POLICY = {
