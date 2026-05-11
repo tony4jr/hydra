@@ -466,15 +466,31 @@ def set_niche_presets(
     db: Session = Depends(get_db),
 ):
     """니치 프리셋 선택 일괄 교체. preset_ids 안에 있는 것만 enabled, 나머지는 disabled.
-    weight 는 default 10 으로 신규 생성 시 자동.
+    weight 는 default 10 으로 신규 생성 시 자동. 잘못된 preset_id 는 400 으로 거절.
     """
-    from hydra.db.models import Niche, NichePresetSelection
+    from fastapi import HTTPException
+    from hydra.db.models import Niche, NichePresetSelection, CommentPreset
 
     niche = db.get(Niche, niche_id)
     if niche is None:
         return {"error": "niche not found"}
 
     target = set(data.preset_ids)
+    # preset_id 검증: 존재 + is_global 이어야 함
+    if target:
+        valid_ids = {
+            r.id
+            for r in db.query(CommentPreset.id)
+            .filter(CommentPreset.id.in_(target), CommentPreset.is_global.is_(True))
+            .all()
+        }
+        invalid = target - valid_ids
+        if invalid:
+            raise HTTPException(
+                400,
+                f"존재하지 않거나 글로벌이 아닌 preset_id: {sorted(invalid)}"
+            )
+
     existing = {
         s.preset_id: s
         for s in db.query(NichePresetSelection)
@@ -501,25 +517,49 @@ def set_niche_presets(
 
 @router.delete("/api/{brand_id}")
 def delete_brand(brand_id: int, db: Session = Depends(get_db)):
-    """브랜드 삭제. niches 는 CASCADE, 하위 videos/campaigns 의 brand_id 는
-    FK 정책대로 NULL/CASCADE 처리됨. 신중한 destructive op."""
+    """브랜드 삭제. Campaign.brand_id 가 non-null FK 이므로 종속 row 가 있으면
+    409 로 거절. 강제 삭제는 별도 운영 도구로."""
+    from fastapi import HTTPException
     b = db.get(Brand, brand_id)
     if b is None:
         return {"error": "not found"}
+
+    # non-null FK 들 — 존재 시 안전을 위해 거절
+    campaign_count = db.query(Campaign).filter(Campaign.brand_id == brand_id).count()
+    keyword_count = db.query(Keyword).filter(Keyword.brand_id == brand_id).count()
+    if campaign_count or keyword_count:
+        raise HTTPException(
+            409,
+            f"브랜드에 캠페인 {campaign_count}건, 키워드 {keyword_count}건 종속됨. "
+            "먼저 정리 후 다시 시도하세요."
+        )
+
     name = b.name
-    db.delete(b)
+    db.delete(b)  # niches/niche_preset_selections 는 CASCADE
     db.commit()
     return {"ok": True, "deleted": {"id": brand_id, "name": name}}
 
 
 @router.delete("/api/niches/{niche_id}")
 def delete_niche(niche_id: int, db: Session = Depends(get_db)):
-    """니치 삭제. niche_preset_selections 는 CASCADE, videos/campaigns 의
-    niche_id 는 SET NULL 로 빠짐."""
+    """니치 삭제. campaigns/keywords/videos 의 niche_id 가 non-null 인 경우
+    409 로 거절. nullable 인 경우엔 SET NULL 로 풀어두고 진행."""
+    from fastapi import HTTPException
     n = db.get(Niche, niche_id)
     if n is None:
         return {"error": "not found"}
+
+    # campaigns/keywords 는 prod 에서 NOT NULL — 존재 시 거절
+    camp_count = db.query(Campaign).filter(Campaign.niche_id == niche_id).count()
+    kw_count = db.query(Keyword).filter(Keyword.niche_id == niche_id).count()
+    if camp_count or kw_count:
+        raise HTTPException(
+            409,
+            f"니치에 캠페인 {camp_count}건, 키워드 {kw_count}건 종속됨. "
+            "먼저 정리 후 다시 시도하세요."
+        )
+
     name = n.name
-    db.delete(n)
+    db.delete(n)  # niche_preset_selections 는 CASCADE
     db.commit()
     return {"ok": True, "deleted": {"id": niche_id, "name": name}}

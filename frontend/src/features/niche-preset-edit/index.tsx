@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState } from 'react'
 import {
   ArrowLeft, Plus, Trash2, Copy, GitBranch, Save, Puzzle, Eye,
 } from 'lucide-react'
@@ -41,24 +41,27 @@ export function NichePresetEdit() {
   const brand = brands.find((b) => b.id === brandId)
   const niche = brand?.niches.find((n) => n.id === nicheId)
 
-  const presets = nichePresets[nicheId] ?? []
-  const [activePresetId, setActivePresetId] = useState<string | null>(
+  const presets = useMemo(
+    () => nichePresets[nicheId] ?? [],
+    [nichePresets, nicheId]
+  )
+  const [activePresetIdRaw, setActivePresetId] = useState<string | null>(
     presets[0]?.id ?? null
   )
-
-  useEffect(() => {
-    if (!activePresetId && presets[0]) setActivePresetId(presets[0].id)
-  }, [presets, activePresetId])
+  // selection 이 사라진 경우 자동으로 첫 항목으로 보정 — render-time 도출 (effect 불필요)
+  const activePresetId =
+    activePresetIdRaw && presets.find((p) => p.id === activePresetIdRaw)
+      ? activePresetIdRaw
+      : (presets[0]?.id ?? null)
 
   const activePreset = presets.find((p) => p.id === activePresetId)
-  const [activeSlotUid, setActiveSlotUid] = useState<string | null>(
+  const [activeSlotUidRaw, setActiveSlotUid] = useState<string | null>(
     activePreset?.slots[0]?.uid ?? null
   )
-  useEffect(() => {
-    if (activePreset && (!activeSlotUid || !activePreset.slots.find((s) => s.uid === activeSlotUid))) {
-      setActiveSlotUid(activePreset.slots[0]?.uid ?? null)
-    }
-  }, [activePresetId, activePreset, activeSlotUid])
+  const activeSlotUid =
+    activeSlotUidRaw && activePreset?.slots.find((s) => s.uid === activeSlotUidRaw)
+      ? activeSlotUidRaw
+      : (activePreset?.slots[0]?.uid ?? null)
 
   const activeSlot = activePreset?.slots.find((s) => s.uid === activeSlotUid)
 
