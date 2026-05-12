@@ -10,26 +10,44 @@ getaddrinfo 실패 + IPv6 NAT64 경로 불안정에도 안정적 동작.
 """
 import httpx
 import platform
+import socket
 import time
 from worker.config import config
 
 
+# Windows + 모바일/wifi resolver 가 IPv6 record lookup 깜박이로 던지는 모든 transient.
+# httpx 가 socket.gaierror 를 ConnectError 로 감싸지만, 일부 경로에선 ReadTimeout/
+# PoolTimeout 으로 표출되기도 한다. transient 는 광범위하게 잡고 backoff.
 _RETRY_EXCEPTIONS = (
     httpx.ConnectError,
     httpx.RemoteProtocolError,
     httpx.ReadError,
     httpx.WriteError,
     httpx.ConnectTimeout,
+    httpx.ReadTimeout,
+    httpx.PoolTimeout,
+    httpx.NetworkError,
+    socket.gaierror,
+    OSError,  # WinError 11001 등 raw OSError 도 포괄
 )
 
 
-def _mk_client(ipv4_only: bool) -> httpx.Client:
+def _mk_client(ipv4_only: bool, *, persistent: bool = False) -> httpx.Client:
+    """persistent=True: keepalive 살아있는 pool — DNS lookup 1회 후 재사용.
+    persistent=False: fresh client — pool 오염 회피용 fallback.
+    """
+    limits = httpx.Limits(max_keepalive_connections=4, keepalive_expiry=60.0) if persistent else None
     if ipv4_only:
         return httpx.Client(
             timeout=30,
-            transport=httpx.HTTPTransport(local_address="0.0.0.0"),
+            transport=httpx.HTTPTransport(local_address="0.0.0.0", retries=1),
+            limits=limits,
         )
-    return httpx.Client(timeout=30)
+    return httpx.Client(
+        timeout=30,
+        transport=httpx.HTTPTransport(retries=1),
+        limits=limits,
+    )
 
 
 class ServerClient:
@@ -44,26 +62,54 @@ class ServerClient:
         # self.http 속성은 하위호환/테스트 편의용. 테스트가 Mock 을 주입하면
         # 그 경로가 먼저 사용됨.
         self.http: httpx.Client | None = None
+        # persistent pool — 첫 성공 후 keepalive 살려 DNS lookup 누적 0 만든다.
+        # transient 발생 시 닫고 fresh fallback.
+        self._persistent: httpx.Client | None = None
+
+    def _get_persistent(self) -> httpx.Client:
+        if self._persistent is None:
+            self._persistent = _mk_client(self._prefer_v4, persistent=True)
+        return self._persistent
+
+    def _drop_persistent(self) -> None:
+        if self._persistent is not None:
+            try:
+                self._persistent.close()
+            except Exception:
+                pass
+            self._persistent = None
 
     def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
-        """최대 3번 시도 — 각 시도는 새 클라이언트.
+        """retry 정책: persistent(살아있는 pool) → fresh fallback × 4회 exp backoff.
 
-        순서: [선호 모드] → [반대 모드] → [선호 모드 fresh].
+        - 첫 시도: 살아있는 connection pool. 성공 시 DNS lookup 0회 (keepalive).
+        - 실패 시: persistent 폐기, fresh client 로 dual/v4 토글하며 4회 재시도.
+        - sleep: 1s, 2s, 4s, 8s — Windows DNS 깜박이 (보통 1-3s) 흡수.
+
         테스트가 self.http 주입해 놓은 경우는 그대로 그 인스턴스 사용 (Mock).
         """
         url = f"{self.base_url}{path}"
 
-        # 테스트 경로: self.http 가 주입돼 있으면 그걸 그대로 씀
+        # 테스트 경로
         if self.http is not None:
             return self.http.request(method, url, **kwargs)
 
-        attempts = [self._prefer_v4, not self._prefer_v4, self._prefer_v4]
-        last_exc: Exception | None = None
-        for i, ipv4_only in enumerate(attempts):
-            client = _mk_client(ipv4_only)
+        # 1차: persistent pool
+        try:
+            client = self._get_persistent()
+            return client.request(method, url, **kwargs)
+        except _RETRY_EXCEPTIONS as e:
+            first_exc: Exception = e
+            self._drop_persistent()
+
+        # 2차~5차: fresh client × 4회 exp backoff, dual/v4 토글
+        last_exc: Exception = first_exc
+        for attempt in range(4):
+            ipv4_only = (attempt % 2 == 0) ^ (not self._prefer_v4)
+            time.sleep(min(2 ** attempt, 8))  # 1, 2, 4, 8
+            client = _mk_client(ipv4_only, persistent=False)
             try:
                 resp = client.request(method, url, **kwargs)
-                # 성공 — 이 모드를 세션 선호로 기억
                 if self._prefer_v4 != ipv4_only:
                     mode = "IPv4-only" if ipv4_only else "dual-stack"
                     print(f"[Worker] switched transport preference → {mode}")
@@ -71,14 +117,11 @@ class ServerClient:
                 return resp
             except _RETRY_EXCEPTIONS as e:
                 last_exc = e
-                if i < len(attempts) - 1:
-                    time.sleep(0.5)  # 짧은 breather — DNS/소켓 상태 정리
             finally:
                 try:
                     client.close()
                 except Exception:
                     pass
-        assert last_exc is not None
         raise last_exc
 
     def heartbeat(self) -> dict:
