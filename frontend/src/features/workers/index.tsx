@@ -45,6 +45,10 @@ interface Worker {
   paused_reason?: string | null
   consecutive_failures?: number
   verbose_mode?: boolean
+  // Slice 2.1 — Worker Admin Agent identity. 기존 워커는 desktop_worker.
+  role?: string
+  parent_worker_id?: number | null
+  capabilities?: string[]
   current_task?: {
     id: number
     task_type: string

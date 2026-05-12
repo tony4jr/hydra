@@ -228,6 +228,13 @@ def fetch_tasks(worker: Worker = Depends(worker_auth)) -> dict:
     if worker.status == "paused":
         return {"tasks": []}
 
+    # Slice 2.1 — admin_agent role 은 task ownership 가능 한가 X.
+    # PC 관리/PowerShell 전담. AdsPower/Playwright/YouTube task 는 desktop_worker
+    # 만 처리. agent 가 실수로 task 받아 처리 시도하면 운영 사고 (browser 자동화
+    # 권한이 service session 0 에 없음).
+    if getattr(worker, "role", "desktop_worker") == "admin_agent":
+        return {"tasks": []}
+
     db = _db_session.SessionLocal()
     try:
         dialect = db.bind.dialect.name

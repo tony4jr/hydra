@@ -92,6 +92,10 @@ class WorkerOut(BaseModel):
     paused_reason: Optional[str] = None  # T7 Circuit Breaker 정보
     consecutive_failures: int = 0
     verbose_mode: bool = False
+    # Slice 2.1 — Worker Admin Agent identity 분리.
+    role: str = "desktop_worker"
+    parent_worker_id: Optional[int] = None
+    capabilities: list[str] = []
 
 
 def _as_utc(dt: Optional[datetime]) -> Optional[datetime]:
@@ -122,6 +126,15 @@ def _worker_to_out(w: Worker, current_task: Optional[Task] = None) -> WorkerOut:
             task_type=current_task.task_type,
             started_at=_as_utc(current_task.started_at),
         )
+    # Slice 2.1 — capabilities JSON 파싱 (저장은 Text). 잘못된 형식이면 빈 list.
+    caps: list[str] = []
+    if w.capabilities:
+        try:
+            parsed = json.loads(w.capabilities)
+            if isinstance(parsed, list):
+                caps = [str(x) for x in parsed]
+        except (json.JSONDecodeError, TypeError):
+            caps = []
     return WorkerOut(
         id=w.id, name=w.name, status=w.status,
         last_heartbeat=_as_utc(w.last_heartbeat),
@@ -133,6 +146,9 @@ def _worker_to_out(w: Worker, current_task: Optional[Task] = None) -> WorkerOut:
         paused_reason=w.paused_reason,
         consecutive_failures=w.consecutive_failures or 0,
         verbose_mode=bool(w.verbose_mode),
+        role=getattr(w, "role", "desktop_worker") or "desktop_worker",
+        parent_worker_id=getattr(w, "parent_worker_id", None),
+        capabilities=caps,
     )
 
 

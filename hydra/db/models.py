@@ -788,11 +788,27 @@ class Worker(Base):
     paused_reason = Column(String(255), nullable=True)  # circuit-breaker / manual / emergency-stop
     # Verbose 디버그 모드 — 켜면 워커가 INFO 레벨 로그도 서버로 푸시. 평소엔 OFF (트래픽 절약).
     verbose_mode = Column(Boolean, nullable=False, default=False, server_default='0')
+    # Slice 2.1 — Worker Admin Agent redesign identity 분리.
+    # role: 'desktop_worker' (브라우저 자동화) | 'admin_agent' (PC 관리/PowerShell).
+    # 기존 워커는 backfill 시 'desktop_worker' 로 채워짐.
+    role = Column(
+        String(32), nullable=False, default="desktop_worker",
+        server_default="desktop_worker",
+    )
+    # 같은 물리 PC 위의 desktop_worker ↔ admin_agent 연결. agent row 는
+    # parent_worker_id = desktop_worker.id 로 가리킴.
+    parent_worker_id = Column(Integer, ForeignKey("workers.id"), nullable=True)
+    # capabilities: 워커가 보고하는 capability JSON.
+    # 예: ["adb_mobile", "adspower", "playwright"] 또는 ["powershell", "git", "scheduler"].
+    # Phase 2 에서 command routing 결정에 사용. Slice 2.1 단계엔 단순 저장만.
+    capabilities = Column(Text, nullable=True)
 
     tasks = relationship("Task", back_populates="worker")
 
     __table_args__ = (
         Index("idx_workers_status", "status"),
+        Index("idx_workers_role", "role"),
+        Index("idx_workers_parent", "parent_worker_id"),
     )
 
 

@@ -217,6 +217,11 @@ class HeartbeatRequest(BaseModel):
     playwright_browsers_ok: bool = True
     current_task_id: int | None = None
     time_offset_ms: int = 0
+    # Slice 2.1 — Admin Agent redesign 의 optional 필드.
+    # 워커가 보내면 서버 DB 의 workers.role / capabilities 갱신.
+    # 기존 워커가 안 보내면 None → 서버는 기존 값 유지.
+    role: str | None = None  # "desktop_worker" | "admin_agent"
+    capabilities: list[str] | None = None
 
 
 class PendingCommand(BaseModel):
@@ -464,6 +469,15 @@ def heartbeat_v2(
                 {"adb_device_id": req.adb_devices[0]},
                 ensure_ascii=False,
             )
+
+        # Slice 2.1 — Admin Agent identity. 워커가 role/capabilities 명시했으면 갱신.
+        # 기존 워커가 안 보내면 None → 기존 값 유지 (default 'desktop_worker').
+        if req.role is not None:
+            if req.role not in ("desktop_worker", "admin_agent"):
+                raise HTTPException(400, f"invalid role: {req.role}")
+            w.role = req.role
+        if req.capabilities is not None:
+            w.capabilities = json.dumps(req.capabilities, ensure_ascii=False)
 
         db.commit()
 
