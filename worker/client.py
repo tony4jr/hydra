@@ -134,12 +134,24 @@ class ServerClient:
                     pass
         raise last_exc
 
-    def heartbeat(self) -> dict:
+    def heartbeat(
+        self,
+        *,
+        role: str | None = None,
+        capabilities: list[str] | None = None,
+    ) -> dict:
         """Heartbeat 전송 (M1-10: v2 엔드포인트).
 
         PR-Preflight: 실시간 capability 측정 (ADB devices / AdsPower / system).
         서버가 health_snapshot 보고 워커 환경 파악 → worker.ip_config 자동 세팅.
         측정 실패해도 fallback default → heartbeat 자체는 절대 막지 않음.
+
+        Slice 2.2 — admin_agent path 를 위한 optional 인자:
+          role: "desktop_worker" | "admin_agent" | None (생략 시 서버 기존값 유지)
+          capabilities: ["powershell", "shell_exec", ...]
+
+        기존 desktop worker 호출자는 인자 안 넘김 → body 에서 빠짐 → 서버
+        backward-compat (Slice 2.1 의 HeartbeatRequest 가 둘 다 optional).
         """
         try:
             from worker.preflight import collect_health
@@ -154,10 +166,14 @@ class ServerClient:
                 "adspower_version": "",
                 "playwright_browsers_ok": True,
             }
-        body = {
+        body: dict = {
             "version": config.worker_version,
             **health,
         }
+        if role is not None:
+            body["role"] = role
+        if capabilities is not None:
+            body["capabilities"] = list(capabilities)
         # heartbeat 는 짧은 timeout — blackhole 시 backoff 합산 폭주 (최악 150s+)
         # 으로 다음 tick 막히는 것 방지. 한 시도당 10s, 4회 backoff 합쳐 ~55s.
         resp = self._request(
