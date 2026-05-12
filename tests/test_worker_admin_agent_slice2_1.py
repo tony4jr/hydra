@@ -273,3 +273,55 @@ def test_admin_workers_response_capabilities_malformed_returns_empty(env):
     assert r.status_code == 200
     desktop = next(w for w in r.json() if w["id"] == env["desktop_id"])
     assert desktop["capabilities"] == []
+
+
+# ───────── 9. migration regression — Codex 가 잡은 SQLite batch FK 결함 ─────────
+
+def test_migration_upgrades_clean_on_sqlite_batch(tmp_path, monkeypatch):
+    """alembic z9a0wkrole 가 SQLite batch_alter_table 모드에서 깨지지 않는지.
+
+    Codex 2.1 review 회귀: parent_worker_id 가 unnamed FK 인 채 batch.add_column
+    으로 추가되면 'Constraint must have a name' 으로 alembic upgrade 실패.
+    Fix: batch.create_foreign_key 로 명시적 이름 부여.
+
+    alembic env.py 가 settings.db_url 을 우선시하므로 monkeypatch 로 주입.
+    """
+    import sqlite3
+    from pathlib import Path
+    from alembic.config import Config
+    from alembic import command as _alembic_cmd
+    from hydra.core.config import settings
+
+    db_path = tmp_path / "hydra_test.db"
+    db_url = f"sqlite:///{db_path}"
+
+    conn = sqlite3.connect(str(db_path))
+    conn.executescript("""
+        CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL);
+        INSERT INTO alembic_version VALUES ('y7z8wcmdlease');
+        CREATE TABLE workers (id INTEGER PRIMARY KEY, name VARCHAR NOT NULL);
+        INSERT INTO workers(id,name) VALUES (1,'old-worker');
+    """)
+    conn.commit()
+    conn.close()
+
+    # alembic env.py:14 가 settings.db_url 로 sqlalchemy.url 덮어씀.
+    # test 는 process-level 변경을 피하기 위해 monkeypatch 로 임시 주입.
+    monkeypatch.setattr(settings, "db_url", db_url)
+
+    repo_root = Path(__file__).resolve().parents[1]
+    cfg = Config(str(repo_root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(repo_root / "alembic"))
+    cfg.set_main_option("sqlalchemy.url", db_url)
+
+    # upgrade head — z9a0wkrole 가 마지막. unnamed FK 회귀가 살아있으면
+    # 'Constraint must have a name' ValueError 로 fail.
+    _alembic_cmd.upgrade(cfg, "head")
+
+    # 기존 row 가 backfill 됐는지 확인
+    conn = sqlite3.connect(str(db_path))
+    row = conn.execute(
+        "SELECT id, name, role, parent_worker_id, capabilities FROM workers WHERE id=1"
+    ).fetchone()
+    conn.close()
+    assert row == (1, "old-worker", "desktop_worker", None, None)

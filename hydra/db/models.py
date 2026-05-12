@@ -797,7 +797,13 @@ class Worker(Base):
     )
     # 같은 물리 PC 위의 desktop_worker ↔ admin_agent 연결. agent row 는
     # parent_worker_id = desktop_worker.id 로 가리킴.
-    parent_worker_id = Column(Integer, ForeignKey("workers.id"), nullable=True)
+    # FK 이름을 migration 의 fk_workers_parent_worker_id_workers 와 일치시켜
+    # SQLite batch_alter_table 모드에서 constraint 추적 가능.
+    parent_worker_id = Column(
+        Integer,
+        ForeignKey("workers.id", name="fk_workers_parent_worker_id_workers"),
+        nullable=True,
+    )
     # capabilities: 워커가 보고하는 capability JSON.
     # 예: ["adb_mobile", "adspower", "playwright"] 또는 ["powershell", "git", "scheduler"].
     # Phase 2 에서 command routing 결정에 사용. Slice 2.1 단계엔 단순 저장만.
