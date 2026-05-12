@@ -120,9 +120,19 @@ class WorkerApp:
             # 서버가 푸시한 AdsPower API 키를 프로세스 env 에 반영 —
             # 워커마다 키가 다를 수 있고 관리는 어드민 UI 에서 중앙집중.
             import os as _os
+            import logging as _logging
+            _hb_log = _logging.getLogger("hydra.worker.heartbeat_debug")
             srv_key = hb.get("adspower_api_key")
+            srv_key_len = len(srv_key) if isinstance(srv_key, str) else -1
+            env_key = _os.environ.get("ADSPOWER_API_KEY", "")
+            _hb_log.warning(
+                f"adspower_key_debug: srv_present={srv_key is not None} "
+                f"srv_truthy={bool(srv_key)} srv_len={srv_key_len} "
+                f"env_len={len(env_key)} hb_keys={sorted(hb.keys())[:15]}"
+            )
             if srv_key and _os.environ.get("ADSPOWER_API_KEY") != srv_key:
                 _os.environ["ADSPOWER_API_KEY"] = srv_key
+                _hb_log.warning(f"adspower_key_debug: env updated, new_len={len(srv_key)}")
 
             # Verbose 디버그 모드 — 어드민이 켜면 INFO+ 로그가 서버로 push 됨.
             from worker.log_shipper import set_verbose_mode
