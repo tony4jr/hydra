@@ -193,7 +193,10 @@ def cutover_apply(
         planned.append("desktop_start")
     out["planned_steps"] = planned
 
-    # ── 2. 실행
+    # ── 2. 실행 — scheduled-task mutation 은 fail-closed.
+    # rc != 0 면 즉시 ok=False return, desktop_stop/start 절대 호출 X.
+    # 이유: Task Scheduler 상태가 애매한데 agent 가 desktop 띄우면 중복 실행 위험
+    # (Slice 2.5 의 핵심 목적 정면 위반).
     def step(label: str, rc: int, stdout: str = "", stderr: str = "") -> None:
         out["steps"].append({
             "step": label, "rc": rc,
@@ -201,18 +204,31 @@ def cutover_apply(
             "stderr": (stderr or "").strip()[:500],
         })
 
+    def fail_closed(reason: str) -> dict[str, Any]:
+        out["ok"] = False
+        out["error"] = reason
+        return out
+
     if exists:
         if state and state.lower() == "running":
             rc, so, se = _run_ps(
                 f"Stop-ScheduledTask -TaskName '{TASK_NAME}' -ErrorAction SilentlyContinue"
             )
             step("stop_scheduled_task", rc, so, se)
+            if rc != 0:
+                return fail_closed(
+                    f"Stop-ScheduledTask failed (rc={rc}): {(se or '').strip()[:200]}"
+                )
         if delete:
             rc, so, se = _run_ps(
                 f"Unregister-ScheduledTask -TaskName '{TASK_NAME}' -Confirm:$false"
                 f" -ErrorAction SilentlyContinue"
             )
             step("unregister_scheduled_task", rc, so, se)
+            if rc != 0:
+                return fail_closed(
+                    f"Unregister-ScheduledTask failed (rc={rc}): {(se or '').strip()[:200]}"
+                )
         else:
             if not (state and state.lower() == "disabled"):
                 rc, so, se = _run_ps(
@@ -220,8 +236,12 @@ def cutover_apply(
                     f" -ErrorAction SilentlyContinue"
                 )
                 step("disable_scheduled_task", rc, so, se)
+                if rc != 0:
+                    return fail_closed(
+                        f"Disable-ScheduledTask failed (rc={rc}): {(se or '').strip()[:200]}"
+                    )
 
-    # ── 3. desktop process 정리 (idempotent — 없으면 no-op)
+    # ── 3. desktop process 정리 (scheduled-task mutation 다 성공한 후에만)
     from worker.desktop_launcher import desktop_stop as _stop
     stop_result = _stop(timeout_sec=15)
     out["steps"].append({"step": "desktop_stop", "result": stop_result})
@@ -240,11 +260,30 @@ def cutover_apply(
     else:
         out["message"] = "skipped desktop_start (start_desktop=False)"
 
-    # final state recheck — query failure 는 warning + ok=False
+    # ── 5. final state recheck — 원하는 상태 도달 여부 검증.
     q2 = _task_query()
     out["final_state"] = q2["state"]
     out["final_exists"] = q2["exists"]
     if not q2["ok"]:
         out["ok"] = False
         out["warning"] = f"final task query failed: {q2['error']}"
+        return out
+
+    # delete=True: task 가 진짜 사라졌어야. 남아있으면 fail.
+    if delete and q2["exists"]:
+        out["ok"] = False
+        out["error"] = (
+            f"delete=True but task still exists (final_state={q2['state']!r})"
+        )
+        return out
+    # delete=False: task 가 존재한다면 Disabled 상태여야. Ready/Running 이면 fail.
+    if not delete and q2["exists"]:
+        final_state_lower = (q2["state"] or "").lower()
+        if final_state_lower != "disabled":
+            out["ok"] = False
+            out["error"] = (
+                f"task not disabled after cutover (final_state={q2['state']!r})"
+            )
+            return out
+
     return out
