@@ -229,20 +229,24 @@ function Do-Install {
   Invoke-NssmCmd -Nssm $nssm -Args @('set', $ServiceName, 'DisplayName', 'Hydra Admin Agent') | Out-Null
   Invoke-NssmCmd -Nssm $nssm -Args @('set', $ServiceName, 'Description', 'Hydra Admin Agent — remote PC management channel.') | Out-Null
 
-  # 환경 변수: AppEnvironmentExtra. NSSM 는 줄바꿈으로 여러 entry 받음.
-  # 토큰 원문은 절대 stdout 에 출력하지 않음 (Invoke-NssmCmd 의 args 만 nssm 에 직접 전달).
+  # 환경 변수: AppEnvironmentExtra. Codex 2.3 follow-up #2 — NSSM 공식 문법은
+  # 각 env 를 별도 command-line argument 로 넘김:
+  #   nssm set <name> AppEnvironmentExtra K1=V1 K2=V2 ...
+  # CRLF 로 합친 단일 blob 은 NSSM 가 4 entries 로 분리한다는 보장 없음 →
+  # agent token / server url 누락 위험.
+  # 토큰 원문은 splat 으로 nssm 에만 전달, Write-Info 에는 절대 출력 안 함.
   $envLines = @(
     "HYDRA_SERVER_URL=$ServerUrl",
     "HYDRA_AGENT_WORKER_TOKEN=$token",
     "HYDRA_DISABLE_TASK_REGISTER=1",
     "HYDRA_UPDATE_OWNER=agent"
   )
-  $envBlob = ($envLines -join "`r`n")
+  $envArgs = @('set', $ServiceName, 'AppEnvironmentExtra') + $envLines
   if ($DryRun) {
     Write-Info "DRYRUN: nssm set $ServiceName AppEnvironmentExtra <env block: 4 entries>"
   } else {
     Write-Info "nssm set $ServiceName AppEnvironmentExtra (4 entries; token redacted)"
-    & $nssm set $ServiceName AppEnvironmentExtra $envBlob | Out-Null
+    & $nssm @envArgs | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "AppEnvironmentExtra 설정 실패" }
   }
 

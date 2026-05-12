@@ -105,6 +105,46 @@ def test_installer_sets_required_env_vars(ps1_text):
     assert "AppEnvironmentExtra" in ps1_text
 
 
+def test_installer_uses_separate_args_for_app_environment_extra(ps1_text):
+    """NSSM AppEnvironmentExtra 는 각 env 를 별도 args 로 (Codex 2.3 follow-up #2).
+
+    CRLF 합친 단일 blob 을 한 인자로 넘기면 NSSM 가 4 entries 분리한다는 보장
+    없음 → token / url 누락 위험. 공식 문서: nssm set <name> AppEnvironmentExtra
+    K1=V1 K2=V2 ...
+    """
+    # 금지 패턴: CRLF blob 합쳐서 한 args 로 넘김
+    assert "-join \"`r`n\"" not in ps1_text or "$envBlob" not in ps1_text, \
+        "CRLF blob $envBlob 패턴 잔존 — 별도 args splat 으로 변경해야"
+    forbidden_blob_call = re.search(
+        r"AppEnvironmentExtra\s+\$envBlob\b", ps1_text,
+    )
+    assert forbidden_blob_call is None, \
+        "AppEnvironmentExtra $envBlob 단일 인자 호출 금지"
+
+    # 허용 패턴: @('set', $ServiceName, 'AppEnvironmentExtra') + $envLines
+    # 또는 동등하게 separate args 로 splat
+    has_separate_args = re.search(
+        r"@\(\s*'set'\s*,\s*\$ServiceName\s*,\s*'AppEnvironmentExtra'\s*\)\s*\+\s*\$env\w+",
+        ps1_text,
+    )
+    has_splat_call = "@envArgs" in ps1_text or "@$envArgs" in ps1_text
+    assert has_separate_args or has_splat_call, \
+        "AppEnvironmentExtra 호출이 separate args 패턴이어야 함"
+
+
+def test_installer_does_not_log_token_in_env_set_block(ps1_text):
+    """AppEnvironmentExtra 호출 시점에 token 원문 출력 패턴 없음.
+
+    'token redacted' / '4 entries' 같은 메타정보만 Write-Info, splat 으로
+    nssm 에만 직접 전달.
+    """
+    # AppEnvironmentExtra 블록 부근에서 $token / $AgentWorkerToken 직접 print
+    # 패턴이 있는지 확인. ps1 전체에서 .Length 외 직접 출력은 이미 다른 test 가
+    # 검증. 여기선 메시지에 "redacted" 또는 length 표시 유지 확인.
+    assert "token redacted" in ps1_text or "len=" in ps1_text, \
+        "token redacted 출력 유지 안 함"
+
+
 # ───────── e. token 원문 출력 방지 ─────────
 
 def test_installer_does_not_print_token_to_host(ps1_text):
