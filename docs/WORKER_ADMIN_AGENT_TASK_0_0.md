@@ -497,6 +497,63 @@ Slice 1 follow-up #2 — lease hardening (Codex 결정):
 - [x] 테스트: shell_exec lease 가 timeout 기반 (120→~150, 5→60, 일반 명령→60)
 - [x] 테스트: SQLite dialect 에서도 정상 동작 (with_for_update fallback)
 
+## Slice 2.3 — Windows Service Installer (NSSM)
+
+Admin Agent 를 Windows Service 로 설치/관리. Desktop Worker (브라우저 자동화),
+Task Scheduler cutover, update ownership 이전은 Slice 2.4/2.5 작업 — 여기선
+**절대** 안 함.
+
+### 설치/운영 예시
+
+```powershell
+# 1. 기존 agent worker token 으로 설치 + 즉시 시작
+setup\install-admin-agent-service.ps1 `
+  -ServerUrl https://hydra-prod.duckdns.org `
+  -AgentWorkerToken <token> -Start
+
+# 2. enrollment token 으로 첫 설치 (worker_token 은 자동 발급)
+setup\install-admin-agent-service.ps1 `
+  -ServerUrl https://hydra-prod.duckdns.org `
+  -EnrollmentToken <enrollment> -Start
+
+# 3. 상태 확인 (토큰 원문 출력 X)
+setup\install-admin-agent-service.ps1 -Action status
+
+# 4. 재시작 / 중지 / 시작
+setup\install-admin-agent-service.ps1 -Action restart
+setup\install-admin-agent-service.ps1 -Action stop
+setup\install-admin-agent-service.ps1 -Action start
+
+# 5. 제거 (repo/venv/secrets 는 유지)
+setup\install-admin-agent-service.ps1 -Action uninstall
+
+# 6. DryRun — 어떤 명령이 실행될지 미리 확인
+setup\install-admin-agent-service.ps1 -DryRun -Action install `
+  -ServerUrl https://... -AgentWorkerToken <token>
+```
+
+### Service 설정 요약
+
+- Executable: `<InstallPath>\.venv\Scripts\python.exe -m worker.admin_agent`
+- AppDirectory: `<InstallPath>` (기본 `C:\hydra`)
+- Start: `SERVICE_AUTO_START` / ObjectName: `LocalSystem`
+- AppEnvironmentExtra:
+  - `HYDRA_SERVER_URL`
+  - `HYDRA_AGENT_WORKER_TOKEN` (토큰 원문은 어디에도 표시되지 않음)
+  - `HYDRA_DISABLE_TASK_REGISTER=1`
+  - `HYDRA_UPDATE_OWNER=agent`
+- 로그: `<InstallPath>\logs\admin-agent-service.out.log` / `.err.log`
+  rotation 10MB
+- 재시작: `AppRestartDelay=5000` + `AppExit Default Restart`
+
+### NSSM 자동 해결
+
+- `-NssmPath` 명시 → 그것 사용
+- `Get-Command nssm.exe` 발견
+- `C:\ProgramData\chocolatey\bin\nssm.exe` 발견
+- `choco install -y nssm --no-progress` 자동 시도 (choco 있을 때)
+- 그래도 없으면 명확한 에러
+
 ### Slice 1 의 명시적 trade-off (Phase 2 에서 정책화 필요)
 
 - **shell_exec 는 at-least-once 실행 가능성** 을 가짐. 현재 `_CMD_NON_REDELIVERABLE`
