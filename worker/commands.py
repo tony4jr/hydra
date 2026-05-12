@@ -43,10 +43,33 @@ async def execute_command(client: "ServerClient", cmd: dict) -> None:
             result = _run_update()
 
         elif name == "run_diag":
-            # diag 스크립트 비동기 실행 — 결과는 별도로 worker_errors 에 업로드
-            script = payload.get("script", "diag_adspower_profiles.py")
-            _spawn_diag(script)
-            result = f"spawned {script}"
+            # PR-Preflight: 워커 즉시 진단 → 결과 ack message + worker_error 보고.
+            # admin 이 진단 트리거 후 결과 즉시 확인 가능.
+            mode = payload.get("mode", "preflight")
+            if mode == "preflight":
+                try:
+                    from worker.preflight import collect_health
+                    health = collect_health()
+                    import json as _json
+                    result = _json.dumps(health, ensure_ascii=False)
+                    # worker_error 로도 같이 (kind=diagnostic) — admin UI 에서 보기 쉽게.
+                    try:
+                        client.report_error(
+                            kind="diagnostic",
+                            message=f"run_diag preflight: adb={health.get('adb_devices')} "
+                                    f"adspower={health.get('adspower_version')} "
+                                    f"cpu={health.get('cpu_percent')}%",
+                            context=health,
+                        )
+                    except Exception:
+                        pass
+                except Exception as e:
+                    result = f"preflight failed: {type(e).__name__}: {e}"
+            else:
+                # legacy script path
+                script = payload.get("script", "diag_adspower_profiles.py")
+                _spawn_diag(script)
+                result = f"spawned {script}"
 
         elif name == "retry_task":
             # 서버 측에서 처리 (POST /tasks/v2/retry?task_id=) — 워커는 ack 만
