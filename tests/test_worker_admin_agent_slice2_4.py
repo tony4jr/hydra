@@ -76,7 +76,8 @@ def test_desktop_status_excludes_admin_agent_process():
 # ───────── b. start 이미 running 이면 Popen 안 함 ─────────
 
 def test_desktop_start_no_op_when_running():
-    with patch("worker.desktop_launcher._find_desktop_pids", return_value=[200]), \
+    with patch("worker.desktop_launcher._PSUTIL_AVAILABLE", True), \
+         patch("worker.desktop_launcher._find_desktop_pids", return_value=[200]), \
          patch("worker.desktop_launcher.subprocess.Popen") as fake_popen:
         from worker.desktop_launcher import desktop_start
         result = desktop_start()
@@ -94,7 +95,8 @@ def test_desktop_start_env_overrides(monkeypatch):
     monkeypatch.delenv("HYDRA_AGENT_WORKER_TOKEN", raising=False)
     monkeypatch.delenv("HYDRA_WORKER_TOKEN", raising=False)
 
-    with patch("worker.desktop_launcher._find_desktop_pids", return_value=[]), \
+    with patch("worker.desktop_launcher._PSUTIL_AVAILABLE", True), \
+         patch("worker.desktop_launcher._find_desktop_pids", return_value=[]), \
          patch("worker.desktop_launcher.subprocess.Popen") as fake_popen:
         fake_proc = MagicMock()
         fake_proc.pid = 12345
@@ -113,14 +115,18 @@ def test_desktop_start_env_overrides(monkeypatch):
 
 # ───────── d. start 가 agent token 을 worker token 으로 복사 안 함 ─────────
 
-def test_desktop_start_does_not_propagate_agent_token(monkeypatch):
-    """부모 process 가 admin_agent 라 HYDRA_WORKER_TOKEN == HYDRA_AGENT_WORKER_TOKEN
-    상태여도 desktop start 시점에 pop 되어 desktop 으로 전달 안 됨.
+def test_desktop_start_strips_agent_tokens_from_child_env(monkeypatch):
+    """Slice 2.4 follow-up — desktop child env 에 agent token 류 절대 leak 안 됨.
+
+    이전 정책: HYDRA_AGENT_WORKER_TOKEN 유지 + WORKER_TOKEN 만 pop.
+    새 정책: HYDRA_AGENT_WORKER_TOKEN / HYDRA_ADMIN_AGENT_TOKEN 둘 다 pop.
     """
     monkeypatch.setenv("HYDRA_AGENT_WORKER_TOKEN", "AGENT-TOKEN-XYZ")
-    monkeypatch.setenv("HYDRA_WORKER_TOKEN", "AGENT-TOKEN-XYZ")  # admin_agent main 이 set 한 상태 simulating
+    monkeypatch.setenv("HYDRA_ADMIN_AGENT_TOKEN", "ADMIN-TOKEN-OLD")
+    monkeypatch.setenv("HYDRA_WORKER_TOKEN", "AGENT-TOKEN-XYZ")  # admin_agent main 이 set 한 상태
 
     with patch("worker.desktop_launcher._find_desktop_pids", return_value=[]), \
+         patch("worker.desktop_launcher._PSUTIL_AVAILABLE", True), \
          patch("worker.desktop_launcher.subprocess.Popen") as fake_popen:
         fake_proc = MagicMock(); fake_proc.pid = 1
         fake_popen.return_value = fake_proc
@@ -129,8 +135,10 @@ def test_desktop_start_does_not_propagate_agent_token(monkeypatch):
         desktop_start()
 
     env = fake_popen.call_args.kwargs.get("env") or {}
-    assert env.get("HYDRA_AGENT_WORKER_TOKEN") == "AGENT-TOKEN-XYZ"  # agent token 자체는 유지
-    # 핵심: desktop worker 가 agent token 으로 enroll 되지 않도록 pop.
+    # 핵심: agent token 류는 child env 에 절대 없어야 함.
+    assert "HYDRA_AGENT_WORKER_TOKEN" not in env
+    assert "HYDRA_ADMIN_AGENT_TOKEN" not in env
+    # WORKER_TOKEN 이 agent token 과 같았으면 pop.
     assert env.get("HYDRA_WORKER_TOKEN") != "AGENT-TOKEN-XYZ"
 
 
@@ -139,7 +147,8 @@ def test_desktop_start_preserves_independent_desktop_token(monkeypatch):
     monkeypatch.setenv("HYDRA_AGENT_WORKER_TOKEN", "AGENT-TOKEN")
     monkeypatch.setenv("HYDRA_WORKER_TOKEN", "DESKTOP-TOKEN")
 
-    with patch("worker.desktop_launcher._find_desktop_pids", return_value=[]), \
+    with patch("worker.desktop_launcher._PSUTIL_AVAILABLE", True), \
+         patch("worker.desktop_launcher._find_desktop_pids", return_value=[]), \
          patch("worker.desktop_launcher.subprocess.Popen") as fake_popen:
         fake_proc = MagicMock(); fake_proc.pid = 1
         fake_popen.return_value = fake_proc
@@ -203,11 +212,11 @@ def test_desktop_stop_noop_when_not_running():
 # ───────── f. commands.py dispatch + JSON ack ─────────
 
 @pytest.mark.asyncio
-async def test_commands_dispatch_desktop_status_returns_json():
+async def test_commands_dispatch_desktop_status_returns_json(monkeypatch):
+    monkeypatch.setenv("HYDRA_PROCESS_ROLE", "admin_agent")
     from worker.commands import execute_command
 
     fake_client = MagicMock()
-    fake_client._request = MagicMock(return_value=MagicMock())  # ack call
     cmd = {"id": 1, "command": "desktop_status", "payload": None}
 
     captured = {}
@@ -216,7 +225,8 @@ async def test_commands_dispatch_desktop_status_returns_json():
         captured["result"] = result
 
     with patch("worker.commands._ack", side_effect=capture_ack), \
-         patch("worker.desktop_launcher._find_desktop_pids", return_value=[]):
+         patch("worker.desktop_launcher._find_desktop_pids", return_value=[]), \
+         patch("worker.desktop_launcher._PSUTIL_AVAILABLE", True):
         await execute_command(fake_client, cmd)
 
     assert captured["status"] == "done"
@@ -226,7 +236,8 @@ async def test_commands_dispatch_desktop_status_returns_json():
 
 
 @pytest.mark.asyncio
-async def test_commands_dispatch_desktop_start():
+async def test_commands_dispatch_desktop_start(monkeypatch):
+    monkeypatch.setenv("HYDRA_PROCESS_ROLE", "admin_agent")
     from worker.commands import execute_command
 
     fake_client = MagicMock()
@@ -237,7 +248,8 @@ async def test_commands_dispatch_desktop_start():
         captured["result"] = result
 
     with patch("worker.commands._ack", side_effect=capture_ack), \
-         patch("worker.desktop_launcher._find_desktop_pids", return_value=[55]):
+         patch("worker.desktop_launcher._find_desktop_pids", return_value=[55]), \
+         patch("worker.desktop_launcher._PSUTIL_AVAILABLE", True):
         await execute_command(fake_client, cmd)
 
     assert captured["status"] == "done"
@@ -247,13 +259,14 @@ async def test_commands_dispatch_desktop_start():
 
 
 @pytest.mark.asyncio
-async def test_commands_dispatch_desktop_stop_passes_timeout():
+async def test_commands_dispatch_desktop_stop_passes_timeout(monkeypatch):
+    monkeypatch.setenv("HYDRA_PROCESS_ROLE", "admin_agent")
     from worker.commands import execute_command
 
     fake_client = MagicMock()
     cmd = {"id": 3, "command": "desktop_stop", "payload": {"timeout_sec": 7}}
 
-    with patch("worker.commands._ack") as ack, \
+    with patch("worker.commands._ack"), \
          patch("worker.desktop_launcher.desktop_stop") as fake_stop:
         fake_stop.return_value = {"ok": True, "action": "stop", "stopped_pids": [55]}
         await execute_command(fake_client, cmd)
@@ -262,7 +275,8 @@ async def test_commands_dispatch_desktop_stop_passes_timeout():
 
 
 @pytest.mark.asyncio
-async def test_commands_dispatch_desktop_restart():
+async def test_commands_dispatch_desktop_restart(monkeypatch):
+    monkeypatch.setenv("HYDRA_PROCESS_ROLE", "admin_agent")
     from worker.commands import execute_command
 
     fake_client = MagicMock()
@@ -303,6 +317,93 @@ def test_desktop_restart_is_non_redeliverable():
 
 
 # ───────── extra: launcher 가 admin_agent 자기 자신 절대 kill 안 함 ─────────
+
+# ───────── Slice 2.4 follow-up: psutil fail-closed ─────────
+
+def test_desktop_start_fail_closed_when_psutil_missing(monkeypatch):
+    """psutil 미설치 환경에서 desktop_start 는 spawn 거부 (중복 detection 불가).
+
+    fail-open 으로 spawn 하면 desktop worker 중복 실행 위험.
+    """
+    with patch("worker.desktop_launcher._PSUTIL_AVAILABLE", False), \
+         patch("worker.desktop_launcher.subprocess.Popen") as fake_popen:
+        from worker.desktop_launcher import desktop_start
+        result = desktop_start()
+
+    assert result["ok"] is False
+    assert "psutil unavailable" in result["error"]
+    fake_popen.assert_not_called()
+
+
+def test_desktop_status_reports_psutil_unavailable():
+    with patch("worker.desktop_launcher._PSUTIL_AVAILABLE", False):
+        from worker.desktop_launcher import desktop_status
+        result = desktop_status()
+    assert result["psutil_available"] is False
+    assert result["ok"] is False
+    assert "psutil unavailable" in result["error"]
+
+
+# ───────── Slice 2.4 follow-up: HYDRA_PROCESS_ROLE guard ─────────
+
+@pytest.mark.asyncio
+async def test_desktop_commands_rejected_on_desktop_worker_runtime(monkeypatch):
+    """desktop worker process 가 desktop_* command 받으면 launcher 호출 없이 failed.
+
+    서버 routing 이 worker_id 단일이라 잘못된 발행시 desktop 이 자기 자신 stop
+    시도 위험 — 명시적 차단.
+    """
+    monkeypatch.setenv("HYDRA_PROCESS_ROLE", "desktop_worker")
+    from worker.commands import execute_command
+
+    fake_client = MagicMock()
+    captured = {}
+    def capture_ack(client, cmd_id, status, result, err):
+        captured["status"] = status
+        captured["result"] = result
+        captured["err"] = err
+
+    with patch("worker.commands._ack", side_effect=capture_ack), \
+         patch("worker.desktop_launcher.desktop_start") as fake_start, \
+         patch("worker.desktop_launcher.desktop_stop") as fake_stop, \
+         patch("worker.desktop_launcher.desktop_restart") as fake_restart:
+        for cmd_name in ("desktop_start", "desktop_stop", "desktop_restart", "desktop_status"):
+            await execute_command(fake_client, {"id": 1, "command": cmd_name, "payload": None})
+            parsed = json.loads(captured["result"])
+            assert parsed["ok"] is False
+            assert "admin_agent" in parsed["error"]
+            assert parsed["process_role"] == "desktop_worker"
+
+    # launcher 함수들 절대 호출 안 됨
+    fake_start.assert_not_called()
+    fake_stop.assert_not_called()
+    fake_restart.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_desktop_commands_allowed_on_admin_agent_runtime(monkeypatch):
+    """admin_agent runtime 에선 desktop_* 정상 dispatch."""
+    monkeypatch.setenv("HYDRA_PROCESS_ROLE", "admin_agent")
+    from worker.commands import execute_command
+
+    fake_client = MagicMock()
+    captured = {}
+    def capture_ack(client, cmd_id, status, result, err):
+        captured["status"] = status
+        captured["result"] = result
+
+    with patch("worker.commands._ack", side_effect=capture_ack), \
+         patch("worker.desktop_launcher.desktop_status") as fake_status:
+        fake_status.return_value = {"ok": True, "action": "status", "running": False, "pids": []}
+        await execute_command(fake_client, {"id": 99, "command": "desktop_status", "payload": None})
+
+    assert captured["status"] == "done"
+    parsed = json.loads(captured["result"])
+    assert parsed["action"] == "status"
+    fake_status.assert_called_once()
+
+
+# ───────── 기존 ─────────
 
 def test_stop_never_targets_admin_agent_process():
     """admin_agent process 가 cmdline 에 있어도 _find_desktop_pids 가 제외하므로

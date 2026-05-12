@@ -116,28 +116,38 @@ async def execute_command(client: "ServerClient", cmd: dict) -> None:
             timeout_sec = int(payload.get("timeout_sec", 30))
             result = _run_shell_exec(shell=shell, script=script, timeout_sec=timeout_sec)
 
-        elif name == "desktop_status":
+        elif name in ("desktop_status", "desktop_start", "desktop_stop", "desktop_restart"):
             # Slice 2.4 — admin agent → desktop worker process 관리.
-            from worker.desktop_launcher import desktop_status
+            # Slice 2.4 follow-up: HYDRA_PROCESS_ROLE guard. 서버 routing 이
+            # worker_id 단일이라 잘못된 id 발행 시 desktop 이 자기 자신 stop/
+            # restart 시도할 수 있음 → 명시 차단.
             import json as _json
-            result = _json.dumps(desktop_status(), ensure_ascii=False)
-
-        elif name == "desktop_start":
-            from worker.desktop_launcher import desktop_start
-            import json as _json
-            result = _json.dumps(desktop_start(), ensure_ascii=False)
-
-        elif name == "desktop_stop":
-            from worker.desktop_launcher import desktop_stop
-            import json as _json
-            timeout_sec = int(payload.get("timeout_sec", 15))
-            result = _json.dumps(desktop_stop(timeout_sec=timeout_sec), ensure_ascii=False)
-
-        elif name == "desktop_restart":
-            from worker.desktop_launcher import desktop_restart
-            import json as _json
-            timeout_sec = int(payload.get("timeout_sec", 15))
-            result = _json.dumps(desktop_restart(timeout_sec=timeout_sec), ensure_ascii=False)
+            current_role = os.environ.get("HYDRA_PROCESS_ROLE", "")
+            if current_role != "admin_agent":
+                status = "failed"
+                err = (
+                    f"desktop_* requires admin_agent runtime "
+                    f"(HYDRA_PROCESS_ROLE={current_role!r})"
+                )
+                result = _json.dumps(
+                    {"ok": False, "action": name, "error": err,
+                     "process_role": current_role},
+                    ensure_ascii=False,
+                )
+            elif name == "desktop_status":
+                from worker.desktop_launcher import desktop_status
+                result = _json.dumps(desktop_status(), ensure_ascii=False)
+            elif name == "desktop_start":
+                from worker.desktop_launcher import desktop_start
+                result = _json.dumps(desktop_start(), ensure_ascii=False)
+            elif name == "desktop_stop":
+                from worker.desktop_launcher import desktop_stop
+                timeout_sec = int(payload.get("timeout_sec", 15))
+                result = _json.dumps(desktop_stop(timeout_sec=timeout_sec), ensure_ascii=False)
+            elif name == "desktop_restart":
+                from worker.desktop_launcher import desktop_restart
+                timeout_sec = int(payload.get("timeout_sec", 15))
+                result = _json.dumps(desktop_restart(timeout_sec=timeout_sec), ensure_ascii=False)
 
         else:
             status = "failed"

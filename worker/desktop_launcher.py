@@ -104,13 +104,16 @@ def _find_desktop_pids() -> list[int]:
 def desktop_status() -> dict[str, Any]:
     """현재 desktop worker 실행 여부 + PID list."""
     pids = _find_desktop_pids()
-    return {
-        "ok": True,
+    out: dict[str, Any] = {
+        "ok": _PSUTIL_AVAILABLE,
         "action": "status",
         "running": bool(pids),
         "pids": pids,
         "psutil_available": _PSUTIL_AVAILABLE,
     }
+    if not _PSUTIL_AVAILABLE:
+        out["error"] = "psutil unavailable — process detection unreliable"
+    return out
 
 
 def desktop_start() -> dict[str, Any]:
@@ -119,9 +122,26 @@ def desktop_start() -> dict[str, Any]:
     env 주입:
       - HYDRA_DISABLE_TASK_REGISTER=1
       - HYDRA_UPDATE_OWNER=agent
-    HYDRA_AGENT_WORKER_TOKEN 은 HYDRA_WORKER_TOKEN 으로 **복사 안 함** —
-    desktop 은 자신의 secrets.enc / desktop env 사용.
+      - HYDRA_PROCESS_ROLE=desktop_worker (commands.py 의 desktop_* 분기 guard)
+    agent token 류는 child env 에서 명시 제거:
+      - HYDRA_AGENT_WORKER_TOKEN (어떤 경우든 pop — desktop 에 leak 안 됨)
+      - HYDRA_ADMIN_AGENT_TOKEN (pop)
+      - HYDRA_WORKER_TOKEN 이 agent token 과 같으면 pop (desktop 의 자기 token
+        과 다르면 유지)
+
+    Slice 2.4 follow-up — fail-closed: psutil 미설치면 중복 detection 불가 →
+    desktop_start 가 spawn 거부. status 만 가능.
     """
+    if not _PSUTIL_AVAILABLE:
+        return {
+            "ok": False,
+            "action": "start",
+            "running": False,
+            "pids": [],
+            "started_pid": None,
+            "psutil_available": False,
+            "error": "psutil unavailable — refuse to spawn (duplicate detection impossible)",
+        }
     existing = _find_desktop_pids()
     if existing:
         return {
@@ -136,17 +156,20 @@ def desktop_start() -> dict[str, Any]:
     python = _resolve_venv_python()
     repo = str(_repo_root())
 
-    # env: 부모 env 복제 후 4개 override + agent token 명시 차단.
+    # env: 부모 env 복제 후 override + agent token leak 차단.
     env = dict(os.environ)
     env["HYDRA_DISABLE_TASK_REGISTER"] = "1"
     env["HYDRA_UPDATE_OWNER"] = "agent"
-    # 명시적으로 agent token 을 desktop 으로 전염시키지 않음.
-    # admin_agent 는 HYDRA_AGENT_WORKER_TOKEN 사용. desktop 은 HYDRA_WORKER_TOKEN
-    # (secrets 또는 별도 env). 부모 process 가 admin_agent 라면 부모 env 에
-    # HYDRA_WORKER_TOKEN 이 우연히 agent token 으로 set 됐을 수 있음 (admin_agent
-    # main 의 _apply_agent_token_to_runtime_config 가 process env 도 set).
-    # → 그 경우 desktop 가 잘못된 token 으로 enroll 됨. pop 으로 차단.
-    agent_token = env.get("HYDRA_AGENT_WORKER_TOKEN", "")
+    env["HYDRA_PROCESS_ROLE"] = "desktop_worker"
+
+    # Slice 2.4 follow-up — agent token 류는 child env 에 absolutely 남기지 않음.
+    # worker.config 가 안 읽더라도 process 환경에 token 평문 leak 자체 차단.
+    agent_token = env.pop("HYDRA_AGENT_WORKER_TOKEN", "") or env.pop(
+        "HYDRA_ADMIN_AGENT_TOKEN", ""
+    )
+    # HYDRA_ADMIN_AGENT_TOKEN 이 별도로도 있을 수 있어 한 번 더 pop
+    env.pop("HYDRA_ADMIN_AGENT_TOKEN", None)
+    # WORKER_TOKEN 이 agent token 과 동일하면 pop. 다른 desktop token 이면 유지.
     desktop_token = env.get("HYDRA_WORKER_TOKEN", "")
     if agent_token and desktop_token == agent_token:
         env.pop("HYDRA_WORKER_TOKEN", None)

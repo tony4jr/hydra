@@ -488,6 +488,11 @@ def main():
     except Exception:
         pass
 
+    # Slice 2.4 follow-up — desktop worker 임을 명시. commands.py 의 desktop_*
+    # 분기가 이 marker 를 보고 admin_agent 아니면 거부.
+    import os as _os
+    _os.environ.setdefault("HYDRA_PROCESS_ROLE", "desktop_worker")
+
     config.load()
     if not config.worker_token:
         print("[Worker] Error: HYDRA_WORKER_TOKEN not set")

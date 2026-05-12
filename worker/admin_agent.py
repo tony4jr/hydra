@@ -33,6 +33,10 @@ from datetime import UTC, datetime
 # Admin agent process 가 import 되기 전에 desktop worker 의 task_register 가
 # 우연히 schtasks 등록하지 않도록 미리 차단. agent 는 service 가 owned.
 os.environ.setdefault("HYDRA_DISABLE_TASK_REGISTER", "1")
+# Slice 2.4 follow-up — process role marker. desktop_* commands 는 이 marker
+# 가 admin_agent 일 때만 실행. desktop worker 가 잘못된 worker_id 로 받아도
+# launcher 호출 차단 (자기 자신 stop/restart 방지).
+os.environ["HYDRA_PROCESS_ROLE"] = "admin_agent"
 
 
 AGENT_CAPABILITIES_DEFAULT = [
