@@ -40,7 +40,16 @@ async def execute_command(client: "ServerClient", cmd: dict) -> None:
             sys.exit(0)
 
         elif name == "update_now":
-            result = _run_update()
+            # 본질 fix: update_now 가 _run_update 의 단순 string return 만 받으면
+            # 코드는 받지만 메모리 옛 코드 그대로 → 사용자가 별도 restart 필요했음.
+            # perform_update 호출 = git pull + pip install + Task Scheduler restart 예약
+            # + sys.exit(0). update 완료까지 ack 못 보내는 것은 의도 — restart 후
+            # 새 프로세스가 자기 시작 보고하면 됨.
+            from worker.updater import perform_update
+            _ack(client, cmd_id, "done", "update_now: invoking perform_update, will exit")
+            perform_update()
+            # already-on-main no-op 케이스는 perform_update 가 exit 없이 return
+            result = "update_now: already on origin/main"
 
         elif name == "ensure_schema":
             # PR-AutoSchema: server 가 워커에 schema 재보장 명령. stdout 결과 ack 로 보고.

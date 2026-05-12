@@ -155,10 +155,9 @@ class WorkerApp:
             await asyncio.sleep(5)
             return
 
-        # M1-11: paused 면 fetch 스킵
-        if hb.get("paused"):
-            await asyncio.sleep(config.task_fetch_interval)
-            return
+        # 본질 fix: paused (전역 kill switch) 면 fetch 만 막고 maybe_update 는 가야 함.
+        # 이전 코드는 paused 시 update 도 같이 skip → 새 코드 영원히 못 받는 deadlock.
+        # 순서: maybe_update 먼저 → paused 체크 후 fetch skip.
 
         # M1-11: current_version 감지 → updater (idle 일 때만 업데이트)
         try:
@@ -173,6 +172,11 @@ class WorkerApp:
             raise
         except Exception as e:
             print(f"[Worker] updater error: {e}")
+
+        # paused (server_config.paused) 면 fetch 스킵 — update 는 위에서 이미 처리.
+        if hb.get("paused"):
+            await asyncio.sleep(config.task_fetch_interval)
+            return
 
         # Fetch tasks & group by envelope (canonical source).
         # PR-A B++: flat 필드(adspower_profile_id, account_id) 로 그룹핑하면
