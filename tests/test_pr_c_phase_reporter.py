@@ -73,8 +73,8 @@ async def test_worker_session_emits_phases_on_start():
     def reporter(**kw):
         calls.append(kw["phase"])
 
-    with patch("worker.session.ensure_safe_ip_from_snapshot",
-               new=AsyncMock(return_value=MagicMock(id=1))) as mock_ensure, \
+    with patch("worker.session.ensure_safe_ip_via_server",
+               new=AsyncMock(return_value=1)) as mock_ensure, \
          patch("worker.session.BrowserSession") as BS:
         instance = MagicMock()
         instance.start = AsyncMock()
@@ -88,8 +88,9 @@ async def test_worker_session_emits_phases_on_start():
             profile_id="p1", account_id=42,
             account_snapshot=snap, worker_config=WorkerConfig(adb_device_id="DEV"),
             progress_reporter=reporter,
+            server_client=MagicMock(),  # PR-D: server endpoint 호출 mock
         )
-        ok = await sess.start(db=object())
+        ok = await sess.start()
         assert ok
         # session_start → ip_rotate → adspower_open → video_goto → wait
         assert calls[0] == "session_start"

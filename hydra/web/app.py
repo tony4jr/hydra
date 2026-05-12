@@ -21,7 +21,7 @@ from hydra.web.routes import (
     admin_auth, admin_workers, admin_avatars, admin_deploy, admin_audit,
     admin_accounts, admin_tasks, admin_adspower, admin_collection, admin_video_pool,
     admin_pipeline, admin_youtube_keys, admin_phase_gauge,
-    avatar_serving, worker_api, tasks_api,
+    avatar_serving, worker_api, worker_iplog, tasks_api,
     analytics,
 )
 from hydra.api.workers import router as workers_router
@@ -137,6 +137,8 @@ app.include_router(avatar_serving.router, prefix="/api/avatars",      tags=["ava
 # Task 20: 신규 워커 프로토콜 (/enroll, /heartbeat/v2). legacy /api/workers/register,
 # /heartbeat 는 hydra.api.workers 에 공존 유지 (Phase 1d 전환 완료 후 제거 예정).
 app.include_router(worker_api.router,    prefix="/api/workers",       tags=["worker-v2"])
+# PR-D: IpLog 서버화 — 워커 SQLite 의존성 제거.
+app.include_router(worker_iplog.router,  prefix="/api/workers",       tags=["worker-iplog"])
 # Task 21: 신규 태스크 큐 (/api/tasks/v2/*) — SKIP LOCKED + ProfileLock.
 app.include_router(tasks_api.router,     prefix="/api/tasks/v2",      tags=["tasks-v2"])
 app.include_router(analytics.router,                                  tags=["analytics"], dependencies=_ADMIN_DEPS)

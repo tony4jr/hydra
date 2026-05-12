@@ -13,7 +13,6 @@ from worker.config import config
 from worker.client import ServerClient
 from worker.executor import TaskExecutor
 from worker.log_shipper import install_log_shipping
-from hydra.db.session import SessionLocal
 from hydra.protocol import AccountSnapshot, TaskEnvelope, WorkerConfig
 
 
@@ -247,7 +246,7 @@ class WorkerApp:
         account_snapshot = first_envelope.account
         worker_config = first_envelope.worker_config
 
-        db = SessionLocal()  # IpLog 쓰기용 — 워커 측 로그. PR-B 에서 서버화 예정.
+        # PR-D: 워커 측 로컬 DB 사용 X. IpLog 는 server endpoint 호출.
         try:
             # PR-C: progress reporter — server 보고 콜백.
             def _progress_cb(**kw):
@@ -259,6 +258,7 @@ class WorkerApp:
                 account_snapshot=account_snapshot,
                 worker_config=worker_config,
                 progress_reporter=_progress_cb,
+                server_client=self.client,  # PR-D: IpLog server-side via API
             )
             # PR-C: WorkerSession 등록 (heartbeat 시작).
             self.client.session_heartbeat(
@@ -281,7 +281,8 @@ class WorkerApp:
                     pass
 
             try:
-                started = await session.start(db=db)
+                # PR-D: db 인자 제거. session 내부에서 server_client 로 IpLog 처리.
+                started = await session.start()
             except IPRotationFailed as ipre:
                 # IP rotation failed — reschedule + worker_error 보고 (PR-Kill 시그널).
                 # 어제 ADB 미연결로 무한 reschedule 루프 사고 후, IPRotationFailed 도
@@ -448,27 +449,16 @@ class WorkerApp:
                     pass
                 await session.close()
         finally:
-            db.close()
+            # PR-D: 워커는 더 이상 로컬 DB 세션 안 만듦. 정리 필요 없음.
+            pass
 
 
 def _ensure_local_schema():
-    """워커 로컬 SQLite schema 자동 생성 — alembic 의존성 제거.
+    """PR-D 이후 no-op. WorkerCommand "ensure_schema" 호환성만 유지.
 
-    핫픽스: 첫 마이그레이션 (56b9dedf1f5b initial_schema_15_tables) 본문이 `pass` 라
-    빈 워커 SQLite 에 alembic upgrade head 돌려도 accounts 등 핵심 테이블 안 만들어짐.
-    Base.metadata.create_all() 로 SQLAlchemy 모델 기준으로 직접 보장.
-
-    이건 응급 패치이고, 장기 정답은 PR-D (워커 로컬 SQLite 완전 폐기 + IpLog 서버화).
-    그래도 idempotent 호출이라 PR-D 작업 동안 유지해도 안전.
+    워커는 더 이상 로컬 SQLite 안 씀 (IpLog 도 서버화). schema 생성 불필요.
     """
-    try:
-        from hydra.db.session import engine
-        from hydra.db.models import Base
-        Base.metadata.create_all(bind=engine, checkfirst=True)
-        print("[Worker] local schema ensured (create_all)")
-    except Exception as e:
-        # 시작 자체를 막지는 않음 — 워커가 envelope-based 로 동작하면 일부 테이블 부재여도 진행.
-        print(f"[Worker] WARNING: local schema ensure failed: {type(e).__name__}: {e}")
+    print("[Worker] PR-D: local DB removed — schema ensure no-op")
 
 
 def main():
@@ -478,7 +468,7 @@ def main():
         print("[Worker] Error: HYDRA_WORKER_TOKEN not set")
         print("Set via environment variable or run setup first")
         sys.exit(1)
-    _ensure_local_schema()
+    # PR-D: _ensure_local_schema 호출 불필요. 워커는 SessionLocal() 자체 안 만듦.
     app = WorkerApp()
     app.run()
 
