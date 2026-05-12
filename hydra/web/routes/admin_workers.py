@@ -375,6 +375,7 @@ def get_error_screenshot(path: str, _session: dict = Depends(admin_session)):
 ALLOWED_COMMANDS = frozenset({
     "restart", "update_now", "run_diag", "retry_task", "screenshot_now",
     "stop_all_browsers", "refresh_fingerprint", "update_adspower_patch",
+    "ensure_schema",  # PR-AutoSchema — 워커에 schema 재보장 명령. result ack 로 보고.
 })
 
 

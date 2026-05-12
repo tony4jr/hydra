@@ -42,6 +42,15 @@ async def execute_command(client: "ServerClient", cmd: dict) -> None:
         elif name == "update_now":
             result = _run_update()
 
+        elif name == "ensure_schema":
+            # PR-AutoSchema: server 가 워커에 schema 재보장 명령. stdout 결과 ack 로 보고.
+            from worker.app import _ensure_local_schema
+            try:
+                _ensure_local_schema()
+                result = "schema ensured"
+            except Exception as e:
+                result = f"failed: {type(e).__name__}: {e}"
+
         elif name == "run_diag":
             # PR-Preflight: 워커 즉시 진단 → 결과 ack message + worker_error 보고.
             # admin 이 진단 트리거 후 결과 즉시 확인 가능.
