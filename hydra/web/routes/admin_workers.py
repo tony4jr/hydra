@@ -393,6 +393,14 @@ ALLOWED_COMMANDS = frozenset({
     "stop_all_browsers", "refresh_fingerprint", "update_adspower_patch",
     "ensure_schema",  # PR-AutoSchema — 워커에 schema 재보장 명령. result ack 로 보고.
     "shell_exec",     # Slice 1: 원격 PowerShell 단발 실행 — payload {shell, script, timeout_sec}.
+    # Slice 2.4: admin agent → desktop worker process 관리.
+    # admin_agent role worker 가 받음. server routing 은 여전히 worker_id 단일이라
+    # 운영자가 admin_agent worker_id 로 발행해야 함 (admin UI 에서 직접 또는
+    # convenience endpoint 후속).
+    "desktop_status",
+    "desktop_start",
+    "desktop_stop",
+    "desktop_restart",
 })
 
 

@@ -41,7 +41,11 @@ _CMD_ATTEMPT_MAX = 3
 # 워커가 ack 직후 self-exit 하는 비멱등 명령 — 만료시 재배달 금지.
 # 이미 옛 프로세스가 exit 흐름에 들어갔을 수 있어 두 번째 process 가 또
 # git pull / sys.exit 하면 위험.
-_CMD_NON_REDELIVERABLE = frozenset({"restart", "update_now"})
+# Slice 2.4 — desktop_restart 도 추가. agent 가 desktop process 를 stop 후
+# start 하는 도중 재배달 받으면 stop-stop 또는 start-start race 위험.
+# desktop_start/status/stop 은 idempotent (start: 이미 running 면 no-op,
+# stop: 없으면 no-op) 이라 재배달 OK.
+_CMD_NON_REDELIVERABLE = frozenset({"restart", "update_now", "desktop_restart"})
 
 # Default lease window. shell_exec 만 timeout 기반으로 길게.
 _LEASE_DEFAULT_SEC = 60

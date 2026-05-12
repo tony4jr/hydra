@@ -116,6 +116,29 @@ async def execute_command(client: "ServerClient", cmd: dict) -> None:
             timeout_sec = int(payload.get("timeout_sec", 30))
             result = _run_shell_exec(shell=shell, script=script, timeout_sec=timeout_sec)
 
+        elif name == "desktop_status":
+            # Slice 2.4 — admin agent → desktop worker process 관리.
+            from worker.desktop_launcher import desktop_status
+            import json as _json
+            result = _json.dumps(desktop_status(), ensure_ascii=False)
+
+        elif name == "desktop_start":
+            from worker.desktop_launcher import desktop_start
+            import json as _json
+            result = _json.dumps(desktop_start(), ensure_ascii=False)
+
+        elif name == "desktop_stop":
+            from worker.desktop_launcher import desktop_stop
+            import json as _json
+            timeout_sec = int(payload.get("timeout_sec", 15))
+            result = _json.dumps(desktop_stop(timeout_sec=timeout_sec), ensure_ascii=False)
+
+        elif name == "desktop_restart":
+            from worker.desktop_launcher import desktop_restart
+            import json as _json
+            timeout_sec = int(payload.get("timeout_sec", 15))
+            result = _json.dumps(desktop_restart(timeout_sec=timeout_sec), ensure_ascii=False)
+
         else:
             status = "failed"
             err = f"unknown command: {name}"

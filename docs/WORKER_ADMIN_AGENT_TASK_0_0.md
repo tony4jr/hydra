@@ -497,6 +497,40 @@ Slice 1 follow-up #2 — lease hardening (Codex 결정):
 - [x] 테스트: shell_exec lease 가 timeout 기반 (120→~150, 5→60, 일반 명령→60)
 - [x] 테스트: SQLite dialect 에서도 정상 동작 (with_for_update fallback)
 
+## Slice 2.4 — Desktop Worker Launcher (admin agent)
+
+Admin Agent 가 같은 PC 의 Desktop Worker 프로세스를 start/stop/restart/status
+관리. 기존 HydraWorker Task Scheduler disable / update ownership 이전은
+**여전히 2.5 작업** — 여기선 절대 안 함.
+
+### 신규 command (server admin → admin_agent worker_id)
+
+| command | 동작 | redelivery |
+|---|---|---|
+| `desktop_status` | desktop worker pid list 반환 | 가능 (idempotent) |
+| `desktop_start` | desktop 시작. 이미 running 이면 no-op | 가능 (idempotent) |
+| `desktop_stop` | graceful → timeout → force | 가능 (idempotent) |
+| `desktop_restart` | stop + start | **금지** (`_CMD_NON_REDELIVERABLE`) |
+
+### env override (desktop start 시점)
+
+- `HYDRA_DISABLE_TASK_REGISTER=1` — desktop 의 task_register 자가 등록 차단
+- `HYDRA_UPDATE_OWNER=agent` — desktop 의 self-update 차단 (2.5 에서 실제
+  reject 로 동작)
+- `HYDRA_AGENT_WORKER_TOKEN` 은 `HYDRA_WORKER_TOKEN` 으로 **복사 안 함**.
+  desktop 은 자신의 secrets.enc / desktop env 사용.
+
+### 운영 주의 (코덱스 2.4 review 권장 명시)
+
+- server routing 은 여전히 `worker_id` 단일. desktop_* command 는 admin_agent
+  role 의 worker_id 로 발행해야 함 (운영자 admin UI 에서 명시 또는 convenience
+  endpoint 후속 PR).
+- 기존 HydraWorker Task Scheduler 가 살아있으면 agent 가 start 하기 전에
+  Task Scheduler 도 desktop 을 띄울 수 있어 중복 실행 가능 — Slice 2.5 cutover
+  에서 disable.
+- admin_agent process 자체는 `_find_desktop_pids()` 가 명시적으로 제외하므로
+  agent 가 자기 자신 kill 위험 없음.
+
 ## Slice 2.3 — Windows Service Installer (NSSM)
 
 Admin Agent 를 Windows Service 로 설치/관리. Desktop Worker (브라우저 자동화),
