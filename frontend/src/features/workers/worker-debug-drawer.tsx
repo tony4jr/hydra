@@ -7,6 +7,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { fetchApi } from '@/lib/api'
 import { toast } from 'sonner'
 
@@ -181,6 +182,10 @@ function CommandStatus({ status }: { status: string }) {
 function CommandsTab({ workerId }: { workerId: number }) {
   const [cmds, setCmds] = useState<CommandEntry[]>([])
   const [loading, setLoading] = useState(true)
+  // Slice 1 follow-up — 원격 PowerShell 단발 실행 UI.
+  const [shellScript, setShellScript] = useState('')
+  const [shellTimeout, setShellTimeout] = useState(30)
+  const [shellSending, setShellSending] = useState(false)
 
   const load = async () => {
     try {
@@ -219,6 +224,33 @@ function CommandsTab({ workerId }: { workerId: number }) {
     }
   }
 
+  const sendShell = async () => {
+    const script = shellScript.trim()
+    if (!script) {
+      toast.error('스크립트 비어있음')
+      return
+    }
+    const timeout = Number.isFinite(shellTimeout) ? shellTimeout : 30
+    setShellSending(true)
+    try {
+      await fetchApi(`/api/admin/workers/${workerId}/shell`, {
+        method: 'POST',
+        body: JSON.stringify({ script, timeout_sec: timeout }),
+      })
+      toast.success(`shell 발행 (timeout ${timeout}s)`, {
+        description: '아래 명령 이력에서 결과 확인',
+      })
+      setShellScript('')
+      load()
+    } catch (e) {
+      toast.error('shell 발행 실패', {
+        description: e instanceof Error ? e.message : String(e),
+      })
+    } finally {
+      setShellSending(false)
+    }
+  }
+
   return (
     <div className='flex flex-col h-full gap-3'>
       <div>
@@ -236,6 +268,37 @@ function CommandsTab({ workerId }: { workerId: number }) {
               {COMMAND_LABEL[c] || c}
             </Button>
           ))}
+        </div>
+      </div>
+      <div>
+        <p className='text-xs text-muted-foreground mb-2'>원격 PowerShell (단발)</p>
+        <Textarea
+          placeholder='git rev-parse --short HEAD'
+          value={shellScript}
+          onChange={(e) => setShellScript(e.target.value)}
+          className='text-xs font-mono min-h-[64px]'
+          disabled={shellSending}
+        />
+        <div className='flex items-center gap-2 mt-1.5'>
+          <Input
+            type='number'
+            min={1}
+            max={120}
+            value={shellTimeout}
+            onChange={(e) => setShellTimeout(Number(e.target.value) || 30)}
+            className='h-8 w-24 text-xs'
+            disabled={shellSending}
+          />
+          <span className='text-[11px] text-muted-foreground'>sec</span>
+          <Button
+            size='sm'
+            onClick={sendShell}
+            disabled={shellSending || !shellScript.trim()}
+            className='ml-auto h-8 text-xs'
+          >
+            <Terminal className='h-3 w-3 mr-1.5' />
+            실행
+          </Button>
         </div>
       </div>
       <div className='flex-1 min-h-0 overflow-y-auto rounded-md border bg-muted/20'>

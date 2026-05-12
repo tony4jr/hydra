@@ -149,6 +149,81 @@ def test_admin_shell_rejects_bad_timeout(env):
     assert r.status_code == 400
 
 
+# ───────── follow-up: generic /command shell_exec validation parity ─────────
+
+def test_generic_command_shell_exec_rejects_missing_script(env):
+    """generic /command 로 shell_exec 보내도 /shell 과 같은 가드. payload 누락 → 400."""
+    r = env["client"].post(
+        f"/api/admin/workers/{env['worker_id']}/command",
+        headers=_admin(env),
+        json={"command": "shell_exec"},  # payload 없음
+    )
+    assert r.status_code == 400
+    assert "script" in r.text.lower()
+
+
+def test_generic_command_shell_exec_rejects_empty_script(env):
+    r = env["client"].post(
+        f"/api/admin/workers/{env['worker_id']}/command",
+        headers=_admin(env),
+        json={"command": "shell_exec", "payload": {"script": ""}},
+    )
+    assert r.status_code == 400
+
+
+def test_generic_command_shell_exec_rejects_oversized_script(env):
+    r = env["client"].post(
+        f"/api/admin/workers/{env['worker_id']}/command",
+        headers=_admin(env),
+        json={"command": "shell_exec", "payload": {"script": "a" * 8001}},
+    )
+    assert r.status_code == 400
+
+
+def test_generic_command_shell_exec_rejects_bad_shell(env):
+    r = env["client"].post(
+        f"/api/admin/workers/{env['worker_id']}/command",
+        headers=_admin(env),
+        json={"command": "shell_exec", "payload": {"script": "echo x", "shell": "bash"}},
+    )
+    assert r.status_code == 400
+
+
+def test_generic_command_shell_exec_rejects_bad_timeout(env):
+    r = env["client"].post(
+        f"/api/admin/workers/{env['worker_id']}/command",
+        headers=_admin(env),
+        json={"command": "shell_exec", "payload": {"script": "echo x", "timeout_sec": 9999}},
+    )
+    assert r.status_code == 400
+
+
+def test_generic_command_shell_exec_normalizes_payload(env):
+    """valid shell_exec payload 는 generic 경로도 통과 + 기본값 채워서 정규화."""
+    r = env["client"].post(
+        f"/api/admin/workers/{env['worker_id']}/command",
+        headers=_admin(env),
+        json={"command": "shell_exec", "payload": {"script": "echo norm"}},
+    )
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["command"] == "shell_exec"
+    # default shell + timeout 채워졌는지
+    assert out["payload"]["shell"] == "powershell"
+    assert out["payload"]["timeout_sec"] == 30
+    assert out["payload"]["script"] == "echo norm"
+
+    # DB 에 저장된 payload 도 normalized JSON 인지 확인
+    db = env["Session"]()
+    try:
+        c = db.get(WorkerCommand, out["id"])
+        assert c.command == "shell_exec"
+        stored = json.loads(c.payload)
+        assert stored == {"shell": "powershell", "script": "echo norm", "timeout_sec": 30}
+    finally:
+        db.close()
+
+
 # ───────── 2. heartbeat lease + expired lease redelivery ─────────
 
 def test_heartbeat_picks_up_command_with_lease(env):

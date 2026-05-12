@@ -467,6 +467,20 @@ Working checklist (updated live as work progresses):
 - [x] 테스트: `HYDRA_DISABLE_TASK_REGISTER=1` → schtasks skip
 - [x] 테스트: `HYDRA_UPDATE_OWNER=agent` → self-update 거부
 
+Slice 1 follow-up (Codex 리뷰 보완):
+
+- [x] generic `/api/admin/workers/{id}/command` 의 `shell_exec` payload 도
+      `_validate_shell_exec_payload` helper 로 동일 검증 + 정규화. 두 경로
+      payload 가드 parity 보장
+- [x] frontend `worker-debug-drawer.tsx` CommandsTab 에 PowerShell textarea +
+      timeout input + 실행 버튼 추가. `POST /api/admin/workers/{id}/shell`
+      호출. 결과는 기존 명령 이력 polling 으로 확인
+- [x] 테스트: generic `/command` shell_exec invalid payload 7종 reject
+      (missing/empty/oversized/bad shell/bad timeout/...)
+- [x] 테스트: generic `/command` shell_exec valid payload 가 normalized 되어
+      DB 저장 (default shell=powershell, timeout_sec=30)
+- [x] frontend `tsc -b --noEmit` 통과 (exit 0)
+
 Out of scope (Phase 2+):
 - Windows Service Admin Agent 설치
 - streaming terminal (chunked stdout)

@@ -387,6 +387,48 @@ SHELL_DEFAULT_TIMEOUT_SEC = 30
 SHELL_ALLOWED_SHELLS = frozenset({"powershell", "sh"})
 
 
+def _validate_shell_exec_payload(payload: Optional[dict]) -> dict:
+    """shell_exec payload 검증 + 정규화. dict 반환.
+
+    Slice 1 follow-up — generic /command 와 convenience /shell 양쪽 모두 같은
+    가드를 적용하기 위한 helper. /shell 에서만 가드하던 게 generic 우회 가능.
+
+    raises HTTPException(400) on:
+      - payload not dict / missing 'script'
+      - script empty 또는 8000 자 초과
+      - shell 화이트리스트 밖 (default 'powershell')
+      - timeout_sec 1..120 밖 (default 30)
+    """
+    if not isinstance(payload, dict):
+        raise HTTPException(400, "shell_exec: payload must be an object with 'script'")
+
+    script = payload.get("script")
+    if not isinstance(script, str) or not script:
+        raise HTTPException(400, "shell_exec: 'script' must be a non-empty string")
+    if len(script) > SHELL_MAX_SCRIPT_LEN:
+        raise HTTPException(
+            400, f"shell_exec: script length {len(script)} exceeds limit {SHELL_MAX_SCRIPT_LEN}",
+        )
+
+    shell = payload.get("shell", "powershell")
+    if shell not in SHELL_ALLOWED_SHELLS:
+        raise HTTPException(
+            400, f"shell_exec: shell must be one of {sorted(SHELL_ALLOWED_SHELLS)}, got {shell!r}",
+        )
+
+    timeout_sec = payload.get("timeout_sec", SHELL_DEFAULT_TIMEOUT_SEC)
+    try:
+        timeout_sec = int(timeout_sec)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "shell_exec: timeout_sec must be an integer")
+    if not (1 <= timeout_sec <= SHELL_MAX_TIMEOUT_SEC):
+        raise HTTPException(
+            400, f"shell_exec: timeout_sec must be 1..{SHELL_MAX_TIMEOUT_SEC}, got {timeout_sec}",
+        )
+
+    return {"shell": shell, "script": script, "timeout_sec": timeout_sec}
+
+
 class CommandRequest(BaseModel):
     command: str = Field(..., min_length=1, max_length=64)
     payload: Optional[dict] = None
@@ -411,9 +453,18 @@ def issue_command(
     req: CommandRequest,
     session: dict = Depends(admin_session),
 ) -> CommandOut:
-    """어드민이 워커에 명령 발행 — heartbeat 응답으로 전달됨."""
+    """어드민이 워커에 명령 발행 — heartbeat 응답으로 전달됨.
+
+    Slice 1 follow-up — shell_exec 발행 시 generic 경로도 /shell convenience
+    endpoint 와 동일한 validation + 정규화. payload bypass 차단.
+    """
     if req.command not in ALLOWED_COMMANDS:
         raise HTTPException(400, f"unknown command: {req.command}. allowed: {sorted(ALLOWED_COMMANDS)}")
+
+    payload = req.payload
+    if req.command == "shell_exec":
+        payload = _validate_shell_exec_payload(payload)
+
     from hydra.db.models import WorkerCommand
     db = _db_session.SessionLocal()
     try:
@@ -422,7 +473,7 @@ def issue_command(
         cmd = WorkerCommand(
             worker_id=worker_id,
             command=req.command,
-            payload=json.dumps(req.payload, ensure_ascii=False) if req.payload else None,
+            payload=json.dumps(payload, ensure_ascii=False) if payload else None,
             status="pending",
             issued_by=session.get("user_id"),
             issued_at=datetime.now(UTC),
@@ -432,7 +483,7 @@ def issue_command(
         db.refresh(cmd)
         return CommandOut(
             id=cmd.id, worker_id=cmd.worker_id, command=cmd.command,
-            payload=req.payload, status=cmd.status,
+            payload=payload, status=cmd.status,
             issued_at=cmd.issued_at.isoformat(),
         )
     finally:
@@ -459,25 +510,15 @@ def issue_shell(
     진단/복구 가능하도록 만드는 첫 채널. ALLOWED_COMMANDS 의 일반 발행 경로
     대비 script 길이/timeout/shell 화이트리스트 가드 추가.
     """
-    if req.shell not in SHELL_ALLOWED_SHELLS:
-        raise HTTPException(
-            400, f"shell must be one of {sorted(SHELL_ALLOWED_SHELLS)}, got {req.shell!r}",
-        )
-    if len(req.script) > SHELL_MAX_SCRIPT_LEN:
-        raise HTTPException(
-            400, f"script length {len(req.script)} exceeds limit {SHELL_MAX_SCRIPT_LEN}",
-        )
-    if not (1 <= req.timeout_sec <= SHELL_MAX_TIMEOUT_SEC):
-        raise HTTPException(
-            400, f"timeout_sec must be 1..{SHELL_MAX_TIMEOUT_SEC}, got {req.timeout_sec}",
-        )
-
-    from hydra.db.models import WorkerCommand
-    payload = {
+    # Slice 1 follow-up — generic /command 경로와 같은 _validate_shell_exec_payload
+    # helper 로 검증. 두 경로 모두 동일한 가드 적용 보장.
+    payload = _validate_shell_exec_payload({
         "shell": req.shell,
         "script": req.script,
         "timeout_sec": req.timeout_sec,
-    }
+    })
+
+    from hydra.db.models import WorkerCommand
     db = _db_session.SessionLocal()
     try:
         if db.get(Worker, worker_id) is None:
