@@ -314,62 +314,93 @@ def test_cutover_apply_fail_closed_when_stop_scheduled_task_fails(monkeypatch):
 
 
 def test_cutover_apply_fail_closed_when_final_state_not_disabled(monkeypatch):
-    """delete=False + final recheck 가 Ready/Running 인 경우 ok=False.
+    """delete=False + mutation recheck 가 Ready/Running 인 경우 ok=False.
 
-    Disable PS 명령은 rc=0 이지만 실제 상태 미반영 (race / Windows 버그 등).
+    Disable PS 명령은 rc=0 이지만 실제 상태 미반영 (race / Windows 버그).
+    핵심: desktop_stop/start 절대 호출 X — legacy task 살아있는 채로 desktop
+    띄우면 중복 실행.
+    """
+    monkeypatch.setattr("worker.scheduler_cutover.sys.platform", "win32")
+    # 첫/두번째 query 모두 Ready — disable 시도 후에도 미반영.
+    monkeypatch.setattr(
+        "worker.scheduler_cutover._task_query",
+        lambda: {"ok": True, "exists": True, "state": "Ready", "error": None},
+    )
+    monkeypatch.setattr("worker.scheduler_cutover._task_last_run_info", lambda: {})
+    monkeypatch.setattr("worker.scheduler_cutover._run_ps",
+                        lambda s, timeout=15: (0, "", ""))  # 모든 PS 성공
+
+    fake_stop = MagicMock()
+    fake_start = MagicMock()
+    monkeypatch.setattr("worker.desktop_launcher.desktop_stop", fake_stop)
+    monkeypatch.setattr("worker.desktop_launcher.desktop_start", fake_start)
+
+    from worker.scheduler_cutover import cutover_apply
+    out = cutover_apply()
+    assert out["ok"] is False
+    assert "not disabled" in out["error"]
+    fake_stop.assert_not_called()
+    fake_start.assert_not_called()
+
+
+def test_cutover_apply_fail_closed_when_delete_true_but_task_remains(monkeypatch):
+    """delete=True + mutation recheck 가 여전히 exists=True 인 경우 ok=False.
+
+    핵심: desktop_stop/start 절대 호출 X.
+    """
+    monkeypatch.setattr("worker.scheduler_cutover.sys.platform", "win32")
+    monkeypatch.setattr(
+        "worker.scheduler_cutover._task_query",
+        lambda: {"ok": True, "exists": True, "state": "Ready", "error": None},
+    )
+    monkeypatch.setattr("worker.scheduler_cutover._task_last_run_info", lambda: {})
+    monkeypatch.setattr("worker.scheduler_cutover._run_ps",
+                        lambda s, timeout=15: (0, "", ""))
+
+    fake_stop = MagicMock()
+    fake_start = MagicMock()
+    monkeypatch.setattr("worker.desktop_launcher.desktop_stop", fake_stop)
+    monkeypatch.setattr("worker.desktop_launcher.desktop_start", fake_start)
+
+    from worker.scheduler_cutover import cutover_apply
+    out = cutover_apply(delete=True)
+    assert out["ok"] is False
+    assert "task still exists" in out["error"]
+    fake_stop.assert_not_called()
+    fake_start.assert_not_called()
+
+
+def test_cutover_apply_fail_closed_when_mutation_recheck_query_fails(monkeypatch):
+    """mutation 직후 recheck 가 PowerShell 실패 (q.ok=False) 면 ok=False.
+
+    desktop_stop/start 절대 호출 X — task 상태 모르는데 desktop 띄우면 위험.
     """
     monkeypatch.setattr("worker.scheduler_cutover.sys.platform", "win32")
     query_calls = {"n": 0}
     def fake_q():
         query_calls["n"] += 1
         if query_calls["n"] == 1:
+            # initial: Ready (mutation 으로 갈 가능성 열어둠)
             return {"ok": True, "exists": True, "state": "Ready", "error": None}
-        # 첫 disable 시도 후에도 여전히 Ready
-        return {"ok": True, "exists": True, "state": "Ready", "error": None}
-    monkeypatch.setattr("worker.scheduler_cutover._task_query", fake_q)
-    monkeypatch.setattr("worker.scheduler_cutover._task_last_run_info", lambda: {})
-    monkeypatch.setattr("worker.scheduler_cutover._run_ps",
-                        lambda s, timeout=15: (0, "", ""))  # 모든 PS 성공
-    monkeypatch.setattr(
-        "worker.desktop_launcher.desktop_stop",
-        lambda *a, **k: {"ok": True, "running": False, "stopped_pids": []},
-    )
-    monkeypatch.setattr(
-        "worker.desktop_launcher.desktop_start",
-        lambda: {"ok": True, "running": True, "pids": [1]},
-    )
-
-    from worker.scheduler_cutover import cutover_apply
-    out = cutover_apply()
-    assert out["ok"] is False
-    assert "not disabled" in out["error"]
-
-
-def test_cutover_apply_fail_closed_when_delete_true_but_task_remains(monkeypatch):
-    """delete=True + final recheck 가 여전히 exists=True 인 경우 ok=False."""
-    monkeypatch.setattr("worker.scheduler_cutover.sys.platform", "win32")
-    query_calls = {"n": 0}
-    def fake_q():
-        query_calls["n"] += 1
-        # 첫 호출: Ready / 두 번째: 여전히 존재 (unregister 실제 미반영)
-        return {"ok": True, "exists": True, "state": "Ready", "error": None}
+        # recheck 시점에 query 자체 실패.
+        return {"ok": False, "exists": False, "state": None,
+                "error": "permission denied on recheck"}
     monkeypatch.setattr("worker.scheduler_cutover._task_query", fake_q)
     monkeypatch.setattr("worker.scheduler_cutover._task_last_run_info", lambda: {})
     monkeypatch.setattr("worker.scheduler_cutover._run_ps",
                         lambda s, timeout=15: (0, "", ""))
-    monkeypatch.setattr(
-        "worker.desktop_launcher.desktop_stop",
-        lambda *a, **k: {"ok": True, "running": False, "stopped_pids": []},
-    )
-    monkeypatch.setattr(
-        "worker.desktop_launcher.desktop_start",
-        lambda: {"ok": True, "running": True, "pids": [1]},
-    )
+
+    fake_stop = MagicMock()
+    fake_start = MagicMock()
+    monkeypatch.setattr("worker.desktop_launcher.desktop_stop", fake_stop)
+    monkeypatch.setattr("worker.desktop_launcher.desktop_start", fake_start)
 
     from worker.scheduler_cutover import cutover_apply
-    out = cutover_apply(delete=True)
+    out = cutover_apply()
     assert out["ok"] is False
-    assert "task still exists" in out["error"]
+    assert "mutation recheck failed" in out["error"]
+    fake_stop.assert_not_called()
+    fake_start.assert_not_called()
 
 
 # ───────── e/f. role guard ─────────

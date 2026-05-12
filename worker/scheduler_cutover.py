@@ -241,7 +241,28 @@ def cutover_apply(
                         f"Disable-ScheduledTask failed (rc={rc}): {(se or '').strip()[:200]}"
                     )
 
-    # ── 3. desktop process 정리 (scheduled-task mutation 다 성공한 후에만)
+    # ── 3. mutation recheck (Codex 2.5 follow-up #2) — desktop_stop/start 전에
+    # 반드시 desired-state 확인. Windows cmdlet 이 rc=0 인데 실제 상태 반영
+    # 안 된 race / 버그 케이스에서 legacy task 가 살아있는 채로 desktop 띄우는
+    # 위험 방지 (fail-closed).
+    if exists:
+        q2 = _task_query()
+        out["task_state_after_mutation"] = q2["state"]
+        out["task_exists_after_mutation"] = q2["exists"]
+        if not q2["ok"]:
+            return fail_closed(f"mutation recheck failed: {q2['error']}")
+        if delete and q2["exists"]:
+            return fail_closed(
+                f"delete=True but task still exists after mutation "
+                f"(state={q2['state']!r})"
+            )
+        if not delete and q2["exists"]:
+            if (q2["state"] or "").lower() != "disabled":
+                return fail_closed(
+                    f"task not disabled after mutation (state={q2['state']!r})"
+                )
+
+    # ── 4. desktop process 정리 (mutation recheck 통과한 후에만)
     from worker.desktop_launcher import desktop_stop as _stop
     stop_result = _stop(timeout_sec=15)
     out["steps"].append({"step": "desktop_stop", "result": stop_result})
@@ -250,7 +271,7 @@ def cutover_apply(
         out["message"] = f"desktop_stop failed: {stop_result.get('error', 'unknown')}"
         return out
 
-    # ── 4. start
+    # ── 5. start
     if start_desktop:
         from worker.desktop_launcher import desktop_start as _start
         start_result = _start()
@@ -259,31 +280,5 @@ def cutover_apply(
         out["message"] = start_result.get("message", "")
     else:
         out["message"] = "skipped desktop_start (start_desktop=False)"
-
-    # ── 5. final state recheck — 원하는 상태 도달 여부 검증.
-    q2 = _task_query()
-    out["final_state"] = q2["state"]
-    out["final_exists"] = q2["exists"]
-    if not q2["ok"]:
-        out["ok"] = False
-        out["warning"] = f"final task query failed: {q2['error']}"
-        return out
-
-    # delete=True: task 가 진짜 사라졌어야. 남아있으면 fail.
-    if delete and q2["exists"]:
-        out["ok"] = False
-        out["error"] = (
-            f"delete=True but task still exists (final_state={q2['state']!r})"
-        )
-        return out
-    # delete=False: task 가 존재한다면 Disabled 상태여야. Ready/Running 이면 fail.
-    if not delete and q2["exists"]:
-        final_state_lower = (q2["state"] or "").lower()
-        if final_state_lower != "disabled":
-            out["ok"] = False
-            out["error"] = (
-                f"task not disabled after cutover (final_state={q2['state']!r})"
-            )
-            return out
 
     return out
