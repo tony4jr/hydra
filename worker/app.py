@@ -468,6 +468,14 @@ def main():
         print("[Worker] Error: HYDRA_WORKER_TOKEN not set")
         print("Set via environment variable or run setup first")
         sys.exit(1)
+    # 진짜 본질 fix: Task Scheduler 자가 등록. updater.py 가 update 후 sys.exit
+    # 하면 Task Scheduler 가 재기동 — 미등록이면 워커가 영원히 죽음 (root cause
+    # of "사용자가 매번 워커 PC 가서 cmd 띄운" 야간 패턴).
+    try:
+        from worker.task_register import ensure_registered
+        ensure_registered()
+    except Exception as e:
+        print(f"[Worker] task_register import 실패: {e}")
     # PR-D: _ensure_local_schema 호출 불필요. 워커는 SessionLocal() 자체 안 만듦.
     app = WorkerApp()
     app.run()
