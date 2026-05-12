@@ -401,6 +401,12 @@ ALLOWED_COMMANDS = frozenset({
     "desktop_start",
     "desktop_stop",
     "desktop_restart",
+    # Slice 2.5: cutover (legacy HydraWorker Task Scheduler disable + desktop
+    # restart) + agent-owned update. worker.commands.execute_command 에서
+    # HYDRA_PROCESS_ROLE=admin_agent guard 검증.
+    "desktop_cutover_status",
+    "desktop_cutover_apply",
+    "agent_update_now",
 })
 
 

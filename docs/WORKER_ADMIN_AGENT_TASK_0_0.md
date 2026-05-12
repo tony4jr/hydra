@@ -497,6 +497,55 @@ Slice 1 follow-up #2 — lease hardening (Codex 결정):
 - [x] 테스트: shell_exec lease 가 timeout 기반 (120→~150, 5→60, 일반 명령→60)
 - [x] 테스트: SQLite dialect 에서도 정상 동작 (with_for_update fallback)
 
+## Slice 2.5 — Cutover + Agent-owned update
+
+Admin Agent 가 legacy HydraWorker Task Scheduler 를 disable 하고 desktop
+worker 를 launcher 로 인계. 동시에 desktop self-update 의존 (Task Scheduler
+restart 의존) 을 끊고 admin agent 가 update 를 owned.
+
+### 신규 command (admin_agent runtime 전용)
+
+| command | 동작 | redelivery |
+|---|---|---|
+| `desktop_cutover_status` | HydraWorker task 상태 + desktop_status summary | OK (read-only) |
+| `desktop_cutover_apply` | stop → disable → desktop_stop → desktop_start. delete 옵션은 default false (reversible 우선) | **금지** (multi-step) |
+| `agent_update_now` | git fetch → 변경 있을 때만 desktop_stop → reset → pip → desktop_start. pip 실패 시 git rollback + desktop_start | **금지** (multi-step) |
+
+### 안전 정책
+
+- 모든 command 는 `HYDRA_PROCESS_ROLE == admin_agent` 일 때만 launcher 호출.
+  desktop runtime 에서 발행되면 즉시 failed ack with error.
+- `cutover_apply` 의 `_task_query()` 가 PowerShell rc!=0 (permission/missing
+  module 등) 면 `ok=False` + desktop_stop/start 호출 안 함 (fail-closed).
+- `cutover_apply(dry_run=True)` 는 pure plan — `_task_query` / `_run_ps` /
+  desktop_* 함수 어느 것도 호출 안 함.
+- `agent_update_now` 는 이미 origin/main 이면 desktop 안 건드림 + `noop=True`.
+- `agent_update_now` 가 `worker.updater.perform_update()` 호출 안 함 (그건
+  desktop self-update gate). 대신 직접 git fetch/reset + pip install + launcher.
+- `agent_update_now` 는 `Start-ScheduledTask HydraWorker` 절대 호출 X — Task
+  Scheduler 는 cutover 됐다고 가정.
+- `agent_update_now` 의 pip install 실패 시 `git reset --hard <prev>` 로
+  rollback 후 desktop_start — broken state (new code + old deps) 회피.
+- `agent_update_now` 는 `restart_agent` 옵션 없음. agent self-restart 는 별도
+  NSSM service restart 명령으로 분리 (이번 slice 외).
+
+### 권장 cutover 운영 순서
+
+1. admin agent service 가 NSSM 으로 설치되어 heartbeat 보내고 있음 (Slice 2.3)
+2. 운영자가 admin UI 에서 admin_agent worker_id 로 `desktop_cutover_status` 발행
+   → 현재 HydraWorker 상태 확인 (state/desktop pids)
+3. `desktop_cutover_apply` (dry_run=True) → planned_steps 확인
+4. `desktop_cutover_apply` (dry_run=False) → HydraWorker disable + desktop 재기동
+5. 향후 update: 운영자가 `agent_update_now` 발행 → admin agent 가 git/pip/
+   desktop restart 일관 수행
+
+### Phase 3 작업 (이번 slice 외)
+
+- WorkerCommand target_role / capability dispatch
+- enroll API role 인자
+- agent self-restart 별도 command (NSSM service stop+start)
+- 운영자가 admin UI 에서 worker_id 잘못 발행해도 자동 routing
+
 ## Slice 2.4 — Desktop Worker Launcher (admin agent)
 
 Admin Agent 가 같은 PC 의 Desktop Worker 프로세스를 start/stop/restart/status

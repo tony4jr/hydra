@@ -116,6 +116,45 @@ async def execute_command(client: "ServerClient", cmd: dict) -> None:
             timeout_sec = int(payload.get("timeout_sec", 30))
             result = _run_shell_exec(shell=shell, script=script, timeout_sec=timeout_sec)
 
+        elif name in ("desktop_cutover_status", "desktop_cutover_apply", "agent_update_now"):
+            # Slice 2.5 — Cutover + agent-owned update. admin_agent runtime 전용.
+            import json as _json
+            current_role = os.environ.get("HYDRA_PROCESS_ROLE", "")
+            if current_role != "admin_agent":
+                status = "failed"
+                err = (
+                    f"{name} requires admin_agent runtime "
+                    f"(HYDRA_PROCESS_ROLE={current_role!r})"
+                )
+                result = _json.dumps(
+                    {"ok": False, "action": name, "error": err,
+                     "process_role": current_role},
+                    ensure_ascii=False,
+                )
+            elif name == "desktop_cutover_status":
+                from worker.scheduler_cutover import cutover_status
+                result = _json.dumps(cutover_status(), ensure_ascii=False)
+            elif name == "desktop_cutover_apply":
+                from worker.scheduler_cutover import cutover_apply
+                result = _json.dumps(
+                    cutover_apply(
+                        dry_run=bool(payload.get("dry_run", False)),
+                        start_desktop=bool(payload.get("start_desktop", True)),
+                        delete=bool(payload.get("delete", False)),
+                    ),
+                    ensure_ascii=False,
+                )
+            elif name == "agent_update_now":
+                from worker.agent_update import agent_update_now
+                # restart_agent option 은 Slice 2.5 review 권장 A 로 제거.
+                # agent self-restart 는 별도 NSSM service restart 로 분리.
+                result = _json.dumps(
+                    agent_update_now(
+                        dry_run=bool(payload.get("dry_run", False)),
+                    ),
+                    ensure_ascii=False,
+                )
+
         elif name in ("desktop_status", "desktop_start", "desktop_stop", "desktop_restart"):
             # Slice 2.4 — admin agent → desktop worker process 관리.
             # Slice 2.4 follow-up: HYDRA_PROCESS_ROLE guard. 서버 routing 이
