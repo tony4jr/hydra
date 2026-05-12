@@ -103,20 +103,30 @@ def check_ip_available(
 ) -> bool:
     """Check if another account used this IP within the cooldown window.
 
-    Same account re-using its own IP is allowed (real humans reconnect to the
-    same IP naturally). Only cross-account reuse within the window blocks.
+    PR-D-lite: 워커 로컬 SQLite 가 비어있거나 FK 위반 등 DB I/O 실패 시
+    안전하게 False 반환 → caller 가 rotate_and_verify 호출. 즉 매번 IP 회전 시도.
+    안티디텍션 invariant (1-account-1-IP) 유지: 로그 없으면 conflict 모른다고
+    가정하고 항상 새 IP 시도. 진짜 본질 fix 는 IpLog 서버화 (다음 PR).
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=cooldown_minutes)
-    conflict = (
-        db.query(IpLog)
-        .filter(
-            IpLog.ip_address == ip_address,
-            IpLog.started_at >= cutoff,
-            IpLog.account_id != account_id,
+    try:
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=cooldown_minutes)
+        conflict = (
+            db.query(IpLog)
+            .filter(
+                IpLog.ip_address == ip_address,
+                IpLog.started_at >= cutoff,
+                IpLog.account_id != account_id,
+            )
+            .first()
         )
-        .first()
-    )
-    return conflict is None
+        return conflict is None
+    except Exception as e:
+        log.warning(
+            f"check_ip_available DB lookup failed ({type(e).__name__}). "
+            f"Falling back to 'not available' → forcing IP rotation. "
+            f"Move IpLog to server (PR-D) for permanent fix."
+        )
+        return False  # 안전 측: 회전 강제
 
 
 async def rotate_and_verify(db: Session, device_id: str, account_id: int) -> str:
@@ -246,16 +256,33 @@ async def ensure_safe_ip(db: Session, account, worker) -> "IpLog":
     return log_ip_usage(db, account.id, new_ip, device_id)
 
 
-def log_ip_usage(db: Session, account_id: int, ip_address: str, device_id: str) -> IpLog:
-    """Record IP-account mapping."""
-    record = IpLog(
-        account_id=account_id,
-        ip_address=ip_address,
-        device_id=device_id,
-    )
-    db.add(record)
-    db.commit()
-    return record
+def log_ip_usage(db: Session, account_id: int, ip_address: str, device_id: str) -> "IpLog | None":
+    """Record IP-account mapping.
+
+    PR-D-lite: DB INSERT 실패 (FK 위반 / 테이블 부재 / 워커 로컬 DB 빈 상태) 시
+    silent fallback. 반환값 None — caller 는 사용 안 함 (단순 audit log).
+    안티디텍션 보장 (rotate 자체) 은 rotate_and_verify 가 책임지므로
+    log 실패해도 IP 회전은 정상 진행.
+    """
+    try:
+        record = IpLog(
+            account_id=account_id,
+            ip_address=ip_address,
+            device_id=device_id,
+        )
+        db.add(record)
+        db.commit()
+        return record
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        log.warning(
+            f"log_ip_usage DB INSERT failed ({type(e).__name__}). "
+            f"IP rotation 자체는 정상 — log audit 만 skip. PR-D 에서 서버 측 IpLog 로 이전 예정."
+        )
+        return None
 
 
 def end_ip_usage(db: Session, ip_log_id: int):
