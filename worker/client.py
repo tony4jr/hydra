@@ -82,14 +82,33 @@ class ServerClient:
         raise last_exc
 
     def heartbeat(self) -> dict:
-        """Heartbeat 전송 (M1-10: v2 엔드포인트)."""
+        """Heartbeat 전송 (M1-10: v2 엔드포인트).
+
+        PR-Preflight: 실시간 capability 측정 (ADB devices / AdsPower / system).
+        서버가 health_snapshot 보고 워커 환경 파악 → worker.ip_config 자동 세팅.
+        측정 실패해도 fallback default → heartbeat 자체는 절대 막지 않음.
+        """
+        try:
+            from worker.preflight import collect_health
+            health = collect_health()
+        except Exception:
+            health = {
+                "os_type": platform.system().lower(),
+                "cpu_percent": 0.0,
+                "mem_used_mb": 0,
+                "disk_free_gb": 0.0,
+                "adb_devices": [],
+                "adspower_version": "",
+                "playwright_browsers_ok": True,
+            }
+        body = {
+            "version": config.worker_version,
+            **health,
+        }
         resp = self._request(
             "POST", "/api/workers/heartbeat/v2",
             headers=self.headers,
-            json={
-                "version": config.worker_version,
-                "os_type": platform.system().lower(),
-            },
+            json=body,
         )
         resp.raise_for_status()
         return resp.json()

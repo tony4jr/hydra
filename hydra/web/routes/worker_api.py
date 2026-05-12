@@ -410,6 +410,15 @@ def heartbeat_v2(
         if w.status != "paused":
             w.status = "online"
         w.health_snapshot = json.dumps(req.model_dump(), ensure_ascii=False)
+
+        # PR-Preflight: 워커가 ADB device 보고했고 ip_config 비어있으면 자동 세팅.
+        # 사용자가 워커 PC 안 만져도 서버가 자동으로 첫 device ID 박음.
+        if req.adb_devices and not w.ip_config:
+            w.ip_config = json.dumps(
+                {"adb_device_id": req.adb_devices[0]},
+                ensure_ascii=False,
+            )
+
         db.commit()
 
         ads_key: str | None = None
