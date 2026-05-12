@@ -173,6 +173,18 @@ def desktop_start() -> dict[str, Any]:
     desktop_token = env.get("HYDRA_WORKER_TOKEN", "")
     if agent_token and desktop_token == agent_token:
         env.pop("HYDRA_WORKER_TOKEN", None)
+    # Slice 2.4 follow-up #2 — admin_agent fallback path:
+    # admin_agent token 우선순위가 AGENT_WORKER_TOKEN > ADMIN_AGENT_TOKEN >
+    # HYDRA_WORKER_TOKEN. service 가 마지막 fallback (HYDRA_WORKER_TOKEN) 만
+    # 박혀있는 경우, 부모 process role 이 admin_agent 면 그 token 자체가
+    # agent token 이므로 child desktop env 에서도 pop 해야 leak 차단.
+    parent_role = os.environ.get("HYDRA_PROCESS_ROLE", "")
+    if (
+        parent_role == "admin_agent"
+        and not agent_token
+        and env.get("HYDRA_WORKER_TOKEN")
+    ):
+        env.pop("HYDRA_WORKER_TOKEN", None)
 
     cmd = [python, "-m", "worker"]
     creationflags = 0
@@ -204,7 +216,19 @@ def desktop_stop(timeout_sec: int = 15) -> dict[str, Any]:
     """desktop worker 종료. graceful 우선 → timeout 후 force.
 
     admin_agent process 는 *_find_desktop_pids* 가 이미 제외하므로 안전.
+    psutil 미설치 시 fail-closed — 빈 list 가 진짜 no-op 인지 detection 실패인지
+    구분 불가, 거짓 성공 방지.
     """
+    if not _PSUTIL_AVAILABLE:
+        return {
+            "ok": False,
+            "action": "stop",
+            "running": False,
+            "pids": [],
+            "stopped_pids": [],
+            "psutil_available": False,
+            "error": "psutil unavailable — process detection impossible, refuse to claim stop",
+        }
     pids = _find_desktop_pids()
     if not pids:
         return {
@@ -276,8 +300,28 @@ def desktop_stop(timeout_sec: int = 15) -> dict[str, Any]:
 
 
 def desktop_restart(timeout_sec: int = 15) -> dict[str, Any]:
-    """stop + start. graceful timeout 적용."""
+    """stop + start. graceful timeout 적용. stop 실패 시 start 시도 안 함."""
+    if not _PSUTIL_AVAILABLE:
+        return {
+            "ok": False,
+            "action": "restart",
+            "running": False,
+            "pids": [],
+            "psutil_available": False,
+            "error": "psutil unavailable — refuse to restart",
+        }
     stop_result = desktop_stop(timeout_sec=timeout_sec)
+    if not stop_result.get("ok", False):
+        return {
+            "ok": False,
+            "action": "restart",
+            "running": False,
+            "pids": [],
+            "stopped_pids": stop_result.get("stopped_pids", []),
+            "error": (
+                f"restart aborted — stop failed: {stop_result.get('error', stop_result.get('message',''))}"
+            ),
+        }
     # 시작 직전 race 회피용 잠깐 sleep (NSSM 의 restart delay 와 비슷).
     time.sleep(1.0)
     start_result = desktop_start()

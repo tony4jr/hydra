@@ -166,6 +166,7 @@ def test_desktop_start_preserves_independent_desktop_token(monkeypatch):
 def test_desktop_stop_graceful_then_force_on_posix(monkeypatch):
     """POSIX path: SIGTERM 보냈는데 timeout 안에 안 죽으면 SIGKILL."""
     monkeypatch.setattr("worker.desktop_launcher.sys.platform", "linux")
+    monkeypatch.setattr("worker.desktop_launcher._PSUTIL_AVAILABLE", True)
     pid = 999
 
     # _find_desktop_pids 호출 순서:
@@ -201,7 +202,8 @@ def test_desktop_stop_graceful_then_force_on_posix(monkeypatch):
 
 
 def test_desktop_stop_noop_when_not_running():
-    with patch("worker.desktop_launcher._find_desktop_pids", return_value=[]):
+    with patch("worker.desktop_launcher._PSUTIL_AVAILABLE", True), \
+         patch("worker.desktop_launcher._find_desktop_pids", return_value=[]):
         from worker.desktop_launcher import desktop_stop
         result = desktop_stop()
     assert result["running"] is False
@@ -344,6 +346,105 @@ def test_desktop_status_reports_psutil_unavailable():
     assert "psutil unavailable" in result["error"]
 
 
+def test_desktop_stop_fail_closed_when_psutil_missing(monkeypatch):
+    """psutil 미설치 → stop 도 fail-closed (탐지 불가 → 거짓 성공 금지)."""
+    monkeypatch.setattr("worker.desktop_launcher.sys.platform", "linux")
+    kill_calls = []
+    monkeypatch.setattr("worker.desktop_launcher.os.kill",
+                        lambda *a, **k: kill_calls.append(a))
+    with patch("worker.desktop_launcher._PSUTIL_AVAILABLE", False), \
+         patch("worker.desktop_launcher.subprocess.run") as fake_run:
+        from worker.desktop_launcher import desktop_stop
+        result = desktop_stop(timeout_sec=1)
+    assert result["ok"] is False
+    assert "psutil unavailable" in result["error"]
+    # taskkill / os.kill 어느 것도 호출 안 됨
+    fake_run.assert_not_called()
+    assert kill_calls == []
+
+
+def test_desktop_restart_fail_closed_when_psutil_missing():
+    """psutil 미설치 → restart 가 stop 시도 없이 fail-closed."""
+    with patch("worker.desktop_launcher._PSUTIL_AVAILABLE", False), \
+         patch("worker.desktop_launcher.subprocess.Popen") as fake_popen, \
+         patch("worker.desktop_launcher.desktop_stop") as fake_stop, \
+         patch("worker.desktop_launcher.desktop_start") as fake_start:
+        from worker.desktop_launcher import desktop_restart
+        result = desktop_restart(timeout_sec=1)
+    assert result["ok"] is False
+    assert "psutil unavailable" in result["error"]
+    fake_popen.assert_not_called()
+    fake_stop.assert_not_called()
+    fake_start.assert_not_called()
+
+
+def test_desktop_restart_aborts_when_stop_fails(monkeypatch):
+    """stop 이 ok=False 면 restart 가 start 호출 안 함."""
+    with patch("worker.desktop_launcher._PSUTIL_AVAILABLE", True), \
+         patch("worker.desktop_launcher.desktop_stop") as fake_stop, \
+         patch("worker.desktop_launcher.desktop_start") as fake_start:
+        fake_stop.return_value = {"ok": False, "error": "stop failed for some reason",
+                                  "stopped_pids": []}
+        from worker.desktop_launcher import desktop_restart
+        result = desktop_restart(timeout_sec=1)
+    assert result["ok"] is False
+    assert "stop failed" in result["error"]
+    fake_start.assert_not_called()
+
+
+# ───────── Slice 2.4 follow-up #2: HYDRA_WORKER_TOKEN fallback leak ─────────
+
+def test_desktop_start_strips_worker_token_when_parent_is_agent_fallback(monkeypatch):
+    """admin_agent fallback path: HYDRA_WORKER_TOKEN 이 agent token 으로 쓰일 때.
+
+    admin_agent token 우선순위:
+      HYDRA_AGENT_WORKER_TOKEN > HYDRA_ADMIN_AGENT_TOKEN > HYDRA_WORKER_TOKEN.
+    service 가 마지막 fallback (HYDRA_WORKER_TOKEN) 만 박혀있는 경우, parent
+    process role 이 admin_agent 면 그 token 자체가 agent token 이므로 child
+    desktop env 에 leak 되면 안 됨.
+    """
+    monkeypatch.delenv("HYDRA_AGENT_WORKER_TOKEN", raising=False)
+    monkeypatch.delenv("HYDRA_ADMIN_AGENT_TOKEN", raising=False)
+    monkeypatch.setenv("HYDRA_PROCESS_ROLE", "admin_agent")
+    monkeypatch.setenv("HYDRA_WORKER_TOKEN", "AGENT-FALLBACK-TOKEN")
+
+    with patch("worker.desktop_launcher._PSUTIL_AVAILABLE", True), \
+         patch("worker.desktop_launcher._find_desktop_pids", return_value=[]), \
+         patch("worker.desktop_launcher.subprocess.Popen") as fake_popen:
+        fake_proc = MagicMock(); fake_proc.pid = 1
+        fake_popen.return_value = fake_proc
+        from worker.desktop_launcher import desktop_start
+        desktop_start()
+
+    env = fake_popen.call_args.kwargs.get("env") or {}
+    # parent role 이 admin_agent + 다른 agent token 없으면 WORKER_TOKEN 도 agent
+    # token 으로 간주 → pop.
+    assert env.get("HYDRA_WORKER_TOKEN") != "AGENT-FALLBACK-TOKEN"
+    assert "HYDRA_WORKER_TOKEN" not in env
+
+
+def test_desktop_start_keeps_independent_worker_token_when_parent_not_agent(monkeypatch):
+    """parent role 이 admin_agent 가 아니면 (예: test 환경), WORKER_TOKEN 만
+    있고 agent token 없으면 그대로 유지.
+    """
+    monkeypatch.delenv("HYDRA_AGENT_WORKER_TOKEN", raising=False)
+    monkeypatch.delenv("HYDRA_ADMIN_AGENT_TOKEN", raising=False)
+    monkeypatch.delenv("HYDRA_PROCESS_ROLE", raising=False)
+    monkeypatch.setenv("HYDRA_WORKER_TOKEN", "STANDALONE-DESKTOP-TOKEN")
+
+    with patch("worker.desktop_launcher._PSUTIL_AVAILABLE", True), \
+         patch("worker.desktop_launcher._find_desktop_pids", return_value=[]), \
+         patch("worker.desktop_launcher.subprocess.Popen") as fake_popen:
+        fake_proc = MagicMock(); fake_proc.pid = 1
+        fake_popen.return_value = fake_proc
+        from worker.desktop_launcher import desktop_start
+        desktop_start()
+
+    env = fake_popen.call_args.kwargs.get("env") or {}
+    # parent 가 admin_agent 가 아니므로 standalone desktop token 으로 간주, 유지.
+    assert env.get("HYDRA_WORKER_TOKEN") == "STANDALONE-DESKTOP-TOKEN"
+
+
 # ───────── Slice 2.4 follow-up: HYDRA_PROCESS_ROLE guard ─────────
 
 @pytest.mark.asyncio
@@ -420,5 +521,6 @@ def test_stop_never_targets_admin_agent_process():
 
         from worker.desktop_launcher import desktop_stop
         result = desktop_stop()
+    assert result["ok"] is True
     assert result["running"] is False
     assert result["stopped_pids"] == []
