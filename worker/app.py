@@ -451,6 +451,26 @@ class WorkerApp:
             db.close()
 
 
+def _ensure_local_schema():
+    """워커 로컬 SQLite schema 자동 생성 — alembic 의존성 제거.
+
+    핫픽스: 첫 마이그레이션 (56b9dedf1f5b initial_schema_15_tables) 본문이 `pass` 라
+    빈 워커 SQLite 에 alembic upgrade head 돌려도 accounts 등 핵심 테이블 안 만들어짐.
+    Base.metadata.create_all() 로 SQLAlchemy 모델 기준으로 직접 보장.
+
+    이건 응급 패치이고, 장기 정답은 PR-D (워커 로컬 SQLite 완전 폐기 + IpLog 서버화).
+    그래도 idempotent 호출이라 PR-D 작업 동안 유지해도 안전.
+    """
+    try:
+        from hydra.db.session import engine
+        from hydra.db.models import Base
+        Base.metadata.create_all(bind=engine, checkfirst=True)
+        print("[Worker] local schema ensured (create_all)")
+    except Exception as e:
+        # 시작 자체를 막지는 않음 — 워커가 envelope-based 로 동작하면 일부 테이블 부재여도 진행.
+        print(f"[Worker] WARNING: local schema ensure failed: {type(e).__name__}: {e}")
+
+
 def main():
     """진입점."""
     config.load()
@@ -458,6 +478,7 @@ def main():
         print("[Worker] Error: HYDRA_WORKER_TOKEN not set")
         print("Set via environment variable or run setup first")
         sys.exit(1)
+    _ensure_local_schema()
     app = WorkerApp()
     app.run()
 
