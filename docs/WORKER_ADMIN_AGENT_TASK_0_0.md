@@ -497,6 +497,20 @@ Slice 1 follow-up #2 — lease hardening (Codex 결정):
 - [x] 테스트: shell_exec lease 가 timeout 기반 (120→~150, 5→60, 일반 명령→60)
 - [x] 테스트: SQLite dialect 에서도 정상 동작 (with_for_update fallback)
 
+### Slice 1 의 명시적 trade-off (Phase 2 에서 정책화 필요)
+
+- **shell_exec 는 at-least-once 실행 가능성** 을 가짐. 현재 `_CMD_NON_REDELIVERABLE`
+  set 은 `{restart, update_now}` 만 — 워커가 lease 만료 직전에 ack 못 보내고
+  죽으면 같은 script 가 두 번 실행될 수 있음. 사용자가 보내는 PowerShell
+  script 는 본질적으로 idempotent 가정 어렵지만, Slice 1 에선 운영 진단/복구
+  채널 가용성을 우선시해 at-least-once 허용.
+- Phase 2 에서 도입할 모델:
+  - command 별 `redelivery_policy` (`never` / `lease_retry` / `idempotent_only`)
+  - `idempotency_key` (admin 발행 시 옵션)
+  - 파괴적 shell 은 UI 경고 또는 별도 confirm
+- `refresh_fingerprint`, `update_adspower_patch` 도 side-effect 있어 동일 정책
+  대상이지만 Slice 1 안에 다 묶으면 운영 신뢰성 ↓ 되어 명시적으로 후속 작업.
+
 Out of scope (Phase 2+):
 - Windows Service Admin Agent 설치
 - streaming terminal (chunked stdout)

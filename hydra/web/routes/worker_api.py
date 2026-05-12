@@ -513,10 +513,16 @@ def heartbeat_v2(
 
             # 상한 초과 → failed (재시도 무한 반복 방지)
             if next_attempt > _CMD_ATTEMPT_MAX:
+                # 관측 일관성: 메시지의 N 을 마지막으로 기록된 attempt_count 와 동일하게.
+                # next_attempt (=ATTEMPT_MAX+1) 는 시도하지 않은 횟수라 헷갈림 방지.
                 c.status = "failed"
                 c.completed_at = now
                 c.lease_expires_at = None
-                _append_err(c, f"attempt_limit_exceeded:{next_attempt}")
+                _append_err(
+                    c,
+                    f"attempt_limit_exceeded:max={_CMD_ATTEMPT_MAX}"
+                    f",last_attempt={c.attempt_count or 0}",
+                )
                 continue
 
             # restart / update_now 같이 워커가 ack 직후 self-exit 하는 비멱등 명령은
