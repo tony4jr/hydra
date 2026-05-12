@@ -14,18 +14,28 @@ class AdsPowerClient:
         self.http = httpx.Client(timeout=60)
 
     def _params(self, **kwargs) -> dict:
-        """공통 params — api-key 자동 첨부 (env 에서)."""
+        """공통 params — api-key 자동 첨부 (env 에서). AdsPower V1/V2 호환."""
         p = dict(kwargs)
         key = os.environ.get("ADSPOWER_API_KEY", "")
         if key:
-            p["api-key"] = key
+            p["api_key"] = key      # V2 API spec
+            p["api-key"] = key      # V1 일부 docs
         return p
+
+    def _headers(self) -> dict:
+        """헤더 — 일부 AdsPower 버전이 X-API-KEY 헤더 요구."""
+        h = {}
+        key = os.environ.get("ADSPOWER_API_KEY", "")
+        if key:
+            h["X-API-KEY"] = key
+        return h
 
     def open_browser(self, profile_id: str) -> dict:
         """AdsPower 프로필로 브라우저 열기."""
         resp = self.http.get(
             f"{self.base_url}/api/v1/browser/start",
             params=self._params(user_id=profile_id),
+            headers=self._headers(),
         )
         resp.raise_for_status()
         data = resp.json()
@@ -38,6 +48,7 @@ class AdsPowerClient:
         resp = self.http.get(
             f"{self.base_url}/api/v1/browser/stop",
             params=self._params(user_id=profile_id),
+            headers=self._headers(),
         )
         resp.raise_for_status()
         return resp.json()
