@@ -467,6 +467,17 @@ def _ensure_local_schema():
 
 def main():
     """진입점."""
+    # 본질 fix: Windows console 의 기본 codec (cp949 한국어) 가 em-dash/이모지
+    # 같은 unicode 못 인코드 → print 에서 UnicodeEncodeError → 상위 흐름 차단
+    # (예: restart command 가 print 단계에서 죽고 sys.exit 안 도달).
+    # 모든 worker 코드에 ASCII-only print 강제하기 어려우니 stream 자체를
+    # utf-8 로 reconfigure + errors='replace' 로 안전망.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
     config.load()
     if not config.worker_token:
         print("[Worker] Error: HYDRA_WORKER_TOKEN not set")
