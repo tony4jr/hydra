@@ -532,6 +532,10 @@ setup\install-admin-agent-service.ps1 -DryRun -Action install `
   -ServerUrl https://... -AgentWorkerToken <token>
 ```
 
+> 일반 cmd 에서는 PowerShell 을 관리자 권한으로 직접 띄워서 ps1 호출. UAC
+> wrapper bat 은 인자 전달 race 위험으로 의도적으로 미포함 (Codex 2.3
+> review 결정). PowerShell 만 공식 지원.
+
 ### Service 설정 요약
 
 - Executable: `<InstallPath>\.venv\Scripts\python.exe -m worker.admin_agent`

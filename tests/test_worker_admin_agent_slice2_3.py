@@ -25,6 +25,9 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PS1 = REPO_ROOT / "setup" / "install-admin-agent-service.ps1"
+# Codex 2.3 review 결정: BAT wrapper 미포함 — UAC 승격 시 `%*` 가 PowerShell
+# expression 에 raw 로 들어가 named param 충돌 / .gitattributes 의 binary 정책
+# 충돌. PowerShell 만 공식 지원.
 BAT = REPO_ROOT / "setup" / "install-admin-agent-service.bat"
 
 
@@ -180,16 +183,21 @@ def test_installer_does_not_perform_update_ownership_transfer(ps1_text):
             f"forbidden update ownership operation: {pat!r}"
 
 
-# ───────── bat wrapper ─────────
+# ───────── bat wrapper 부재 검증 (Codex 2.3 review 결정) ─────────
 
-def test_bat_wrapper_exists_and_invokes_ps1():
-    assert BAT.exists()
-    text = BAT.read_text(encoding="utf-8")
-    assert "install-admin-agent-service.ps1" in text
-    # UAC 승격 패턴
-    assert "RunAs" in text
-    # 인자 그대로 전달
-    assert "%*" in text
+def test_bat_wrapper_not_present():
+    """UAC wrapper bat 은 의도적으로 미포함. PowerShell 만 공식 지원.
+
+    이유 (Codex 2.3 review):
+      1) `%*` raw 전달이 PowerShell expression 의 named param 과 충돌.
+      2) .gitattributes 의 `*.bat binary` 정책 — multiline LF-only bat 은
+         Windows cmd 가 잘못 파싱.
+    PowerShell 을 관리자 권한으로 직접 띄워 ps1 호출 — 그게 표준 경로.
+    """
+    assert not BAT.exists(), (
+        "install-admin-agent-service.bat 가 다시 추가됨 — Codex 2.3 review 의 결정을"
+        " 어김. PowerShell ps1 만 공식 지원."
+    )
 
 
 # ───────── pwsh syntax check (optional) ─────────
