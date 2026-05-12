@@ -39,8 +39,10 @@ def _mk_client(ipv4_only: bool, *, persistent: bool = False) -> httpx.Client:
     httpx 0.28: Client(transport=...) 와 Client(limits=...) 를 같이 주면 limits
     는 무시된다. transport 자체에 limits 를 박아야 keepalive_expiry 가 실제 적용.
     """
+    # keepalive_expiry: server-side (nginx/cloudflare 보통 30-60s) 보다 짧게.
+    # 25s 면 30s heartbeat 사이클에서 한 번은 재사용 가능, stale 진입 직전 폐기.
     limits = (
-        httpx.Limits(max_keepalive_connections=4, keepalive_expiry=60.0)
+        httpx.Limits(max_keepalive_connections=4, keepalive_expiry=25.0)
         if persistent
         else httpx.Limits(max_keepalive_connections=0, keepalive_expiry=5.0)
     )
@@ -103,11 +105,17 @@ class ServerClient:
             first_exc: Exception = e
             self._drop_persistent()
 
-        # 2차~5차: fresh client × 4회 exp backoff, prefer 의 반대 모드부터 토글
-        # (persistent 가 prefer 모드로 실패했으니 반대 먼저 시도가 합리적)
+        # 2차~5차: fresh client × 4회 exp backoff.
+        # 첫 fresh 는 prefer 모드 — persistent 실패는 보통 stale connection
+        # (server-side keepalive 짧음) 이라 mode 문제 아닌 경우가 대부분.
+        # 같은 모드로 fresh 가 풀어주면 prefer 진동 없음. 그래도 실패면
+        # 진짜 mode 깨진 거 — 그제서야 반대 모드로 토글.
         last_exc: Exception = first_exc
         for attempt in range(4):
-            ipv4_only = self._prefer_v4 if attempt % 2 == 1 else (not self._prefer_v4)
+            if attempt < 2:
+                ipv4_only = self._prefer_v4
+            else:
+                ipv4_only = not self._prefer_v4
             time.sleep(min(2 ** attempt, 8))  # 1, 2, 4, 8
             client = _mk_client(ipv4_only, persistent=False)
             try:
