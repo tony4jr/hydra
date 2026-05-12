@@ -23,10 +23,16 @@ class AdsPowerClient:
         return p
 
     def _headers(self) -> dict:
-        """헤더 — 일부 AdsPower 버전이 X-API-KEY 헤더 요구."""
+        """공식 AdsPower Local API 인증: Authorization: Bearer <key>.
+
+        출처: localapi-doc-en.adspower.com/docs/Rdw7Iu — security verification
+        활성 시 모든 호출에 Bearer 헤더 필수. V1/V2 동일.
+        X-API-KEY 는 일부 옛 docs 호환 fallback.
+        """
         h = {}
         key = os.environ.get("ADSPOWER_API_KEY", "")
         if key:
+            h["Authorization"] = f"Bearer {key}"
             h["X-API-KEY"] = key
         return h
 
