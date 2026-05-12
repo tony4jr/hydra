@@ -14,10 +14,10 @@ from hydra.browser.actions import (
     human_click, random_delay, scroll_page, click_like_button, watch_video, handle_ad,
     set_speed_multiplier, set_typing_style, set_activity_multiplier,
 )
-from hydra.infra.ip import ensure_safe_ip_from_snapshot
 from hydra.infra.ip_errors import IPRotationFailed
 from hydra.protocol import AccountSnapshot, WorkerConfig
 from hydra.protocol.phase_config import PhaseTimeout, get_phase_spec
+from worker.ip_client import ensure_safe_ip_via_server, end_ip_log_via_server
 from worker.youtube_habits import maybe_check_notifications, maybe_visit_own_channel
 
 
@@ -32,12 +32,15 @@ class WorkerSession:
         account_snapshot: AccountSnapshot | None = None,
         worker_config: WorkerConfig | None = None,
         progress_reporter: Optional[Callable] = None,
+        server_client=None,
     ):
         self.profile_id = profile_id
         self.account_id = account_id
         self.device_id = device_id
         self.account_snapshot = account_snapshot
         self.worker_config = worker_config or WorkerConfig()
+        # PR-D: server client 주입 — ensure_safe_ip 가 server endpoint 호출.
+        self.server_client = server_client
         self.browser: BrowserSession | None = None
         self.tasks_completed = 0
         _max_tasks = max(3, self.worker_config.max_tasks_per_session)
@@ -128,17 +131,17 @@ class WorkerSession:
                 set_typing_style("typist")
                 set_activity_multiplier(1.0)
 
-            if db is not None and self.account_snapshot is not None:
-                ip_log = await self.run_phase(
+            if self.server_client is not None and self.account_snapshot is not None:
+                # PR-D: server endpoint 호출 — 워커 로컬 SQLite IpLog 안 씀.
+                self.ip_log_id = await self.run_phase(
                     "ip_rotate",
-                    ensure_safe_ip_from_snapshot(
-                        db,
+                    ensure_safe_ip_via_server(
+                        self.server_client,
                         account_id=self.account_id,
                         adb_device_id=self.worker_config.adb_device_id or self.device_id,
                         cooldown_minutes=self.worker_config.ip_cooldown_minutes,
                     ),
                 )
-                self.ip_log_id = getattr(ip_log, "id", None)
 
             self.browser = BrowserSession(self.profile_id)
             await self.run_phase("adspower_open", self.browser.start())
@@ -265,6 +268,12 @@ class WorkerSession:
 
     async def close(self):
         """세션 종료."""
+        # PR-D: server-side IpLog end 호출 (best-effort).
+        if self.server_client is not None and self.ip_log_id is not None:
+            try:
+                end_ip_log_via_server(self.server_client, self.ip_log_id)
+            except Exception:
+                pass
         if self.browser:
             try:
                 await self.browser.close()
