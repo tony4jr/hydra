@@ -161,8 +161,27 @@ class WorkerSession:
             await self.close()
             raise
         except Exception as e:
-            print(f"[Session] Failed to start: {type(e).__name__}")
-            self._emit_phase("session_end", message=f"start_failed: {type(e).__name__}")
+            # PR-Debug: 자세한 메시지 stdout + server worker_error 로 보고.
+            # 이전엔 type 만 phase event 에 들어가서 디버깅 어려웠음.
+            err_msg = f"{type(e).__name__}: {e}"
+            print(f"[Session] Failed to start: {err_msg}")
+            self._emit_phase("session_end", message=f"start_failed: {err_msg[:200]}")
+            # server 로 worker_error 보고 — admin gauge / kill switch 시그널.
+            if self.server_client is not None:
+                try:
+                    import traceback as _tb
+                    self.server_client.report_error(
+                        kind="session_start_fail",
+                        message=err_msg[:500],
+                        traceback=_tb.format_exc(),
+                        context={
+                            "account_id": self.account_id,
+                            "profile_id": self.profile_id,
+                            "phase": self.current_phase,
+                        },
+                    )
+                except Exception:
+                    pass
             await self.close()
             return False
 
