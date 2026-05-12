@@ -481,6 +481,22 @@ Slice 1 follow-up (Codex 리뷰 보완):
       DB 저장 (default shell=powershell, timeout_sec=30)
 - [x] frontend `tsc -b --noEmit` 통과 (exit 0)
 
+Slice 1 follow-up #2 — lease hardening (Codex 결정):
+
+- [x] Postgres atomic lease pickup — `with_for_update(skip_locked=True)`.
+      SQLite/test 환경은 fallback (단일 connection 이라 race 없음)
+- [x] per-command lease_sec — `_compute_lease_sec()`:
+        - `shell_exec`: payload.timeout_sec + 30, clamp [60, 300]
+        - 그 외: 60s
+- [x] attempt_count 상한 (`_CMD_ATTEMPT_MAX = 3`) — 초과시 `status=failed` +
+      `error_message=attempt_limit_exceeded:N`. 무한 재전달 방지
+- [x] non-redeliverable command set (`restart`, `update_now`) — 만료 후 재배달
+      금지, `status=failed` + `error_message=non_redeliverable_after_lease_expiry`
+- [x] 테스트: ATTEMPT_MAX 회 만료 후 failed + 재배달 안 함
+- [x] 테스트: restart 가 만료시 재배달 없이 failed
+- [x] 테스트: shell_exec lease 가 timeout 기반 (120→~150, 5→60, 일반 명령→60)
+- [x] 테스트: SQLite dialect 에서도 정상 동작 (with_for_update fallback)
+
 Out of scope (Phase 2+):
 - Windows Service Admin Agent 설치
 - streaming terminal (chunked stdout)

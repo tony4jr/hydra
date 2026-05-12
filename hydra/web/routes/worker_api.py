@@ -34,6 +34,46 @@ _SETUP_PS1 = _Path(__file__).resolve().parents[3] / "setup" / "hydra-worker-setu
 _INSTALL_BAT = _Path(__file__).resolve().parents[3] / "setup" / "install-worker.bat"
 
 
+# ──────── Slice 1 follow-up #2: lease hardening 정책 상수/헬퍼 ────────
+# 무한 재전달 방지. 한 명령이 N회 lease 시도되고도 ack 못 받으면 failed.
+_CMD_ATTEMPT_MAX = 3
+
+# 워커가 ack 직후 self-exit 하는 비멱등 명령 — 만료시 재배달 금지.
+# 이미 옛 프로세스가 exit 흐름에 들어갔을 수 있어 두 번째 process 가 또
+# git pull / sys.exit 하면 위험.
+_CMD_NON_REDELIVERABLE = frozenset({"restart", "update_now"})
+
+# Default lease window. shell_exec 만 timeout 기반으로 길게.
+_LEASE_DEFAULT_SEC = 60
+_LEASE_MIN_SEC = 60
+_LEASE_MAX_SEC = 300
+
+
+def _compute_lease_sec(command: str, payload_obj: dict | None) -> int:
+    """명령 별 lease 길이 결정.
+
+    - shell_exec: payload.timeout_sec + 30 (script 가 timeout 까지 돌아도
+      lease 만료 안 되도록). min 60, max 300.
+    - 그 외: 60 고정.
+    """
+    if command == "shell_exec":
+        raw = (payload_obj or {}).get("timeout_sec", 30)
+        try:
+            t = int(raw)
+        except (TypeError, ValueError):
+            t = 30
+        return max(_LEASE_MIN_SEC, min(t + 30, _LEASE_MAX_SEC))
+    return _LEASE_DEFAULT_SEC
+
+
+def _append_err(cmd: WorkerCommand, msg: str) -> None:
+    """error_message 누적 (heartbeat lease 정책 알림)."""
+    if cmd.error_message:
+        cmd.error_message = f"{cmd.error_message} | {msg}"
+    else:
+        cmd.error_message = msg
+
+
 def _sha256_hex(s: str) -> str:
     """워커 토큰 → SHA-256 hex. 256bit 랜덤 토큰이라 bcrypt 불필요."""
     return hashlib.sha256(s.encode("utf-8")).hexdigest()
@@ -435,16 +475,15 @@ def heartbeat_v2(
             except Exception:
                 ads_key = None
 
-        # Slice 1: command lease/retry. heartbeat 가 pending 또는 lease 만료된
-        # command 를 lease 로 잡고 일정 시간 ack 대기. 워커가 받은 직후 죽어도
-        # lease 만료 후 다음 heartbeat 에 재배달되어 유실 방지.
-        #
-        # 후보 = (status == "pending") OR (status == "leased" AND lease 만료)
-        # lease 만료 case 는 attempt_count 증가 + lease 갱신.
+        # Slice 1 follow-up #2 — lease hardening:
+        #   1) Postgres atomic lease pickup (FOR UPDATE SKIP LOCKED)
+        #   2) per-command lease_sec (shell_exec = timeout+30, others = 60)
+        #   3) attempt_count 상한 (ATTEMPT_MAX) — 초과시 failed
+        #   4) non-redeliverable command (restart/update_now) 만료시 재배달 금지 → failed
+        # SQLite 테스트 환경은 with_for_update 비호환 → fallback (단일 connection 이라 race 없음).
         now = datetime.now(UTC)
-        LEASE_SECONDS = 60  # 다음 heartbeat (보통 15-30s) 보다 길고, 워커 처리에 충분
-        lease_until = now + timedelta(seconds=LEASE_SECONDS)
-        pending_rows = (
+
+        base_q = (
             db.query(WorkerCommand)
             .filter(
                 WorkerCommand.worker_id == w.id,
@@ -459,23 +498,52 @@ def heartbeat_v2(
             )
             .order_by(WorkerCommand.issued_at)
             .limit(10)
-            .all()
         )
+        dialect_name = db.bind.dialect.name if db.bind is not None else ""
+        if dialect_name == "postgresql":
+            # 다른 동시 heartbeat (또는 admin transaction) 가 같은 row 잠그면
+            # SKIP LOCKED 로 그 row 건너뜀 → 중복 lease/배달 차단.
+            base_q = base_q.with_for_update(skip_locked=True)
+        candidates = base_q.all()
+
         pending: list[PendingCommand] = []
-        for c in pending_rows:
-            # lease 만료 redelivery 인 경우 attempt_count 증가, 그 외 첫 배달도 1로 시작.
-            c.attempt_count = (c.attempt_count or 0) + 1
-            c.status = "leased"
-            c.delivered_at = c.delivered_at or now  # 최초 배달 시각만 기록
-            c.lease_expires_at = lease_until
+        for c in candidates:
+            is_redelivery = (c.status == "leased")  # 만료된 leased → 재배달 시도
+            next_attempt = (c.attempt_count or 0) + 1
+
+            # 상한 초과 → failed (재시도 무한 반복 방지)
+            if next_attempt > _CMD_ATTEMPT_MAX:
+                c.status = "failed"
+                c.completed_at = now
+                c.lease_expires_at = None
+                _append_err(c, f"attempt_limit_exceeded:{next_attempt}")
+                continue
+
+            # restart / update_now 같이 워커가 ack 직후 self-exit 하는 비멱등 명령은
+            # 만료 후 다시 보내면 곤란 (이미 옛 워커가 exit 시도 중일 수 있음).
+            if is_redelivery and c.command in _CMD_NON_REDELIVERABLE:
+                c.status = "failed"
+                c.completed_at = now
+                c.lease_expires_at = None
+                _append_err(c, "non_redeliverable_after_lease_expiry")
+                continue
+
+            # payload parse — lease_sec 계산용
             payload_dict = None
             if c.payload:
                 try:
                     payload_dict = json.loads(c.payload)
                 except Exception:
                     payload_dict = None
+
+            lease_sec = _compute_lease_sec(c.command, payload_dict)
+            c.attempt_count = next_attempt
+            c.status = "leased"
+            c.delivered_at = c.delivered_at or now
+            c.lease_expires_at = now + timedelta(seconds=lease_sec)
             pending.append(PendingCommand(id=c.id, command=c.command, payload=payload_dict))
-        if pending_rows:
+
+        if candidates:
             db.commit()
 
         return HeartbeatResponse(

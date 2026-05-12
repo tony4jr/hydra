@@ -313,6 +313,153 @@ def test_heartbeat_redelivers_expired_lease(env):
         db.close()
 
 
+def test_heartbeat_marks_failed_after_attempt_max(env):
+    """ATTEMPT_MAX 회 연속 lease 만료 → 4번째 heartbeat 에서 failed 처리.
+
+    Slice 1 follow-up #2 — 무한 재전달 방지.
+    """
+    r = env["client"].post(
+        f"/api/admin/workers/{env['worker_id']}/shell",
+        headers=_admin(env),
+        json={"script": "echo attempt"},
+    )
+    cmd_id = r.json()["id"]
+
+    for cycle in range(3):
+        # heartbeat → lease 획득 (attempt_count 가 1,2,3 순서로 증가)
+        hb = env["client"].post("/api/workers/heartbeat/v2", headers=_worker(env), json=_hb_body())
+        ids = [c["id"] for c in hb.json()["pending_commands"]]
+        assert cmd_id in ids, f"cycle {cycle} expected delivery"
+
+        # lease 강제 만료 — worker 가 ack 못 하고 죽었다 가정
+        db = env["Session"]()
+        try:
+            c = db.get(WorkerCommand, cmd_id)
+            c.lease_expires_at = datetime.now(UTC) - timedelta(seconds=10)
+            db.commit()
+        finally:
+            db.close()
+
+    # 4번째 heartbeat — attempt_count 가 4 가 되어 ATTEMPT_MAX(3) 초과 → failed
+    hb_final = env["client"].post("/api/workers/heartbeat/v2", headers=_worker(env), json=_hb_body())
+    ids = [c["id"] for c in hb_final.json()["pending_commands"]]
+    assert cmd_id not in ids, "must not redeliver beyond ATTEMPT_MAX"
+
+    db = env["Session"]()
+    try:
+        c = db.get(WorkerCommand, cmd_id)
+        assert c.status == "failed"
+        assert c.lease_expires_at is None
+        assert "attempt_limit_exceeded" in (c.error_message or "")
+    finally:
+        db.close()
+
+
+def test_heartbeat_non_redeliverable_command_fails_on_expiry(env):
+    """restart/update_now 같이 ack 직후 self-exit 하는 명령은 만료시 재배달 금지 → failed."""
+    r = env["client"].post(
+        f"/api/admin/workers/{env['worker_id']}/command",
+        headers=_admin(env),
+        json={"command": "restart"},
+    )
+    cmd_id = r.json()["id"]
+
+    # 1차 heartbeat — lease 획득
+    hb1 = env["client"].post("/api/workers/heartbeat/v2", headers=_worker(env), json=_hb_body())
+    assert any(c["id"] == cmd_id for c in hb1.json()["pending_commands"])
+
+    # lease 강제 만료 (워커가 ack 못 하고 죽었다고 가정)
+    db = env["Session"]()
+    try:
+        c = db.get(WorkerCommand, cmd_id)
+        c.lease_expires_at = datetime.now(UTC) - timedelta(seconds=10)
+        db.commit()
+    finally:
+        db.close()
+
+    # 2차 heartbeat — non-redeliverable 이라 재배달 안 되고 failed 박힘
+    hb2 = env["client"].post("/api/workers/heartbeat/v2", headers=_worker(env), json=_hb_body())
+    assert all(c["id"] != cmd_id for c in hb2.json()["pending_commands"])
+
+    db = env["Session"]()
+    try:
+        c = db.get(WorkerCommand, cmd_id)
+        assert c.status == "failed"
+        assert c.lease_expires_at is None
+        assert "non_redeliverable" in (c.error_message or "")
+    finally:
+        db.close()
+
+
+def test_shell_exec_lease_uses_timeout_plus_buffer(env):
+    """shell_exec lease_sec = timeout_sec + 30 (min 60, max 300). 일반 명령은 60."""
+    # timeout=120 → expected lease ~ 150s
+    r_big = env["client"].post(
+        f"/api/admin/workers/{env['worker_id']}/shell",
+        headers=_admin(env),
+        json={"script": "echo long", "timeout_sec": 120},
+    )
+    big_id = r_big.json()["id"]
+
+    # timeout=5 → min 60 적용 → 60s
+    r_small = env["client"].post(
+        f"/api/admin/workers/{env['worker_id']}/shell",
+        headers=_admin(env),
+        json={"script": "echo short", "timeout_sec": 5},
+    )
+    small_id = r_small.json()["id"]
+
+    # 일반 command (timeout 무관) → 60s
+    r_norm = env["client"].post(
+        f"/api/admin/workers/{env['worker_id']}/command",
+        headers=_admin(env),
+        json={"command": "screenshot_now"},
+    )
+    norm_id = r_norm.json()["id"]
+
+    before = datetime.now(UTC)
+    env["client"].post("/api/workers/heartbeat/v2", headers=_worker(env), json=_hb_body())
+
+    db = env["Session"]()
+    try:
+        big = db.get(WorkerCommand, big_id)
+        small = db.get(WorkerCommand, small_id)
+        norm = db.get(WorkerCommand, norm_id)
+        # lease 길이 검증 — SQLite 의 naive datetime 비교용으로 timezone strip
+        before_naive = before.replace(tzinfo=None)
+        big_lease_dur = (big.lease_expires_at - before_naive).total_seconds()
+        small_lease_dur = (small.lease_expires_at - before_naive).total_seconds()
+        norm_lease_dur = (norm.lease_expires_at - before_naive).total_seconds()
+        # timeout 120 → 150s. 약간 tolerance.
+        assert 145 < big_lease_dur < 156, f"big lease {big_lease_dur}"
+        # timeout 5 → max(60, 35) = 60s
+        assert 55 < small_lease_dur < 65, f"small lease {small_lease_dur}"
+        # 일반 명령 → 60s
+        assert 55 < norm_lease_dur < 65, f"norm lease {norm_lease_dur}"
+    finally:
+        db.close()
+
+
+def test_sqlite_dialect_skips_for_update_lock(env, monkeypatch):
+    """SQLite 환경에서 with_for_update 안 호출 (테스트 호환 fallback)."""
+    # SQLite 의 SQLAlchemy with_for_update 는 무시되지만, 명시적으로 dialect 분기 검증.
+    # 우리 코드는 dialect_name == "postgresql" 일 때만 with_for_update(skip_locked=True).
+    # 즉 sqlite 환경에선 with_for_update 가 query 에 안 박혀야 함.
+
+    # 실제 SQL 검증은 어려우므로, heartbeat 가 SQLite 에서 그대로 동작하는지 확인.
+    r = env["client"].post(
+        f"/api/admin/workers/{env['worker_id']}/shell",
+        headers=_admin(env),
+        json={"script": "echo sqlite"},
+    )
+    cmd_id = r.json()["id"]
+
+    hb = env["client"].post("/api/workers/heartbeat/v2", headers=_worker(env), json=_hb_body())
+    assert hb.status_code == 200
+    ids = [c["id"] for c in hb.json()["pending_commands"]]
+    assert cmd_id in ids
+
+
 def test_ack_clears_lease_and_sets_final_state(env):
     r = env["client"].post(
         f"/api/admin/workers/{env['worker_id']}/shell",
