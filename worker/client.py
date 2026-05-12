@@ -35,19 +35,20 @@ _RETRY_EXCEPTIONS = (
 def _mk_client(ipv4_only: bool, *, persistent: bool = False) -> httpx.Client:
     """persistent=True: keepalive 살아있는 pool — DNS lookup 1회 후 재사용.
     persistent=False: fresh client — pool 오염 회피용 fallback.
+
+    httpx 0.28: Client(transport=...) 와 Client(limits=...) 를 같이 주면 limits
+    는 무시된다. transport 자체에 limits 를 박아야 keepalive_expiry 가 실제 적용.
     """
-    limits = httpx.Limits(max_keepalive_connections=4, keepalive_expiry=60.0) if persistent else None
-    if ipv4_only:
-        return httpx.Client(
-            timeout=30,
-            transport=httpx.HTTPTransport(local_address="0.0.0.0", retries=1),
-            limits=limits,
-        )
-    return httpx.Client(
-        timeout=30,
-        transport=httpx.HTTPTransport(retries=1),
-        limits=limits,
+    limits = (
+        httpx.Limits(max_keepalive_connections=4, keepalive_expiry=60.0)
+        if persistent
+        else httpx.Limits(max_keepalive_connections=0, keepalive_expiry=5.0)
     )
+    if ipv4_only:
+        transport = httpx.HTTPTransport(local_address="0.0.0.0", retries=1, limits=limits)
+    else:
+        transport = httpx.HTTPTransport(retries=1, limits=limits)
+    return httpx.Client(timeout=30, transport=transport)
 
 
 class ServerClient:
@@ -102,10 +103,11 @@ class ServerClient:
             first_exc: Exception = e
             self._drop_persistent()
 
-        # 2차~5차: fresh client × 4회 exp backoff, dual/v4 토글
+        # 2차~5차: fresh client × 4회 exp backoff, prefer 의 반대 모드부터 토글
+        # (persistent 가 prefer 모드로 실패했으니 반대 먼저 시도가 합리적)
         last_exc: Exception = first_exc
         for attempt in range(4):
-            ipv4_only = (attempt % 2 == 0) ^ (not self._prefer_v4)
+            ipv4_only = self._prefer_v4 if attempt % 2 == 1 else (not self._prefer_v4)
             time.sleep(min(2 ** attempt, 8))  # 1, 2, 4, 8
             client = _mk_client(ipv4_only, persistent=False)
             try:
@@ -148,10 +150,13 @@ class ServerClient:
             "version": config.worker_version,
             **health,
         }
+        # heartbeat 는 짧은 timeout — blackhole 시 backoff 합산 폭주 (최악 150s+)
+        # 으로 다음 tick 막히는 것 방지. 한 시도당 10s, 4회 backoff 합쳐 ~55s.
         resp = self._request(
             "POST", "/api/workers/heartbeat/v2",
             headers=self.headers,
             json=body,
+            timeout=10,
         )
         resp.raise_for_status()
         return resp.json()
@@ -349,3 +354,5 @@ class ServerClient:
                 self.http.close()
             except Exception:
                 pass
+        # persistent pool 도 정리 — 워커 종료시 누수 방지
+        self._drop_persistent()
