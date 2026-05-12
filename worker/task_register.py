@@ -22,7 +22,14 @@ def ensure_registered() -> None:
 
     이미 등록돼 있으면 아무것도 안 함. 없으면 자가 등록.
     실패해도 예외 propagate 안 함 — startup 막지 않음.
+
+    Slice 1 — Admin Agent 도입 후 desktop worker 가 self-register 하면 중복
+    실행/중복 heartbeat 가 발생한다. HYDRA_DISABLE_TASK_REGISTER=1 이면 skip
+    (Phase 2 의 Admin Agent 가 task scheduler 등록을 owned).
     """
+    if os.environ.get("HYDRA_DISABLE_TASK_REGISTER"):
+        print("[Worker] task_register skip — HYDRA_DISABLE_TASK_REGISTER set")
+        return
     if sys.platform != "win32":
         return
     try:

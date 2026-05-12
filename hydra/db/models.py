@@ -1231,6 +1231,11 @@ class WorkerCommand(Base):
     completed_at = Column(DateTime, nullable=True)
     result = Column(Text, nullable=True)          # 워커가 보고한 결과 (JSON 또는 텍스트)
     error_message = Column(Text, nullable=True)
+    # Slice 1: command lease/retry — heartbeat 이 명령을 "lease" 로 잡고 만료 시 재전달.
+    # worker 가 command 받은 직후 죽어도 lease 만료 후 다른 heartbeat 에 재배달되어 유실 방지.
+    lease_expires_at = Column(DateTime, nullable=True)
+    attempt_count = Column(Integer, nullable=False, default=0, server_default="0")
+    started_at = Column(DateTime, nullable=True)
 
     __table_args__ = (
         Index("idx_wcmd_worker_status", "worker_id", "status"),

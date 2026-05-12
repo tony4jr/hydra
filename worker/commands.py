@@ -109,6 +109,13 @@ async def execute_command(client: "ServerClient", cmd: dict) -> None:
             version_type = payload.get("version_type", "stable")
             result = await _adspower_update_patch(version_type)
 
+        elif name == "shell_exec":
+            # Slice 1 — 원격 PowerShell 단발 실행. 결과 JSON 반환.
+            shell = payload.get("shell", "powershell")
+            script = payload.get("script", "")
+            timeout_sec = int(payload.get("timeout_sec", 30))
+            result = _run_shell_exec(shell=shell, script=script, timeout_sec=timeout_sec)
+
         else:
             status = "failed"
             err = f"unknown command: {name}"
@@ -134,6 +141,106 @@ def _ack(client: "ServerClient", cmd_id: int, status: str,
         )
     except Exception:
         pass
+
+
+# Slice 1 — shell_exec implementation -------------------------------------
+SHELL_MAX_SCRIPT_LEN = 8000
+SHELL_MAX_TIMEOUT_SEC = 120
+SHELL_OUTPUT_CAP_BYTES = 64 * 1024  # 64KB per stream
+
+
+def _run_shell_exec(*, shell: str, script: str, timeout_sec: int) -> str:
+    """단발 shell command 실행. JSON 문자열 반환 (ack result 로 그대로 들어감).
+
+    반환 schema (str):
+      {"exit_code": int, "stdout": str, "stderr": str, "truncated": bool,
+       "duration_ms": int, "shell": str, "error": str?}
+
+    가드:
+      - script 길이 SHELL_MAX_SCRIPT_LEN 초과 시 reject (errcode=-2)
+      - timeout_sec 1..SHELL_MAX_TIMEOUT_SEC 외 reject (errcode=-3)
+      - stdout/stderr 각각 SHELL_OUTPUT_CAP_BYTES 초과 시 잘림 + truncated=True
+      - timeout 발생 시 exit_code=-1 + error="timeout"
+
+    plaintext credentials/secret 흘림 방지는 호출자 책임 (UI/admin guard).
+    """
+    import json as _json
+
+    def _pack(exit_code: int, stdout: str = "", stderr: str = "",
+              truncated: bool = False, duration_ms: int = 0,
+              error: str | None = None) -> str:
+        obj: dict = {
+            "exit_code": exit_code,
+            "stdout": stdout,
+            "stderr": stderr,
+            "truncated": truncated,
+            "duration_ms": duration_ms,
+            "shell": shell,
+        }
+        if error is not None:
+            obj["error"] = error
+        return _json.dumps(obj, ensure_ascii=False)
+
+    if not isinstance(script, str) or not script:
+        return _pack(-2, error="empty script")
+    if len(script) > SHELL_MAX_SCRIPT_LEN:
+        return _pack(-2, error=f"script length {len(script)} exceeds {SHELL_MAX_SCRIPT_LEN}")
+    if not (1 <= timeout_sec <= SHELL_MAX_TIMEOUT_SEC):
+        return _pack(-3, error=f"timeout_sec must be 1..{SHELL_MAX_TIMEOUT_SEC}")
+
+    if shell == "powershell":
+        if sys.platform == "win32":
+            argv = ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script]
+        else:
+            # dev/non-Windows fallback — sh 로 흉내. 결과 schema 유지.
+            argv = ["sh", "-c", script]
+    elif shell == "sh":
+        argv = ["sh", "-c", script]
+    else:
+        return _pack(-4, error=f"unsupported shell: {shell}")
+
+    start = time.monotonic()
+    try:
+        proc = subprocess.run(
+            argv,
+            capture_output=True,
+            timeout=timeout_sec,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as e:
+        dur = int((time.monotonic() - start) * 1000)
+        stdout_b = (e.stdout or b"")[:SHELL_OUTPUT_CAP_BYTES]
+        stderr_b = (e.stderr or b"")[:SHELL_OUTPUT_CAP_BYTES]
+        truncated = (
+            len(e.stdout or b"") > SHELL_OUTPUT_CAP_BYTES
+            or len(e.stderr or b"") > SHELL_OUTPUT_CAP_BYTES
+        )
+        return _pack(
+            exit_code=-1,
+            stdout=stdout_b.decode("utf-8", errors="replace"),
+            stderr=stderr_b.decode("utf-8", errors="replace"),
+            truncated=truncated,
+            duration_ms=dur,
+            error="timeout",
+        )
+    except FileNotFoundError as e:
+        return _pack(-5, duration_ms=int((time.monotonic() - start) * 1000),
+                     error=f"shell not found: {e}")
+
+    dur = int((time.monotonic() - start) * 1000)
+    stdout_b = (proc.stdout or b"")[:SHELL_OUTPUT_CAP_BYTES]
+    stderr_b = (proc.stderr or b"")[:SHELL_OUTPUT_CAP_BYTES]
+    truncated = (
+        len(proc.stdout or b"") > SHELL_OUTPUT_CAP_BYTES
+        or len(proc.stderr or b"") > SHELL_OUTPUT_CAP_BYTES
+    )
+    return _pack(
+        exit_code=int(proc.returncode),
+        stdout=stdout_b.decode("utf-8", errors="replace"),
+        stderr=stderr_b.decode("utf-8", errors="replace"),
+        truncated=truncated,
+        duration_ms=dur,
+    )
 
 
 def _run_update() -> str:

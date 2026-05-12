@@ -376,7 +376,15 @@ ALLOWED_COMMANDS = frozenset({
     "restart", "update_now", "run_diag", "retry_task", "screenshot_now",
     "stop_all_browsers", "refresh_fingerprint", "update_adspower_patch",
     "ensure_schema",  # PR-AutoSchema — 워커에 schema 재보장 명령. result ack 로 보고.
+    "shell_exec",     # Slice 1: 원격 PowerShell 단발 실행 — payload {shell, script, timeout_sec}.
 })
+
+
+# Slice 1 — shell_exec 가드 상한. 운영자가 보내는 script 의 크기/실행 시간/출력량 제한.
+SHELL_MAX_SCRIPT_LEN = 8000          # 8KB
+SHELL_MAX_TIMEOUT_SEC = 120          # 2분
+SHELL_DEFAULT_TIMEOUT_SEC = 30
+SHELL_ALLOWED_SHELLS = frozenset({"powershell", "sh"})
 
 
 class CommandRequest(BaseModel):
@@ -425,6 +433,69 @@ def issue_command(
         return CommandOut(
             id=cmd.id, worker_id=cmd.worker_id, command=cmd.command,
             payload=req.payload, status=cmd.status,
+            issued_at=cmd.issued_at.isoformat(),
+        )
+    finally:
+        db.close()
+
+
+# Slice 1 — 원격 PowerShell 단발 실행 convenience endpoint.
+# 내부적으로 WorkerCommand(command="shell_exec") 발행. 결과는 기존 /commands list 에서 확인.
+class ShellExecRequest(BaseModel):
+    script: str = Field(..., min_length=1)
+    shell: str = "powershell"
+    timeout_sec: int = SHELL_DEFAULT_TIMEOUT_SEC
+
+
+@router.post("/{worker_id}/shell", response_model=CommandOut)
+def issue_shell(
+    worker_id: int,
+    req: ShellExecRequest,
+    session: dict = Depends(admin_session),
+) -> CommandOut:
+    """원격 워커 PC 에 단발 PowerShell 명령 실행. 결과는 command result 로 조회.
+
+    Slice 1 — Worker Admin Agent redesign. 운영자가 워커 PC 에 물리 접근 없이
+    진단/복구 가능하도록 만드는 첫 채널. ALLOWED_COMMANDS 의 일반 발행 경로
+    대비 script 길이/timeout/shell 화이트리스트 가드 추가.
+    """
+    if req.shell not in SHELL_ALLOWED_SHELLS:
+        raise HTTPException(
+            400, f"shell must be one of {sorted(SHELL_ALLOWED_SHELLS)}, got {req.shell!r}",
+        )
+    if len(req.script) > SHELL_MAX_SCRIPT_LEN:
+        raise HTTPException(
+            400, f"script length {len(req.script)} exceeds limit {SHELL_MAX_SCRIPT_LEN}",
+        )
+    if not (1 <= req.timeout_sec <= SHELL_MAX_TIMEOUT_SEC):
+        raise HTTPException(
+            400, f"timeout_sec must be 1..{SHELL_MAX_TIMEOUT_SEC}, got {req.timeout_sec}",
+        )
+
+    from hydra.db.models import WorkerCommand
+    payload = {
+        "shell": req.shell,
+        "script": req.script,
+        "timeout_sec": req.timeout_sec,
+    }
+    db = _db_session.SessionLocal()
+    try:
+        if db.get(Worker, worker_id) is None:
+            raise HTTPException(404, "worker not found")
+        cmd = WorkerCommand(
+            worker_id=worker_id,
+            command="shell_exec",
+            payload=json.dumps(payload, ensure_ascii=False),
+            status="pending",
+            issued_by=session.get("user_id"),
+            issued_at=datetime.now(UTC),
+        )
+        db.add(cmd)
+        db.commit()
+        db.refresh(cmd)
+        return CommandOut(
+            id=cmd.id, worker_id=cmd.worker_id, command=cmd.command,
+            payload=payload, status=cmd.status,
             issued_at=cmd.issued_at.isoformat(),
         )
     finally:

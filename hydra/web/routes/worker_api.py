@@ -12,7 +12,9 @@ import hashlib
 import json
 import os
 import secrets as _secrets
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+
+from sqlalchemy import or_, and_
 
 from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile, File, Form
 from fastapi.responses import PlainTextResponse, Response
@@ -385,8 +387,12 @@ def ack_command(
             raise HTTPException(404, "command not found")
         if cmd.worker_id != worker.id:
             raise HTTPException(403, "command not owned by this worker")
+        # Slice 1: lease 해제. ack 가 final state 라 더 이상 재배달 안 함.
         cmd.status = req.status
         cmd.completed_at = datetime.now(UTC)
+        cmd.lease_expires_at = None
+        if cmd.started_at is None and cmd.delivered_at is not None:
+            cmd.started_at = cmd.delivered_at
         cmd.result = req.result
         cmd.error_message = req.error_message
         db.commit()
@@ -429,22 +435,39 @@ def heartbeat_v2(
             except Exception:
                 ads_key = None
 
-        # 대기 중 명령 픽업 (status=pending → delivered)
+        # Slice 1: command lease/retry. heartbeat 가 pending 또는 lease 만료된
+        # command 를 lease 로 잡고 일정 시간 ack 대기. 워커가 받은 직후 죽어도
+        # lease 만료 후 다음 heartbeat 에 재배달되어 유실 방지.
+        #
+        # 후보 = (status == "pending") OR (status == "leased" AND lease 만료)
+        # lease 만료 case 는 attempt_count 증가 + lease 갱신.
+        now = datetime.now(UTC)
+        LEASE_SECONDS = 60  # 다음 heartbeat (보통 15-30s) 보다 길고, 워커 처리에 충분
+        lease_until = now + timedelta(seconds=LEASE_SECONDS)
         pending_rows = (
             db.query(WorkerCommand)
             .filter(
                 WorkerCommand.worker_id == w.id,
-                WorkerCommand.status == "pending",
+                or_(
+                    WorkerCommand.status == "pending",
+                    and_(
+                        WorkerCommand.status == "leased",
+                        WorkerCommand.lease_expires_at.isnot(None),
+                        WorkerCommand.lease_expires_at < now,
+                    ),
+                ),
             )
             .order_by(WorkerCommand.issued_at)
             .limit(10)
             .all()
         )
         pending: list[PendingCommand] = []
-        now = datetime.now(UTC)
         for c in pending_rows:
-            c.status = "delivered"
-            c.delivered_at = now
+            # lease 만료 redelivery 인 경우 attempt_count 증가, 그 외 첫 배달도 1로 시작.
+            c.attempt_count = (c.attempt_count or 0) + 1
+            c.status = "leased"
+            c.delivered_at = c.delivered_at or now  # 최초 배달 시각만 기록
+            c.lease_expires_at = lease_until
             payload_dict = None
             if c.payload:
                 try:
