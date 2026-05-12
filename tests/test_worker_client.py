@@ -241,8 +241,14 @@ def test_worker_app_current_task_id_default_none(monkeypatch):
     assert getattr(app, "_current_task_id", "MISSING") is None
 
 
-def test_client_falls_back_to_ipv4_on_connect_error(monkeypatch):
-    """Primary (dual-stack) 가 ConnectError 내면 IPv4 클라이언트로 재시도 성공해야."""
+def test_client_falls_back_to_ipv4_on_connect_error(monkeypatch, capsys):
+    """retry 정책 (1a3c431):
+    1차 persistent (prefer=dual) fail
+    2-3차 fresh prefer 모드 (dual) — stale connection 회복 우선
+    4-5차 fresh 반대 모드 (v4) — 진짜 mode 실패일 때 토글
+
+    primary 3회 fail (persistent + fresh dual ×2) 후 v4 로 성공 → _prefer_v4 True.
+    """
     monkeypatch.setenv("HYDRA_SERVER_URL", "http://mock:8000")
     monkeypatch.setenv("HYDRA_WORKER_TOKEN", "wt")
     for k in ("SERVER_URL", "WORKER_TOKEN"):
@@ -267,22 +273,24 @@ def test_client_falls_back_to_ipv4_on_connect_error(monkeypatch):
                                 "worker_config": {}}
         def raise_for_status(self): pass
 
-    # 실제 httpx.Client 생성을 가로채서 두 번째 클라이언트는 성공하도록
+    # backoff sleep 단축 — 테스트 빨리 끝나도록
+    monkeypatch.setattr(cli_mod.time, "sleep", lambda s: None)
+
+    # persistent + dual fresh 2회 = 3회 fail, 4회째 (반대 모드 = v4) success
     call_count = {"n": 0}
-    orig_client = httpx.Client
     def fake_client(*a, **kw):
         call_count["n"] += 1
-        if call_count["n"] == 1:
-            return FailingHttp()  # primary
+        if call_count["n"] <= 3:
+            return FailingHttp()
         class OkHttp:
             def request(self, method, url, **kw):
                 return FakeResp()
             def close(self): pass
-        return OkHttp()  # fallback (v4)
+        return OkHttp()
     monkeypatch.setattr(httpx, "Client", fake_client)
 
     client = ServerClient()
     result = client.heartbeat()
     assert result["current_version"] == "v1"
-    # 성공한 쪽이 IPv4 fallback 이었으므로 선호 모드가 v4 로 바뀌어야 함
+    # 4번째 = fresh attempt=2 = 반대 모드 (v4) 가 성공 → 선호 모드 v4 토글
     assert client._prefer_v4 is True
