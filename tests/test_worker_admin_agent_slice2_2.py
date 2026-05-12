@@ -193,8 +193,12 @@ async def test_admin_agent_continues_when_command_raises():
 
 
 @pytest.mark.asyncio
-async def test_admin_agent_heartbeat_failure_does_not_kill_loop():
-    """heartbeat 실패 시 tick 은 None return + loop 안 죽음 (once 모드는 종료)."""
+async def test_admin_agent_heartbeat_failure_in_once_returns_nonzero():
+    """heartbeat 실패 시 once 모드는 rc=1 (Codex 2.2 follow-up).
+
+    long-running mode 에서는 다음 cycle 재시도 → test_long_running_mode_retries
+    참조.
+    """
     from worker.admin_agent import AdminAgentApp
 
     fake_client = MagicMock()
@@ -202,7 +206,7 @@ async def test_admin_agent_heartbeat_failure_does_not_kill_loop():
 
     app = AdminAgentApp(client=fake_client)
     rc = await app.run(once=True)
-    assert rc == 0
+    assert rc == 1
     fake_client.heartbeat.assert_called_once()
 
 
@@ -218,3 +222,111 @@ def test_main_exits_when_token_missing(monkeypatch, capsys):
     assert rc == 2
     err = capsys.readouterr().err
     assert "token not configured" in err.lower()
+
+
+# ───────── Codex 2.2 follow-up: agent token overwrite + --once rc ─────────
+
+def test_apply_agent_token_overwrites_runtime_config(monkeypatch):
+    """기존 desktop token 이 secrets 에서 들어있어도 agent token 으로 overwrite.
+
+    blocker: WorkerConfig.__init__ 가 secrets > env 우선이라 agent token 이
+    env 에 있어도 desktop secrets token 이 살아있으면 ServerClient 가 desktop
+    token 으로 heartbeat → role/capabilities 가 desktop row 에 찍힘.
+    helper 가 runtime config 를 강제 overwrite 하는지 확인.
+    """
+    from worker.admin_agent import _apply_agent_token_to_runtime_config
+    from worker.config import config as runtime_config
+
+    # 시뮬: secrets 가 desktop token 채워놓음
+    runtime_config.worker_token = "desktop-token-from-secrets"
+
+    _apply_agent_token_to_runtime_config("agent-token-xxxxxx")
+
+    assert runtime_config.worker_token == "agent-token-xxxxxx"
+    assert os.environ.get("HYDRA_WORKER_TOKEN") == "agent-token-xxxxxx"
+
+
+def test_serverclient_picks_up_overwritten_token(monkeypatch):
+    """helper 적용 후 새로 만든 ServerClient 헤더가 agent token 사용."""
+    from worker.admin_agent import _apply_agent_token_to_runtime_config
+    from worker.config import config as runtime_config
+
+    runtime_config.worker_token = "desktop-token-zzz"
+    monkeypatch.setattr(runtime_config, "server_url", "http://mock:8000")
+
+    _apply_agent_token_to_runtime_config("agent-token-yyy")
+
+    from worker.client import ServerClient
+    sc = ServerClient()
+    assert sc.headers["X-Worker-Token"] == "agent-token-yyy"
+
+
+def test_apply_agent_token_no_op_on_empty():
+    """빈 token 은 overwrite 안 함 (이미 정상이던 config 보존)."""
+    from worker.admin_agent import _apply_agent_token_to_runtime_config
+    from worker.config import config as runtime_config
+
+    runtime_config.worker_token = "preserved-token"
+    _apply_agent_token_to_runtime_config("")
+
+    assert runtime_config.worker_token == "preserved-token"
+
+
+@pytest.mark.asyncio
+async def test_once_returns_nonzero_when_heartbeat_fails():
+    """--once 에서 heartbeat 실패하면 rc=1 (수동 검증 false-positive 방지).
+
+    Codex 2.2 follow-up: 이전엔 once+heartbeat fail 도 rc=0 — 거짓 성공.
+    """
+    from worker.admin_agent import AdminAgentApp
+
+    fake_client = MagicMock()
+    fake_client.heartbeat = MagicMock(side_effect=ConnectionError("net"))
+    app = AdminAgentApp(client=fake_client)
+    rc = await app.run(once=True)
+    assert rc == 1
+
+
+@pytest.mark.asyncio
+async def test_once_returns_zero_when_heartbeat_succeeds():
+    """heartbeat 성공 + pending 처리 → once rc=0."""
+    from worker.admin_agent import AdminAgentApp
+
+    fake_client = MagicMock()
+    fake_client.heartbeat = MagicMock(return_value={"pending_commands": []})
+    app = AdminAgentApp(client=fake_client)
+    rc = await app.run(once=True)
+    assert rc == 0
+
+
+@pytest.mark.asyncio
+async def test_long_running_mode_retries_after_heartbeat_failure():
+    """일반 long-running mode 는 heartbeat 실패해도 다음 cycle 계속 진행."""
+    from worker.admin_agent import AdminAgentApp
+
+    call_count = {"n": 0}
+
+    def hb_side_effect(**_kw):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise ConnectionError("transient")
+        # 2번째부터 stop 시그널
+        app.request_stop()
+        return {"pending_commands": []}
+
+    fake_client = MagicMock()
+    fake_client.heartbeat = MagicMock(side_effect=hb_side_effect)
+
+    app = AdminAgentApp(client=fake_client)
+    # patch sleep 으로 즉시 다음 cycle
+    import worker.admin_agent as aa
+    original = aa._resolve_poll_interval_sec
+    aa._resolve_poll_interval_sec = lambda _hb: 1
+
+    try:
+        rc = await app.run(once=False)
+    finally:
+        aa._resolve_poll_interval_sec = original
+
+    assert rc == 0
+    assert call_count["n"] >= 2

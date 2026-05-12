@@ -60,6 +60,31 @@ def _resolve_agent_token() -> str:
     return ""
 
 
+def _apply_agent_token_to_runtime_config(token: str) -> None:
+    """admin agent token 을 runtime config 와 process env 에 **강제** 반영.
+
+    Codex 2.2 review blocker: 기존 main 은 `os.environ[...] = token` + `config.load()`
+    로만 처리. 하지만:
+      - WorkerConfig.__init__ 가 secrets.load_secrets() 의 WORKER_TOKEN 을 env 보다
+        먼저 읽음
+      - config.load() 는 config.json 만 읽고 env 다시 안 봄
+      - 기존 desktop token 이 secrets/config 에 있으면 agent token 으로 덮어쓰지
+        않아서 ServerClient 가 desktop token 으로 heartbeat → role/capabilities 가
+        desktop row 에 찍힘 → Phase 2.3-2.5 routing 치명적 충돌
+
+    수정: agent token 을 무조건 config.worker_token 에 박고, env 도 동기화.
+    같은 process 의 worker.config / worker.client 모듈이 import 한 `config`
+    singleton 을 직접 수정 — 새 ServerClient 인스턴스가 그 값을 헤더에 사용.
+    """
+    if not token:
+        return
+    os.environ["HYDRA_WORKER_TOKEN"] = token
+    # worker.config 의 module-level `config` singleton 을 직접 overwrite.
+    # worker.client 도 같은 인스턴스를 import 해서 사용.
+    from worker.config import config as _runtime_config
+    _runtime_config.worker_token = token
+
+
 def _resolve_poll_interval_sec(hb_response: dict | None) -> int:
     """poll interval 결정 — heartbeat 응답 우선, 다음 env, 다음 default.
 
@@ -115,13 +140,20 @@ class AdminAgentApp:
         self._stop.set()
 
     async def run(self, *, once: bool = False) -> int:
-        """메인 루프. once=True 면 1 cycle 후 즉시 종료 (수동 검증용)."""
+        """메인 루프. once=True 면 1 cycle 후 즉시 종료 (수동 검증용).
+
+        --once 의 exit code 정책 (Codex 2.2 follow-up):
+          - heartbeat 성공 (hb_response truthy) → rc=0
+          - heartbeat 실패 (예외/None) → rc=1 (수동 검증에서 false-positive 방지)
+        일반 long-running mode 에선 heartbeat 실패해도 다음 cycle 재시도 (Slice 1
+        의 client retry 정책으로 흡수).
+        """
         cycles = 0
         while not self._stop.is_set():
             cycles += 1
             hb_response = await self._tick()
             if once:
-                return 0
+                return 0 if hb_response else 1
             # poll interval. heartbeat 응답에서 받거나 env 기본.
             interval = _resolve_poll_interval_sec(hb_response)
             try:
@@ -215,16 +247,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
-    # worker.config 가 worker_token 을 env 에서 읽으므로, agent 우선순위 token 을
-    # HYDRA_WORKER_TOKEN 으로 export — ServerClient 가 그걸 헤더에 박음.
-    os.environ["HYDRA_WORKER_TOKEN"] = token
-
-    # config 모듈 reload — settings 가 module-level 평가라 token 변경 반영.
-    from worker.config import config as _cfg
-    _cfg.load()
-    if not _cfg.worker_token:
-        # config.load 가 secrets 우선이라 env 와 다를 수도 — 안전망.
-        _cfg.worker_token = token
+    # agent token 강제 반영. WorkerConfig.__init__ 의 secrets/env 우선순위와
+    # 무관하게 runtime config singleton 에 직접 박음. 기존 desktop secrets token
+    # 이 있어도 agent token 으로 overwrite.
+    _apply_agent_token_to_runtime_config(token)
 
     print(
         f"[admin_agent] Starting (poll_interval={_resolve_poll_interval_sec(None)}s, "
