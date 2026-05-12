@@ -16,13 +16,35 @@ log = get_logger("adspower")
 class AdsPowerClient:
     def __init__(self, base_url: str | None = None, api_key: str | None = None):
         self.base_url = (base_url or settings.adspower_api_url).rstrip("/")
-        # 우선순위: 명시 인자 > os.environ (heartbeat 로 서버가 푸시한 런타임 값) > settings(.env)
-        # 워커가 실행 중에 서버로부터 키를 받아 os.environ 에 주입하는 경로 지원.
-        self.api_key = api_key or os.environ.get("ADSPOWER_API_KEY") or settings.adspower_api_key
+        # 명시 api_key 인자가 있으면 우선. 없으면 _resolve_api_key 가 매 호출마다
+        # env / settings 에서 fresh resolve — heartbeat 가 env 를 갱신해도 따라감.
+        self._explicit_api_key = api_key
+
+    def _resolve_api_key(self) -> str:
+        """매 호출마다 env/settings 재조회.
+
+        본질 fix: 이전엔 __init__ 에서 cache 해서 module-level singleton
+        (line 162 adspower = AdsPowerClient()) 가 import 시점 (env 비었을 때) 의
+        값을 영원히 들고 있었음. worker startup 직후 import 되어 self.api_key=""
+        가 되고, heartbeat 가 나중에 env 를 set 해도 singleton 은 빈 키 그대로
+        → AdsPower "Require api-key" 거부.
+        """
+        return (
+            self._explicit_api_key
+            or os.environ.get("ADSPOWER_API_KEY")
+            or settings.adspower_api_key
+            or ""
+        )
+
+    @property
+    def api_key(self) -> str:
+        """back-compat: 외부 코드가 client.api_key 접근하는 경우 fresh 값 반환."""
+        return self._resolve_api_key()
 
     def _headers(self) -> dict:
-        if self.api_key:
-            return {"Authorization": f"Bearer {self.api_key}"}
+        key = self._resolve_api_key()
+        if key:
+            return {"Authorization": f"Bearer {key}"}
         return {}
 
     def _get(self, path: str, params: dict | None = None) -> dict:
