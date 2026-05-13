@@ -162,9 +162,13 @@ def test_admin_only_command_direct_to_admin_agent(env):
     assert body["requested_worker_id"] is None
 
 
-# ───────── 5. 일반 명령은 target_role 정책 없음 → worker.role 그대로 ─────────
+# ───────── 5. 일반 명령은 target_role NULL (Codex follow-up) ─────────
 
-def test_generic_command_no_required_role(env):
+def test_generic_command_target_role_null(env):
+    """일반 명령 (정책 없음, override 없음) → target_role=NULL.
+    Codex Slice 3.1 review: 일반 명령에 worker.role 박으면 후속 role 변경
+    시 mismatch fail. 일반 명령은 NULL 박아 role 변경에 면역.
+    """
     r = env["client"].post(
         f"/api/admin/workers/{env['desktop_id']}/command",
         headers=_admin(env),
@@ -173,9 +177,18 @@ def test_generic_command_no_required_role(env):
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["worker_id"] == env["desktop_id"]
-    # 정책에 없는 명령 → 발행 worker.role 그대로 박힘 (안전망: 후속 role 변경
-    # 시 mismatch fail-close 로 보호)
-    assert body["target_role"] == "desktop_worker"
+    assert body["target_role"] is None
+
+
+def test_generic_command_with_explicit_override(env):
+    """일반 명령이라도 override 명시하면 그 값 박힘 (단 worker.role 일치)."""
+    r = env["client"].post(
+        f"/api/admin/workers/{env['desktop_id']}/command",
+        headers=_admin(env),
+        json={"command": "run_diag", "target_role": "desktop_worker"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["target_role"] == "desktop_worker"
 
 
 # ───────── 6. heartbeat lease: target_role mismatch → failed + role_mismatch ─────────
@@ -278,7 +291,63 @@ def test_target_role_override_invalid_value_400(env):
     assert r.status_code == 400
 
 
-# ───────── 9. migration regression ─────────
+# ───────── 9. Codex follow-up: ambiguous paired admin_agent → 409 ─────────
+
+def test_admin_only_command_with_ambiguous_paired_admin_agents_409(env):
+    """한 desktop 에 admin_agent 가 2개 이상 → first() 비결정적 routing 금지.
+    409 ambiguous + 운영자가 직접 발행하도록 강제.
+    """
+    db = env["Session"]()
+    extra_token = "wtok-agent2-xxxxxxxxxxxxxxxxxxxxxxxxxx"
+    extra = Worker(
+        name="agent-2",
+        token_hash=hash_password(extra_token),
+        token_prefix=extra_token[:8],
+        token_sha256=_sha(extra_token),
+        role="admin_agent",
+        parent_worker_id=env["desktop_id"],
+    )
+    db.add(extra); db.commit(); db.close()
+
+    r = env["client"].post(
+        f"/api/admin/workers/{env['desktop_id']}/command",
+        headers=_admin(env),
+        json={"command": "agent_update_now"},
+    )
+    assert r.status_code == 409
+    assert "ambiguous" in r.json()["detail"]
+
+
+# ───────── 10. Codex follow-up: /shell 도 _resolve_command_target 거침 ─────────
+
+def test_shell_endpoint_uses_resolve_target(env):
+    """/shell convenience endpoint 도 _resolve_command_target 거쳐서
+    target_role=NULL 박힘 (shell_exec 는 _CMD_REQUIRED_ROLE 에 없음).
+    Codex review: 발행 경로 parity 필수.
+    """
+    r = env["client"].post(
+        f"/api/admin/workers/{env['desktop_id']}/shell",
+        headers=_admin(env),
+        json={"script": "echo hi", "shell": "powershell", "timeout_sec": 5},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["command"] == "shell_exec"
+    assert body["target_role"] is None
+    assert body["worker_id"] == env["desktop_id"]
+
+
+def test_shell_endpoint_404_when_worker_missing(env):
+    """/shell 도 _resolve_command_target 에서 worker not found → 404."""
+    r = env["client"].post(
+        "/api/admin/workers/999999/shell",
+        headers=_admin(env),
+        json={"script": "echo hi"},
+    )
+    assert r.status_code == 404
+
+
+# ───────── 11. migration regression ─────────
 
 def test_migration_c1d2e3wcmdtr_upgrades_clean_on_sqlite_batch(tmp_path, monkeypatch):
     """alembic c1d2e3wcmdtr 가 SQLite batch_alter_table 모드에서 깨지지 않는지.

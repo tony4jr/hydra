@@ -443,11 +443,15 @@ def _resolve_command_target(
 
     1) 명령에 required_role 이 있고 worker.role 가 다르면 paired worker 로 rewrite.
        paired 매칭: admin_agent.parent_worker_id == desktop_worker.id.
-       - desktop_worker 에 admin_only 명령 → parent_worker_id 가 가리키는 admin_agent 찾기
-       - admin_agent 에 desktop_only 명령 → parent_worker_id 자기쪽 desktop 찾기
-       paired worker 없으면 409.
-    2) override (req.target_role) 있으면 우선. 단 worker.role 와 mismatch 면 400.
-    3) 일반 명령 (정책 없음) 은 worker.role 그대로 저장.
+       - desktop_worker 에 admin_only 명령 → 이 desktop 을 가리키는 admin_agent 들 검색
+         · 0개 → 409 no paired
+         · 2개 이상 → 409 ambiguous (비결정적 routing 금지)
+         · 1개 → rewrite
+       - admin_agent 에 desktop_only 명령 → parent_worker_id 가 가리키는 desktop
+    2) override (req.target_role) 있으면 우선. invalid value 또는 resolved
+       worker.role 와 mismatch 면 400.
+    3) 일반 명령 (정책 없음, override 없음) 은 target_role=NULL 박음 — role 변경
+       에 면역이며 UI 가 routing 표시 안 함 (Codex Slice 3.1 review 권고).
     """
     worker = db.get(Worker, worker_id)
     if worker is None:
@@ -460,37 +464,60 @@ def _resolve_command_target(
 
     # admin-only 명령을 잘못된 role 에 발행한 경우 auto-route
     if required and worker.role != required:
-        paired: Optional[Worker] = None
         if required == "admin_agent" and worker.role == "desktop_worker":
-            # admin_agent 의 parent_worker_id == 이 desktop_worker.id
-            paired = (
+            candidates = (
                 db.query(Worker)
                 .filter(
                     Worker.role == "admin_agent",
                     Worker.parent_worker_id == worker.id,
                 )
-                .first()
+                .all()
             )
+            if len(candidates) == 0:
+                raise HTTPException(
+                    409,
+                    f"no paired admin_agent for worker_id={worker_id} "
+                    f"(role={worker.role}); command {command} requires admin_agent",
+                )
+            if len(candidates) > 1:
+                raise HTTPException(
+                    409,
+                    f"ambiguous paired admin_agent for worker_id={worker_id} "
+                    f"({len(candidates)} candidates); operator must issue directly",
+                )
+            worker = candidates[0]
         elif required == "desktop_worker" and worker.role == "admin_agent":
+            paired = None
             if worker.parent_worker_id is not None:
-                paired = db.get(Worker, worker.parent_worker_id)
-                if paired is not None and paired.role != "desktop_worker":
-                    paired = None
-        if paired is None:
+                p = db.get(Worker, worker.parent_worker_id)
+                if p is not None and p.role == "desktop_worker":
+                    paired = p
+            if paired is None:
+                raise HTTPException(
+                    409,
+                    f"no paired desktop_worker for worker_id={worker_id} "
+                    f"(role={worker.role}); command {command} requires desktop_worker",
+                )
+            worker = paired
+        else:
             raise HTTPException(
                 409,
-                f"no paired {required} worker for worker_id={worker_id} "
-                f"(role={worker.role}); command {command} requires {required}",
+                f"cannot auto-route {command} (required={required}) from "
+                f"worker_id={worker_id} role={worker.role}",
             )
-        worker = paired
 
     # override 가 있으면 최종 worker.role 와 다시 검증
-    final_target = override if override is not None else (required or worker.role)
     if override is not None and worker.role != override:
         raise HTTPException(
             400,
             f"target_role={override} mismatches resolved worker role {worker.role}",
         )
+
+    # final_target 결정:
+    #  - override 있으면 그것
+    #  - required 있으면 그것 (auto-route 후라 worker.role == required 보장)
+    #  - 둘 다 없으면 NULL (일반 명령은 routing 정책 비대상)
+    final_target = override if override is not None else required
     return worker, final_target
 
 
@@ -647,15 +674,21 @@ def issue_shell(
     from hydra.db.models import WorkerCommand
     db = _db_session.SessionLocal()
     try:
-        if db.get(Worker, worker_id) is None:
-            raise HTTPException(404, "worker not found")
+        # Phase 3 Slice 3.1 — generic /command 와 동일하게 _resolve_command_target
+        # 거침. shell_exec 는 _CMD_REQUIRED_ROLE 에 없어서 target_role=NULL
+        # 박힘 (일반 명령 정책). /shell convenience 경로가 정책 우회하지
+        # 않도록 보장 (Codex review 권고).
+        worker, target_role = _resolve_command_target(
+            db, worker_id, "shell_exec", None,
+        )
         cmd = WorkerCommand(
-            worker_id=worker_id,
+            worker_id=worker.id,
             command="shell_exec",
             payload=json.dumps(payload, ensure_ascii=False),
             status="pending",
             issued_by=session.get("user_id"),
             issued_at=datetime.now(UTC),
+            target_role=target_role,
         )
         db.add(cmd)
         db.commit()
@@ -664,6 +697,8 @@ def issue_shell(
             id=cmd.id, worker_id=cmd.worker_id, command=cmd.command,
             payload=payload, status=cmd.status,
             issued_at=cmd.issued_at.isoformat(),
+            target_role=cmd.target_role,
+            requested_worker_id=(worker_id if worker.id != worker_id else None),
         )
     finally:
         db.close()
