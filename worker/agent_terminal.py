@@ -21,6 +21,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
@@ -117,6 +118,83 @@ def _post_closed(client: "ServerClient", session_id: int, session_token: str) ->
         return False
 
 
+# Phase 4 Slice 4.2a — input poller
+INPUT_POLL_INTERVAL_SEC = 1.0
+
+
+def _get_inputs(
+    client: "ServerClient", session_id: int, session_token: str, after_seq: int,
+) -> tuple[list[dict], str]:
+    """GET /inputs short-poll. (rows, status) 반환."""
+    try:
+        resp = client._request(
+            "GET",
+            f"/api/workers/terminal/{session_id}/inputs?after_seq={after_seq}",
+            headers={**client.headers, "X-Terminal-Session-Token": session_token},
+        )
+        if resp.status_code != 200:
+            return [], "unknown"
+        body = resp.json()
+        return body.get("inputs", []), body.get("status", "unknown")
+    except Exception:
+        return [], "unknown"
+
+
+def _post_consumed(
+    client: "ServerClient", session_id: int, session_token: str, consumed_seq: int,
+) -> bool:
+    try:
+        resp = client._request(
+            "POST",
+            f"/api/workers/terminal/{session_id}/input-consumed?consumed_seq={consumed_seq}",
+            headers={**client.headers, "X-Terminal-Session-Token": session_token},
+        )
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
+def _input_poller_loop(
+    client: "ServerClient",
+    session_id: int,
+    session_token: str,
+    proc: subprocess.Popen,
+    stop_event: threading.Event,
+) -> None:
+    """워커 측 short-poll thread. active 동안 inputs poll → stdin write.
+
+    종료 조건:
+      - stop_event set (close_session 시)
+      - process 죽음 (proc.poll() != None)
+      - server 가 status != active 반환 (closing/closed/failed)
+    """
+    after_seq = 0
+    while not stop_event.is_set():
+        if proc.poll() is not None:
+            return
+        rows, status = _get_inputs(client, session_id, session_token, after_seq)
+        if rows:
+            try:
+                for r in rows:
+                    data = r["data"]
+                    if isinstance(data, str):
+                        proc.stdin.write(data.encode("utf-8"))
+                    else:
+                        proc.stdin.write(data)
+                    after_seq = max(after_seq, int(r["seq"]))
+                try:
+                    proc.stdin.flush()
+                except Exception:
+                    pass
+                _post_consumed(client, session_id, session_token, after_seq)
+            except Exception:
+                # stdin closed 등 — process 곧 종료될 가능성. 다음 iter 에서 detect.
+                pass
+        if status in ("closing", "closed", "timeout", "failed"):
+            return
+        stop_event.wait(INPUT_POLL_INTERVAL_SEC)
+
+
 def _post_failed(
     client: "ServerClient", session_id: int, session_token: str, error: str = "",
 ) -> bool:
@@ -194,10 +272,21 @@ def open_session(
         _post_failed(client, session_id, session_token, "active_post_failed")
         return {"ok": False, "error": "active_post_failed"}
 
-    # 4) lock 안: registry 등록
+    # 4) input poller thread 시작 (Phase 4 Slice 4.2a)
+    stop_event = threading.Event()
+    poller = threading.Thread(
+        target=_input_poller_loop,
+        args=(client, session_id, session_token, proc, stop_event),
+        name=f"term-input-poller-{session_id}",
+        daemon=True,
+    )
+    poller.start()
+
+    # 5) lock 안: registry 등록
     with _REGISTRY_LOCK:
         _REGISTRY[session_id] = {
             "proc": proc, "session_token": session_token, "shell": shell,
+            "input_stop": stop_event, "input_thread": poller,
         }
     return {"ok": True, "pid": proc.pid}
 
@@ -215,6 +304,9 @@ def close_session(
     with _REGISTRY_LOCK:
         entry = _REGISTRY.pop(session_id, None)
     proc = entry.get("proc") if entry else None
+    stop_event = entry.get("input_stop") if entry else None
+    if stop_event is not None:
+        stop_event.set()
 
     if proc is not None and _is_alive(proc):
         try:
@@ -247,6 +339,12 @@ def shutdown_all(client: Optional["ServerClient"] = None) -> int:
     for sid, entry in items:
         proc = entry.get("proc")
         token = entry.get("session_token", "")
+        stop_event = entry.get("input_stop")
+        if stop_event is not None:
+            try:
+                stop_event.set()
+            except Exception:
+                pass
         try:
             if proc is not None and _is_alive(proc):
                 try:

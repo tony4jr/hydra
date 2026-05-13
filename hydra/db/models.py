@@ -1573,3 +1573,32 @@ class TerminalSession(Base):
             ),
         ),
     )
+
+
+class TerminalInput(Base):
+    """Phase 4 Slice 4.2a — 운영자가 admin UI 에서 보낸 stdin 라인/raw 데이터.
+
+    워커 short-poll: GET /workers/terminal/{id}/inputs?after_seq=N 으로 새
+    input 받아 shell process.stdin.write. consumed_seq 는 워커가 별도
+    endpoint 로 보고 (정합성 확인).
+
+    seq 는 session 별 monotonic. 같은 session 안에서 (session_id, seq) 유일.
+    """
+    __tablename__ = "terminal_inputs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(
+        Integer,
+        ForeignKey("terminal_sessions.id", name="fk_terminput_session", ondelete="CASCADE"),
+        nullable=False,
+    )
+    seq = Column(Integer, nullable=False)
+    data = Column(Text, nullable=False)            # max 8KB enforced at API
+    byte_size = Column(Integer, nullable=False, default=0)
+    produced_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+    consumed_at = Column(DateTime, nullable=True)  # 워커 보고 시 set
+
+    __table_args__ = (
+        Index("idx_terminput_session_seq", "session_id", "seq"),
+        UniqueConstraint("session_id", "seq", name="uq_terminput_session_seq"),
+    )

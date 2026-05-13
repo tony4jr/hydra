@@ -31,7 +31,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 
 from hydra.db import session as _db_session
-from hydra.db.models import TerminalSession, Worker, WorkerCommand
+from hydra.db.models import TerminalInput, TerminalSession, Worker, WorkerCommand
 from hydra.web.routes.admin_auth import admin_session
 from hydra.web.routes.worker_api import worker_auth
 
@@ -307,6 +307,141 @@ def worker_mark_closed(
         ts.last_activity_at = datetime.now(UTC)
         db.commit()
         return {"ok": True, "status": ts.status}
+    finally:
+        db.close()
+
+
+# ─────────────── Phase 4 Slice 4.2a — input queue ───────────────
+
+INPUT_MAX_BYTES = 8 * 1024  # 8KB per single input
+
+
+class TerminalInputRequest(BaseModel):
+    data: str
+
+
+class TerminalInputOut(BaseModel):
+    id: int
+    seq: int
+    data: str
+    byte_size: int
+    produced_at: str
+
+
+def _iso_or_none(dt):
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.isoformat()
+
+
+@router.post("/admin/terminal/{session_id}/input")
+def admin_post_input(
+    session_id: int,
+    req: TerminalInputRequest,
+    _session: dict = Depends(admin_session),
+) -> dict:
+    """admin UI 에서 stdin 데이터 발행. active 세션만 허용. data 8KB 상한."""
+    data = req.data
+    if not isinstance(data, str):
+        raise HTTPException(400, "data must be string")
+    byte_size = len(data.encode("utf-8"))
+    if byte_size == 0:
+        raise HTTPException(400, "data cannot be empty")
+    if byte_size > INPUT_MAX_BYTES:
+        raise HTTPException(400, f"input exceeds {INPUT_MAX_BYTES} bytes")
+
+    db = _db_session.SessionLocal()
+    try:
+        ts = db.get(TerminalSession, session_id)
+        if ts is None:
+            raise HTTPException(404, "terminal session not found")
+        if ts.status != "active":
+            raise HTTPException(409, f"input only valid on active session (status={ts.status})")
+
+        # seq: 같은 session 안에서 max+1
+        prev_max = (
+            db.query(TerminalInput)
+            .filter(TerminalInput.session_id == session_id)
+            .order_by(TerminalInput.seq.desc())
+            .first()
+        )
+        next_seq = (prev_max.seq + 1) if prev_max is not None else 1
+
+        ti = TerminalInput(
+            session_id=session_id, seq=next_seq, data=data,
+            byte_size=byte_size, produced_at=datetime.now(UTC),
+        )
+        db.add(ti)
+        ts.last_activity_at = datetime.now(UTC)
+        db.commit()
+        db.refresh(ti)
+        return {"ok": True, "id": ti.id, "seq": ti.seq, "byte_size": byte_size}
+    finally:
+        db.close()
+
+
+@router.get("/workers/terminal/{session_id}/inputs")
+def worker_get_inputs(
+    session_id: int,
+    after_seq: int = 0,
+    worker: Worker = Depends(worker_auth),
+    x_terminal_session_token: str = Header(default=""),
+) -> dict:
+    """워커 short-poll. after_seq 이후 input list 반환 (최대 100건)."""
+    db = _db_session.SessionLocal()
+    try:
+        ts = _verify_worker_session(db, session_id, worker, x_terminal_session_token)
+        rows = (
+            db.query(TerminalInput)
+            .filter(
+                TerminalInput.session_id == session_id,
+                TerminalInput.seq > after_seq,
+            )
+            .order_by(TerminalInput.seq.asc())
+            .limit(100)
+            .all()
+        )
+        items = [
+            {
+                "id": r.id, "seq": r.seq, "data": r.data,
+                "byte_size": r.byte_size,
+                "produced_at": _iso_or_none(r.produced_at),
+            }
+            for r in rows
+        ]
+        return {"ok": True, "inputs": items, "status": ts.status}
+    finally:
+        db.close()
+
+
+@router.post("/workers/terminal/{session_id}/input-consumed")
+def worker_report_consumed(
+    session_id: int,
+    consumed_seq: int = 0,
+    worker: Worker = Depends(worker_auth),
+    x_terminal_session_token: str = Header(default=""),
+) -> dict:
+    """워커가 어디까지 stdin write 완료했는지 보고. consumed_seq 이하 row 의
+    consumed_at 마킹 + last_activity_at 갱신.
+    """
+    db = _db_session.SessionLocal()
+    try:
+        ts = _verify_worker_session(db, session_id, worker, x_terminal_session_token)
+        now = datetime.now(UTC)
+        updated = (
+            db.query(TerminalInput)
+            .filter(
+                TerminalInput.session_id == session_id,
+                TerminalInput.seq <= consumed_seq,
+                TerminalInput.consumed_at.is_(None),
+            )
+            .update({TerminalInput.consumed_at: now}, synchronize_session=False)
+        )
+        ts.last_activity_at = now
+        db.commit()
+        return {"ok": True, "updated": updated}
     finally:
         db.close()
 
