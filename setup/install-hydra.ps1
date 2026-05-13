@@ -146,9 +146,11 @@ if (Test-Path $InstallPath) {
 }
 
 if (-not (Test-Path $InstallPath)) {
-    # clone — partial dir 가 남아있으면 다음 retry 위해 정리
+    # clone — retry 시 partial dir 무조건 정리 (.git 존재 여부 무관).
+    # broken rename 이미 거쳤으니 여기 도달했다는 건 fresh 상태였어야 함.
+    # retry 의 dir 은 항상 실패 산물 → 보존 X.
     Run-Native -What "git clone" -Retries 3 -RetryDelaySec 5 -ScriptBlock {
-        if ((Test-Path $InstallPath) -and -not (Test-Path (Join-Path $InstallPath '.git'))) {
+        if (Test-Path $InstallPath) {
             Remove-Item -Recurse -Force $InstallPath -ErrorAction SilentlyContinue
         }
         git clone $RepoUrl $InstallPath
