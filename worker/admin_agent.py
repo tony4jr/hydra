@@ -277,6 +277,13 @@ def main(argv: list[str] | None = None) -> int:
         _install_signal_handlers(loop, app)
         return loop.run_until_complete(app.run(once=args.once))
     finally:
+        # Phase 4 Slice 4.1b — admin_agent shutdown 시 terminal registry 의
+        # 모든 shell process 정리. orphan PowerShell 방지 (Codex 권고).
+        try:
+            from worker import agent_terminal as _term
+            _term.shutdown_all()
+        except Exception as e:
+            print(f"[admin_agent] shutdown_all error: {e}", flush=True)
         loop.close()
 
 

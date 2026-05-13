@@ -224,6 +224,44 @@ async def execute_command(client: "ServerClient", cmd: dict) -> None:
                     ensure_ascii=False,
                 )
 
+        elif name in ("terminal_open", "terminal_close"):
+            # Phase 4 Slice 4.1b — web terminal lifecycle.
+            # idempotent open (registry 검사) + active POST → ack done.
+            # close: terminate + closed POST → ack done.
+            import json as _json
+            current_role = os.environ.get("HYDRA_PROCESS_ROLE", "")
+            if current_role != "admin_agent":
+                status = "failed"
+                err = (
+                    f"{name} requires admin_agent runtime "
+                    f"(HYDRA_PROCESS_ROLE={current_role!r})"
+                )
+                result = _json.dumps(
+                    {"ok": False, "action": name, "error": err},
+                    ensure_ascii=False,
+                )
+            else:
+                from worker import agent_terminal as _term
+                sid = payload.get("session_id")
+                stok = payload.get("session_token")
+                if not isinstance(sid, int) or not isinstance(stok, str) or not stok:
+                    status = "failed"
+                    err = f"{name} payload missing session_id/session_token"
+                    result = _json.dumps(
+                        {"ok": False, "action": name, "error": err},
+                        ensure_ascii=False,
+                    )
+                elif name == "terminal_open":
+                    shell = payload.get("shell", "powershell")
+                    out = _term.open_session(client, sid, stok, shell)
+                    if not out.get("ok"):
+                        status = "failed"
+                        err = out.get("error") or "terminal_open failed"
+                    result = _json.dumps(out, ensure_ascii=False)
+                elif name == "terminal_close":
+                    out = _term.close_session(client, sid, stok)
+                    result = _json.dumps(out, ensure_ascii=False)
+
         elif name in ("desktop_status", "desktop_start", "desktop_stop", "desktop_restart"):
             # Slice 2.4 — admin agent → desktop worker process 관리.
             # Slice 2.4 follow-up: HYDRA_PROCESS_ROLE guard. 서버 routing 이
