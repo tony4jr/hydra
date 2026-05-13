@@ -31,7 +31,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 
 from hydra.db import session as _db_session
-from hydra.db.models import TerminalInput, TerminalSession, Worker, WorkerCommand
+from hydra.db.models import TerminalChunk, TerminalInput, TerminalSession, Worker, WorkerCommand
 from hydra.web.routes.admin_auth import admin_session
 from hydra.web.routes.worker_api import worker_auth
 
@@ -458,6 +458,155 @@ def worker_report_consumed(
         ts.last_activity_at = now
         db.commit()
         return {"ok": True, "updated": updated}
+    finally:
+        db.close()
+
+
+# ─────────────── Phase 4 Slice 4.2b — output chunks ───────────────
+
+CHUNK_MAX_BYTES = 64 * 1024              # per single chunk
+SESSION_OUTPUT_MAX_BYTES = 10 * 1024 * 1024  # 10MB per session total
+
+
+class TerminalChunkIn(BaseModel):
+    stream: str
+    data: str
+    byte_size: int
+
+
+class TerminalChunksRequest(BaseModel):
+    chunks: list[TerminalChunkIn]
+
+
+@router.post("/workers/terminal/{session_id}/chunks")
+def worker_post_chunks(
+    session_id: int,
+    req: TerminalChunksRequest,
+    worker: Worker = Depends(worker_auth),
+    x_terminal_session_token: str = Header(default=""),
+) -> dict:
+    """워커 shell process 의 stdout/stderr chunk batch POST.
+
+    한 chunk 64KB 상한 / session total 10MB 상한. 도달 시 force close 트리거.
+    (session_id, stream, seq) UNIQUE. seq 는 server 가 stream 별 max+1 으로 할당.
+    """
+    if not req.chunks:
+        return {"ok": True, "accepted": 0}
+
+    for c in req.chunks:
+        if c.stream not in ("stdout", "stderr"):
+            raise HTTPException(400, f"invalid stream: {c.stream}")
+        if c.byte_size < 0 or c.byte_size > CHUNK_MAX_BYTES:
+            raise HTTPException(
+                400, f"chunk byte_size out of range (0..{CHUNK_MAX_BYTES})",
+            )
+
+    db = _db_session.SessionLocal()
+    try:
+        ts = _verify_worker_session(db, session_id, worker, x_terminal_session_token)
+        # session total bytes 한도 검사
+        from sqlalchemy import func
+        current_total = (
+            db.query(func.coalesce(func.sum(TerminalChunk.byte_size), 0))
+            .filter(TerminalChunk.session_id == session_id)
+            .scalar()
+        ) or 0
+        incoming_total = sum(c.byte_size for c in req.chunks)
+        if int(current_total) + incoming_total > SESSION_OUTPUT_MAX_BYTES:
+            # force close 트리거
+            ts.status = "closing"
+            ts.closing_at = datetime.now(UTC)
+            ts.last_activity_at = datetime.now(UTC)
+            err = (
+                f"output_size_exceeded:limit={SESSION_OUTPUT_MAX_BYTES},"
+                f"current={current_total},incoming={incoming_total}"
+            )
+            ts.error_message = (
+                (ts.error_message + " | " + err) if ts.error_message else err
+            )
+            db.commit()
+            raise HTTPException(400, err)
+
+        # stream 별 max(seq) 한 번에 조회 — batch 안의 chunk 들에 monotonic
+        # 할당. 같은 stream 의 chunk 가 N개면 max+1 .. max+N.
+        max_seqs: dict[str, int] = {}
+        for stream in {"stdout", "stderr"}:
+            prev = (
+                db.query(TerminalChunk)
+                .filter(
+                    TerminalChunk.session_id == session_id,
+                    TerminalChunk.stream == stream,
+                )
+                .order_by(TerminalChunk.seq.desc())
+                .first()
+            )
+            max_seqs[stream] = prev.seq if prev is not None else 0
+
+        accepted = 0
+        for c in req.chunks:
+            max_seqs[c.stream] += 1
+            db.add(TerminalChunk(
+                session_id=session_id, stream=c.stream, seq=max_seqs[c.stream],
+                data=c.data, byte_size=c.byte_size,
+                produced_at=datetime.now(UTC),
+            ))
+            accepted += 1
+        ts.last_activity_at = datetime.now(UTC)
+        db.commit()
+        return {
+            "ok": True, "accepted": accepted,
+            "total_bytes": int(current_total) + incoming_total,
+        }
+    finally:
+        db.close()
+
+
+@router.get("/admin/terminal/{session_id}/chunks")
+def admin_get_chunks(
+    session_id: int,
+    after_id: int = 0,
+    _session: dict = Depends(admin_session),
+) -> dict:
+    """admin UI polling — after_id 이후 chunks 시간순. 최대 200건.
+    seq 는 stream 별 monotonic 이라 stdout/stderr 가 섞이면 seq 만으론 시간 순서
+    안 됨. id (global) 기준 정렬.
+    """
+    db = _db_session.SessionLocal()
+    try:
+        ts = db.get(TerminalSession, session_id)
+        if ts is None:
+            raise HTTPException(404, "terminal session not found")
+
+        rows = (
+            db.query(TerminalChunk)
+            .filter(
+                TerminalChunk.session_id == session_id,
+                TerminalChunk.id > after_id,
+            )
+            .order_by(TerminalChunk.id.asc())
+            .limit(200)
+            .all()
+        )
+        items = [
+            {
+                "id": r.id, "stream": r.stream, "seq": r.seq,
+                "data": r.data, "byte_size": r.byte_size,
+                "produced_at": _iso_or_none(r.produced_at),
+            }
+            for r in rows
+        ]
+        from sqlalchemy import func
+        total = (
+            db.query(func.coalesce(func.sum(TerminalChunk.byte_size), 0))
+            .filter(TerminalChunk.session_id == session_id)
+            .scalar()
+        ) or 0
+        return {
+            "ok": True, "chunks": items,
+            "session_status": ts.status,
+            "total_bytes": int(total),
+            "max_total_bytes": SESSION_OUTPUT_MAX_BYTES,
+        }
     finally:
         db.close()
 

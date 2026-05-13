@@ -1575,6 +1575,32 @@ class TerminalSession(Base):
     )
 
 
+class TerminalChunk(Base):
+    """Phase 4 Slice 4.2b — 워커 shell process 의 stdout/stderr chunk.
+
+    워커 reader thread 가 64KB 또는 100ms 단위로 모아 POST. (session_id, stream, seq)
+    UNIQUE. session total bytes 10MB 도달 시 server 가 force_close 트리거.
+    """
+    __tablename__ = "terminal_chunks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(
+        Integer,
+        ForeignKey("terminal_sessions.id", name="fk_termchunk_session", ondelete="CASCADE"),
+        nullable=False,
+    )
+    stream = Column(String(8), nullable=False)  # 'stdout' | 'stderr'
+    seq = Column(Integer, nullable=False)
+    data = Column(Text, nullable=False)
+    byte_size = Column(Integer, nullable=False, default=0)
+    produced_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+
+    __table_args__ = (
+        Index("idx_termchunk_session_seq", "session_id", "seq"),
+        UniqueConstraint("session_id", "stream", "seq", name="uq_termchunk_session_stream_seq"),
+    )
+
+
 class TerminalInput(Base):
     """Phase 4 Slice 4.2a — 운영자가 admin UI 에서 보낸 stdin 라인/raw 데이터.
 

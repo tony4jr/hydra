@@ -197,6 +197,78 @@ def _input_poller_loop(
         stop_event.wait(INPUT_POLL_INTERVAL_SEC)
 
 
+# Phase 4 Slice 4.2b — output chunks
+CHUNK_FLUSH_BYTES = 64 * 1024
+CHUNK_FLUSH_INTERVAL_SEC = 0.1
+
+
+def _post_chunks(
+    client: "ServerClient",
+    session_id: int,
+    session_token: str,
+    chunks: list[dict],
+) -> bool:
+    if not chunks:
+        return True
+    try:
+        resp = client._request(
+            "POST",
+            f"/api/workers/terminal/{session_id}/chunks",
+            headers={**client.headers, "X-Terminal-Session-Token": session_token},
+            json={"chunks": chunks},
+        )
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
+def _stream_reader_loop(
+    client: "ServerClient",
+    session_id: int,
+    session_token: str,
+    stream_name: str,
+    stream_fileobj,
+    stop_event: threading.Event,
+) -> None:
+    """워커 측 stdout 또는 stderr reader. 64KB 또는 100ms 단위로 batch POST.
+
+    종료 조건:
+      - stream 닫힘 (read 가 빈 bytes 반환)
+      - stop_event set
+    """
+    buf = bytearray()
+    last_flush = time.monotonic()
+    while not stop_event.is_set():
+        try:
+            chunk = stream_fileobj.read1(CHUNK_FLUSH_BYTES) if hasattr(stream_fileobj, "read1") else stream_fileobj.read(CHUNK_FLUSH_BYTES)
+        except Exception:
+            return
+        if not chunk:
+            # EOF — 남은 buffer flush 후 종료
+            if buf:
+                _post_chunks(client, session_id, session_token, [{
+                    "stream": stream_name,
+                    "data": buf.decode("utf-8", errors="replace"),
+                    "byte_size": len(buf),
+                }])
+            return
+        buf.extend(chunk)
+        now = time.monotonic()
+        if len(buf) >= CHUNK_FLUSH_BYTES or (now - last_flush) >= CHUNK_FLUSH_INTERVAL_SEC:
+            data = bytes(buf)
+            buf.clear()
+            last_flush = now
+            ok = _post_chunks(client, session_id, session_token, [{
+                "stream": stream_name,
+                "data": data.decode("utf-8", errors="replace"),
+                "byte_size": len(data),
+            }])
+            if not ok:
+                # 400 (size limit) 등 — server 가 closing 트리거. 다음 iter 에서
+                # poller 가 status closing 받고 정리.
+                pass
+
+
 def _post_failed(
     client: "ServerClient", session_id: int, session_token: str, error: str = "",
 ) -> bool:
@@ -284,11 +356,28 @@ def open_session(
     )
     poller.start()
 
-    # 5) lock 안: registry 등록
+    # 5) output reader threads (Phase 4 Slice 4.2b)
+    stdout_thread = threading.Thread(
+        target=_stream_reader_loop,
+        args=(client, session_id, session_token, "stdout", proc.stdout, stop_event),
+        name=f"term-stdout-reader-{session_id}",
+        daemon=True,
+    )
+    stderr_thread = threading.Thread(
+        target=_stream_reader_loop,
+        args=(client, session_id, session_token, "stderr", proc.stderr, stop_event),
+        name=f"term-stderr-reader-{session_id}",
+        daemon=True,
+    )
+    stdout_thread.start()
+    stderr_thread.start()
+
+    # 6) lock 안: registry 등록
     with _REGISTRY_LOCK:
         _REGISTRY[session_id] = {
             "proc": proc, "session_token": session_token, "shell": shell,
             "input_stop": stop_event, "input_thread": poller,
+            "stdout_thread": stdout_thread, "stderr_thread": stderr_thread,
         }
     return {"ok": True, "pid": proc.pid}
 
@@ -380,6 +469,25 @@ def get_registered_sessions() -> list[int]:
 
 
 def clear_registry_for_testing() -> None:
-    """테스트 전용 — registry 초기화 (process 는 그대로 두고 dict 만 비움)."""
+    """테스트 전용 — registry 초기화 + 모든 daemon thread 의 stop_event set.
+
+    Slice 4.2a/4.2b 가 daemon poller/reader thread 를 spawn 하면서 test
+    teardown 시 dict 만 비우면 thread 들이 mock client 영원히 호출 → 다음
+    테스트 hang. 모든 stop_event set 으로 graceful 종료.
+    """
     with _REGISTRY_LOCK:
+        for entry in _REGISTRY.values():
+            stop_event = entry.get("input_stop")
+            if stop_event is not None:
+                try:
+                    stop_event.set()
+                except Exception:
+                    pass
+            proc = entry.get("proc")
+            if proc is not None:
+                # mock 들은 terminate 가 무해. real Popen 도 cleanup 도움.
+                try:
+                    proc.terminate()
+                except Exception:
+                    pass
         _REGISTRY.clear()
