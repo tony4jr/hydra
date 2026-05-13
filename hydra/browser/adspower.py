@@ -13,6 +13,22 @@ from hydra.core.logger import get_logger
 log = get_logger("adspower")
 
 
+def _normalize_api_key(raw: str | None) -> str:
+    """AdsPower API key 정규화.
+
+    Codex 5/12 P1 — secrets / env / 복붙으로 들어온 key 가 trailing \\r/\\n/
+    공백/감싸기 따옴표 가지면 'Bearer <key\\r>' 로 AdsPower 가 invalid 처리.
+    모든 Bearer 생성 경로 에서 이 helper 를 통과시켜 일관 정규화.
+    """
+    if not raw:
+        return ""
+    s = str(raw).strip()
+    # 양쪽 따옴표 (시크릿 저장 시 흔히 박힘) 제거.
+    if len(s) >= 2 and s[0] == s[-1] and s[0] in ('"', "'"):
+        s = s[1:-1].strip()
+    return s
+
+
 class AdsPowerClient:
     def __init__(self, base_url: str | None = None, api_key: str | None = None):
         self.base_url = (base_url or settings.adspower_api_url).rstrip("/")
@@ -21,20 +37,25 @@ class AdsPowerClient:
         self._explicit_api_key = api_key
 
     def _resolve_api_key(self) -> str:
-        """매 호출마다 env/settings 재조회.
+        """매 호출마다 env/settings 재조회 + 정규화.
 
         본질 fix: 이전엔 __init__ 에서 cache 해서 module-level singleton
         (line 162 adspower = AdsPowerClient()) 가 import 시점 (env 비었을 때) 의
         값을 영원히 들고 있었음. worker startup 직후 import 되어 self.api_key=""
         가 되고, heartbeat 가 나중에 env 를 set 해도 singleton 은 빈 키 그대로
         → AdsPower "Require api-key" 거부.
+
+        Codex 5/12 P1 follow-up — key 정규화 추가. trailing \\r/\\n/공백/따옴표
+        가 섞이면 `Bearer <key\\r>` 로 AdsPower 가 다른 토큰으로 보고 거절.
+        secrets / env / 복붙 path 어느 쪽에서든 들어올 수 있어 공통 처리.
         """
-        return (
+        raw = (
             self._explicit_api_key
             or os.environ.get("ADSPOWER_API_KEY")
             or settings.adspower_api_key
             or ""
         )
+        return _normalize_api_key(raw)
 
     @property
     def api_key(self) -> str:

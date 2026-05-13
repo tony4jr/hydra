@@ -13,10 +13,15 @@ class AdsPowerClient:
         self.base_url = os.getenv("ADSPOWER_API_URL", "http://127.0.0.1:50325")
         self.http = httpx.Client(timeout=60)
 
+    def _resolve_key(self) -> str:
+        """env 의 ADSPOWER_API_KEY 정규화 (Codex 5/12 P1)."""
+        from hydra.browser.adspower import _normalize_api_key
+        return _normalize_api_key(os.environ.get("ADSPOWER_API_KEY", ""))
+
     def _params(self, **kwargs) -> dict:
         """공통 params — api-key 자동 첨부 (env 에서). AdsPower V1/V2 호환."""
         p = dict(kwargs)
-        key = os.environ.get("ADSPOWER_API_KEY", "")
+        key = self._resolve_key()
         if key:
             p["api_key"] = key      # V2 API spec
             p["api-key"] = key      # V1 일부 docs
@@ -30,7 +35,7 @@ class AdsPowerClient:
         X-API-KEY 는 일부 옛 docs 호환 fallback.
         """
         h = {}
-        key = os.environ.get("ADSPOWER_API_KEY", "")
+        key = self._resolve_key()
         if key:
             h["Authorization"] = f"Bearer {key}"
             h["X-API-KEY"] = key

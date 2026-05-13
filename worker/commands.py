@@ -352,7 +352,8 @@ def _has_active_session(client: "ServerClient") -> bool:
 async def _adspower_stop_all() -> str:
     import httpx
     base = os.environ.get("ADSPOWER_API_URL", "http://127.0.0.1:50325")
-    key = os.environ.get("ADSPOWER_API_KEY", "")
+    from hydra.browser.adspower import _normalize_api_key
+    key = _normalize_api_key(os.environ.get("ADSPOWER_API_KEY", ""))
     headers = {"Authorization": f"Bearer {key}"} if key else {}
     async with httpx.AsyncClient(timeout=15) as c:
         r = await c.post(f"{base}/api/v2/browser-profile/stop-all", headers=headers)
@@ -362,7 +363,8 @@ async def _adspower_stop_all() -> str:
 async def _adspower_new_fingerprint(profile_ids: list[str]) -> str:
     import httpx
     base = os.environ.get("ADSPOWER_API_URL", "http://127.0.0.1:50325")
-    key = os.environ.get("ADSPOWER_API_KEY", "")
+    from hydra.browser.adspower import _normalize_api_key
+    key = _normalize_api_key(os.environ.get("ADSPOWER_API_KEY", ""))
     headers = {"Authorization": f"Bearer {key}"} if key else {}
     async with httpx.AsyncClient(timeout=30) as c:
         r = await c.post(
@@ -376,7 +378,8 @@ async def _adspower_new_fingerprint(profile_ids: list[str]) -> str:
 async def _adspower_update_patch(version_type: str) -> str:
     import httpx
     base = os.environ.get("ADSPOWER_API_URL", "http://127.0.0.1:50325")
-    key = os.environ.get("ADSPOWER_API_KEY", "")
+    from hydra.browser.adspower import _normalize_api_key
+    key = _normalize_api_key(os.environ.get("ADSPOWER_API_KEY", ""))
     headers = {"Authorization": f"Bearer {key}"} if key else {}
     async with httpx.AsyncClient(timeout=60) as c:
         r = await c.post(

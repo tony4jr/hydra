@@ -20,7 +20,8 @@ def get_intended_ua(profile_id: str, base_url: str | None = None,
                     api_key: str | None = None) -> str | None:
     """AdsPower 가 알려주는 프로필의 의도된 UA 문자열."""
     base = (base_url or os.environ.get("ADSPOWER_API_URL", "http://127.0.0.1:50325")).rstrip("/")
-    key = api_key or os.environ.get("ADSPOWER_API_KEY", "")
+    from hydra.browser.adspower import _normalize_api_key
+    key = _normalize_api_key(api_key or os.environ.get("ADSPOWER_API_KEY", ""))
     headers = {"Authorization": f"Bearer {key}"} if key else {}
     try:
         with httpx.Client(timeout=15) as c:

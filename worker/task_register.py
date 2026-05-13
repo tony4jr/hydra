@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 
 TASK_NAME = "HydraWorker"
@@ -45,28 +46,42 @@ def ensure_registered() -> None:
 
     # 현재 실행 중인 python.exe 경로 + -m worker 형태
     python_exe = sys.executable  # 예: C:\hydra\.venv\Scripts\python.exe
-    # cwd 도 같이 저장 (Task Scheduler 가 다른 dir 에서 실행하지 않게)
-    cwd = os.getcwd()
-    tr = f'"{python_exe}" -m worker'
+    # Codex 5/12 P1 — task 자체 의 WorkingDirectory ("Start in") 을 명시.
+    # 부팅 시 task action 이 C:\Windows\System32 같은 default cwd 에서
+    # 시작되면 import / config 경로 깨짐. schtasks /create 는 -WorkingDirectory
+    # 옵션 없음 — PowerShell New-ScheduledTaskAction 사용.
+    repo_dir = str(Path(__file__).resolve().parent.parent)
+    # PowerShell 안에서 quote 처리 — single quote 안의 'path' 를 escape
+    # 위해 user-controlled path 의 single quote 는 '' 로 doubling.
+    def _ps_escape(s: str) -> str:
+        return s.replace("'", "''")
+    py_esc = _ps_escape(python_exe)
+    repo_esc = _ps_escape(repo_dir)
+    ps_script = (
+        f"$action = New-ScheduledTaskAction "
+        f"-Execute '{py_esc}' -Argument '-m worker' -WorkingDirectory '{repo_esc}'; "
+        f"$trigger = New-ScheduledTaskTrigger -AtStartup; "
+        f"$settings = New-ScheduledTaskSettingsSet "
+        f"-AllowStartIfOnBatteries -DontStopIfGoingOnBatteries; "
+        f"Register-ScheduledTask -TaskName '{TASK_NAME}' "
+        f"-Action $action -Trigger $trigger -Settings $settings -Force | Out-Null"
+    )
 
     try:
         subprocess.run(
-            [
-                "schtasks", "/create",
-                "/tn", TASK_NAME,
-                "/tr", tr,
-                "/sc", "onstart",  # OS 부팅 시
-                "/rl", "limited",  # admin 권한 불필요
-                "/f",              # 이미 있으면 덮어씀
-            ],
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps_script],
             check=True,
             capture_output=True,
-            timeout=15,
-            cwd=cwd,
+            timeout=20,
         )
-        print(f"[Worker] Task Scheduler 등록 완료 — name={TASK_NAME}, cmd={tr}")
+        print(
+            f"[Worker] Task Scheduler 등록 완료 — name={TASK_NAME}, "
+            f"exe={python_exe}, working_dir={repo_dir}"
+        )
     except subprocess.CalledProcessError as e:
-        stderr = (e.stderr or b"").decode("cp949", errors="ignore")
+        stderr = (e.stderr or b"").decode("cp949", errors="ignore") or e.stderr.decode(
+            "utf-8", errors="ignore"
+        ) if e.stderr else ""
         print(f"[Worker] Task Scheduler 등록 실패: {stderr.strip()}")
     except Exception as e:
         print(f"[Worker] Task Scheduler 등록 예외: {type(e).__name__}: {e}")

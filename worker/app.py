@@ -122,7 +122,11 @@ class WorkerApp:
             import os as _os
             import logging as _logging
             _hb_log = _logging.getLogger("hydra.worker.heartbeat_debug")
-            srv_key = hb.get("adspower_api_key")
+            # Codex 5/12 P1 — server 가 보낸 key 도 정규화. trailing whitespace /
+            # 따옴표 가 secrets storage 거치며 섞이는 경우 Bearer 가 invalid 됨.
+            from hydra.browser.adspower import _normalize_api_key
+            srv_key_raw = hb.get("adspower_api_key")
+            srv_key = _normalize_api_key(srv_key_raw) if srv_key_raw else None
             srv_key_len = len(srv_key) if isinstance(srv_key, str) else -1
             env_key = _os.environ.get("ADSPOWER_API_KEY", "")
             _hb_log.warning(
