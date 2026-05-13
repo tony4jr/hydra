@@ -232,45 +232,88 @@ def _stream_reader_loop(
     stop_event: threading.Event,
     proc=None,
 ) -> None:
-    """워커 측 stdout/stderr reader. Codex Slice 4.2b blocker fix.
+    """워커 측 stdout/stderr reader.
 
-    구조:
-      - 1 byte blocking read 로 작은 출력 즉시 감지 (persistent shell EOF 없음 대응)
-      - 별도 timer thread 가 100ms 마다 buf flush (작은 출력도 UI 에 빨리 뜸)
-      - 64KB 도달 시 즉시 flush (큰 출력)
-      - server 400 (10MB 초과) → force_kill 플래그 + process terminate
-      - UTF-8 incremental decoder 로 chunk 경계 멀티바이트 안전
+    Codex Slice 4.2b follow-up 구조 (single writer / single poster):
+      - reader thread (이 함수) 가 raw bytes 를 read → queue 에 push
+      - poster thread 가 queue 에서 batch 모음 (64KB OR 100ms) → server POST
+      - 한 stream 에 단일 poster → POST 순서 보장
+      - decoder 는 poster thread 안에서만 사용 → thread-safe
+      - server 400 → poster 가 force_kill set + 즉시 proc.terminate
+        (blocking read 깨움)
+      - poster 종료 신호: done_event (reader 가 EOF/stop 시 set)
     """
     import codecs
+    from queue import Queue, Empty
     decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-    buf = bytearray()
-    flush_lock = threading.Lock()
+    bytes_queue: Queue = Queue()
+    done_event = threading.Event()  # reader → poster 종료 신호
     force_kill = threading.Event()
 
-    def _drain_and_post(final: bool = False) -> None:
-        with flush_lock:
-            if not buf and not final:
-                return
-            data = bytes(buf)
-            buf.clear()
-        decoded = decoder.decode(data, final=final)
-        if not decoded:
+    def _terminate_proc():
+        if proc is None:
             return
-        ok, code = _post_chunks(client, session_id, session_token, [{
-            "stream": stream_name, "data": decoded, "byte_size": len(data),
-        }])
-        if not ok and code == 400:
-            force_kill.set()
+        try:
+            proc.terminate()
+            try:
+                proc.wait(timeout=2)
+            except Exception:
+                proc.kill()
+        except Exception:
+            pass
 
-    def _timer():
-        while not stop_event.is_set() and not force_kill.is_set():
-            stop_event.wait(CHUNK_FLUSH_INTERVAL_SEC)
-            if stop_event.is_set() or force_kill.is_set():
+    def _poster():
+        """단일 poster — queue 에서 bytes 모아 batch POST. 순서 보장."""
+        buf = bytearray()
+        last_flush = time.monotonic()
+        while True:
+            try:
+                chunk = bytes_queue.get(timeout=CHUNK_FLUSH_INTERVAL_SEC)
+            except Empty:
+                chunk = None
+
+            if chunk is not None:
+                buf.extend(chunk)
+
+            now = time.monotonic()
+            should_flush_size = len(buf) >= CHUNK_FLUSH_BYTES
+            should_flush_time = (
+                len(buf) > 0 and (now - last_flush) >= CHUNK_FLUSH_INTERVAL_SEC
+            )
+            should_flush_eof = done_event.is_set() and bytes_queue.empty()
+
+            if should_flush_size or should_flush_time or should_flush_eof:
+                if buf:
+                    data = bytes(buf); buf.clear()
+                    decoded = decoder.decode(data, final=should_flush_eof)
+                    if decoded:
+                        ok, code = _post_chunks(client, session_id, session_token, [{
+                            "stream": stream_name, "data": decoded,
+                            "byte_size": len(data),
+                        }])
+                        if not ok and code == 400:
+                            force_kill.set()
+                            _terminate_proc()
+                            return
+                last_flush = now
+
+            if done_event.is_set() and bytes_queue.empty() and not buf:
+                # 모든 데이터 flush 됨 + reader 종료
+                # decoder final 정리 (남은 incomplete bytes)
+                final_str = decoder.decode(b"", final=True)
+                if final_str:
+                    _post_chunks(client, session_id, session_token, [{
+                        "stream": stream_name, "data": final_str, "byte_size": 0,
+                    }])
                 return
-            _drain_and_post()
-    threading.Thread(
-        target=_timer, name=f"term-{stream_name}-flush-{session_id}", daemon=True,
-    ).start()
+
+            if stop_event.is_set() and bytes_queue.empty() and not buf:
+                return
+
+    poster_thread = threading.Thread(
+        target=_poster, name=f"term-{stream_name}-poster-{session_id}", daemon=True,
+    )
+    poster_thread.start()
 
     try:
         while not stop_event.is_set() and not force_kill.is_set():
@@ -280,22 +323,13 @@ def _stream_reader_loop(
                 break
             if not b:
                 break  # EOF
-            with flush_lock:
-                buf.extend(b)
-                should_flush = len(buf) >= CHUNK_FLUSH_BYTES
-            if should_flush:
-                _drain_and_post()
+            bytes_queue.put(b)
     finally:
-        _drain_and_post(final=True)
-        if force_kill.is_set() and proc is not None:
-            try:
-                proc.terminate()
-                try:
-                    proc.wait(timeout=2)
-                except Exception:
-                    proc.kill()
-            except Exception:
-                pass
+        done_event.set()
+        # poster 가 정리 완료할 시간 주기
+        poster_thread.join(timeout=5)
+        if force_kill.is_set():
+            _terminate_proc()
 
 
 def _post_failed(
