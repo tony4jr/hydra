@@ -250,6 +250,56 @@ def test_iplog_fk_uses_set_null_ondelete():
     assert fks[0].ondelete == "SET NULL"
 
 
+def test_delete_worker_clears_worker_log_tail(env):
+    """worker 삭제 시 WorkerLogTail 도 함께 삭제 (Codex P2 post-review).
+
+    WorkerLogTail.worker_id 는 nullable=False — 그대로 두면 FK 위반.
+    단기 verbose 디버그 log 라 worker 와 함께 삭제가 자연스러움.
+    """
+    from hydra.db.models import WorkerLogTail
+    from datetime import UTC, datetime, timedelta
+    db = env["Session"]()
+    try:
+        log_entry = WorkerLogTail(
+            worker_id=env["worker_a_id"],
+            occurred_at=datetime.now(UTC),
+            received_at=datetime.now(UTC),
+            level="INFO",
+            logger_name="test",
+            message="hello",
+        )
+        db.add(log_entry); db.commit()
+        # running task 는 미리 정리해서 delete_worker 통과시킴
+        from hydra.db.models import Task
+        db.query(Task).filter(Task.worker_id == env["worker_a_id"]).update(
+            {Task.status: "completed"}, synchronize_session=False,
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    import jwt as _jwt
+    now = datetime.now(UTC)
+    admin_jwt = _jwt.encode(
+        {"user_id": 1, "role": "admin", "iat": now, "exp": now + timedelta(hours=1)},
+        "test-jwt-secret-123456789", algorithm="HS256",
+    )
+    r = env["client"].delete(
+        f"/api/admin/workers/{env['worker_a_id']}",
+        headers={"Authorization": f"Bearer {admin_jwt}"},
+    )
+    assert r.status_code in (200, 204), r.text
+
+    db = env["Session"]()
+    try:
+        remaining = db.query(WorkerLogTail).filter(
+            WorkerLogTail.worker_id == env["worker_a_id"]
+        ).count()
+        assert remaining == 0
+    finally:
+        db.close()
+
+
 def test_iplog_end_soft_passes_legacy_null_worker(env):
     """worker_id 가 NULL 인 옛 row 는 (backfill 없음) soft pass."""
     db = env["Session"]()

@@ -254,7 +254,7 @@ def delete_worker(
     """
     from hydra.db.models import (
         WorkerCommand, WorkerError, ProfileLock,
-        AccountProfileHistory, ExecutionLog, IpLog,
+        AccountProfileHistory, ExecutionLog, IpLog, WorkerLogTail,
     )
     db = _db_session.SessionLocal()
     try:
@@ -300,6 +300,12 @@ def delete_worker(
             synchronize_session=False,
         )
         db.query(ProfileLock).filter(ProfileLock.worker_id == worker_id).delete(
+            synchronize_session=False,
+        )
+        # Codex P2 post-review — WorkerLogTail (단기 verbose 디버그 log) 도
+        # ephemeral 한 데이터라 worker 와 함께 삭제. nullable=False FK 라
+        # 그대로 두면 worker 삭제 FK 위반.
+        db.query(WorkerLogTail).filter(WorkerLogTail.worker_id == worker_id).delete(
             synchronize_session=False,
         )
 
