@@ -594,6 +594,10 @@ ALLOWED_COMMANDS = frozenset({
     "agent_update_now",
     # Slice 3.3 — admin agent self-restart (ack-then-spawn detached helper).
     "agent_self_restart",
+    # Phase 4 Slice 4.1a — web terminal lifecycle commands (admin_agent only).
+    "terminal_open",
+    "terminal_close",
+    "terminal_interrupt",
 })
 
 
@@ -609,6 +613,10 @@ _CMD_REQUIRED_ROLE: dict[str, str] = {
     "desktop_cutover_apply": "admin_agent",
     "agent_update_now": "admin_agent",
     "agent_self_restart": "admin_agent",
+    # Phase 4 Slice 4.1a — web terminal admin_agent 전용.
+    "terminal_open": "admin_agent",
+    "terminal_close": "admin_agent",
+    "terminal_interrupt": "admin_agent",
 }
 
 

@@ -1521,3 +1521,55 @@ class GlobalAdPhraseBlocklist(Base):
     __table_args__ = (
         Index("ix_global_blocklist_phrase", "phrase"),
     )
+
+
+# ─────────────── Phase 4 — Web Terminal Sessions (Slice 4.1a) ───────────────
+
+class TerminalSession(Base):
+    """관리자 웹 터미널 세션. admin_agent 워커에 persistent shell process 띄워
+    인터랙티브 명령 흐름을 만든다.
+
+    Lifecycle:
+      pending  → open command 발행, worker shell spawn 대기
+      active   → worker 가 active POST 후
+      closing  → admin close 요청, worker confirm 대기 (2-phase)
+      closed   → worker closed POST 또는 forced (closing 60초 초과)
+      timeout  → idle 15분 초과
+      failed   → spawn 실패 / nssm 등 운영 오류
+
+    DB partial unique index 가 (worker_id) on status IN (pending,active,closing)
+    1개만 허용. open 연타 시 409 보장.
+    """
+    __tablename__ = "terminal_sessions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    worker_id = Column(
+        Integer, ForeignKey("workers.id", ondelete="CASCADE"), nullable=False,
+    )
+    opened_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    opened_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+    last_activity_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+    closing_at = Column(DateTime, nullable=True)
+    closed_at = Column(DateTime, nullable=True)
+    status = Column(String(16), nullable=False, default="pending")
+    shell = Column(String(16), nullable=False, default="powershell")
+    session_token = Column(String(64), nullable=False, unique=True)
+    error_message = Column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("idx_terminal_worker_status", "worker_id", "status"),
+        Index("idx_terminal_last_activity", "last_activity_at"),
+        # Slice 4.1a — 같은 worker 에 pending/active/closing 1개만.
+        # open 연타 시 IntegrityError 로 race 차단.
+        Index(
+            "uq_terminal_active_session_per_worker",
+            "worker_id",
+            unique=True,
+            postgresql_where=text(
+                "status IN ('pending', 'active', 'closing')"
+            ),
+            sqlite_where=text(
+                "status IN ('pending', 'active', 'closing')"
+            ),
+        ),
+    )

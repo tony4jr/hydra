@@ -59,6 +59,11 @@ _CMD_NON_REDELIVERABLE = frozenset({
     # ack 전에 죽으면 lease 만료 후 failed (재배달 시 새 NSSM child 가 또
     # restart 시도 → restart loop 위험). 재배달 금지.
     "agent_self_restart",
+    # Phase 4 Slice 4.1a — terminal_interrupt: process tree kill 은 비멱등.
+    # 재배달 시 이미 죽은 process 다시 kill 시도 → 다른 PID 잡을 위험.
+    # terminal_open 은 idempotent (redeliverable) — 같은 session_id 라
+    # registry 검사 후 no-op.
+    "terminal_interrupt",
 })
 
 # Default lease window. shell_exec 만 timeout 기반으로 길게.
