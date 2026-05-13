@@ -308,8 +308,45 @@ if ($svcExists) {
 }
 
 $agentLog = Join-Path $logDir 'admin-agent.log'
-Run-Native -What "nssm install $ServiceName" -ScriptBlock {
-    & $nssmExe install $ServiceName $pythonExe '-m' 'worker.admin_agent'
+
+# nssm install — 1450 (SCM 일시 누적) 감지 + probe 로 reboot 안내.
+# 일반 Run-Native 로 감싸면 stderr 못 잡고 patterns 매치 불가.
+$nssmInstallOut = & $nssmExe install $ServiceName $pythonExe '-m' 'worker.admin_agent' 2>&1 | Out-String
+$nssmInstallCode = $LASTEXITCODE
+if ($nssmInstallCode -ne 0) {
+    Write-Host $nssmInstallOut
+    $is1450 = $nssmInstallOut -match '1450|0x5AA|시스템 리소스가 부족|Insufficient system resources'
+    if ($is1450) {
+        $probeName = "HydraScmProbe_$PID"
+        $probeFailed = $false
+        try {
+            $probeOut = & sc.exe create $probeName 'binPath=' 'C:\Windows\System32\cmd.exe /c exit 0' 'start=' 'demand' 2>&1 | Out-String
+            if ($LASTEXITCODE -ne 0) { $probeFailed = $true }
+        } finally {
+            & sc.exe delete $probeName 2>$null | Out-Null
+        }
+        if ($probeFailed) {
+            throw @"
+nssm install $ServiceName 실패 (Windows SCM 1450 — 시스템 리소스 부족).
+SCM probe ($probeName) 도 동일 실패: 현재 OS 가 새 서비스 생성 자체를 거부 중.
+=> 워커 PC 재부팅 후 같은 install 명령 재실행. 재부팅 후에도 동일하면 sfc /scannow + DISM 점검.
+nssm 출력:
+$nssmInstallOut
+probe 출력:
+$probeOut
+"@
+        } else {
+            throw @"
+nssm install $ServiceName 실패 (출력에 1450 포함되나 SCM probe 는 성공 — transient).
+=> 잠시 후 같은 install 명령 재실행. 반복 시 services.msc / Event Viewer 종료 후 재시도.
+nssm 출력:
+$nssmInstallOut
+"@
+        }
+    }
+    throw "nssm install $ServiceName 실패 (exit $nssmInstallCode). 출력:`n$nssmInstallOut"
+} else {
+    Write-Host $nssmInstallOut
 }
 Run-Native -What "nssm set AppDirectory" -ScriptBlock {
     & $nssmExe set $ServiceName AppDirectory $InstallPath
