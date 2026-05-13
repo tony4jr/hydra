@@ -351,8 +351,17 @@ interface TerminalChunkEntry {
   produced_at: string
 }
 
-function TerminalTab({ workerId }: { workerId: number }) {
-  const [session, setSession] = useState<TerminalSessionState | null>(null)
+function TerminalTab({
+  workerId,
+  session,
+  setSession,
+}: {
+  workerId: number
+  session: TerminalSessionState | null
+  setSession: (s: TerminalSessionState | null) => void
+}) {
+  // session state 는 WorkerDebugDrawer 가 보관. tab 전환에도 보존.
+  // Radix TabsContent 가 inactive 시 children unmount 하므로 lift 필수.
   const [chunks, setChunks] = useState<TerminalChunkEntry[]>([])
   const [totalBytes, setTotalBytes] = useState(0)
   const [maxBytes, setMaxBytes] = useState(10 * 1024 * 1024)
@@ -474,7 +483,7 @@ function TerminalTab({ workerId }: { workerId: number }) {
         setTotalBytes(r.total_bytes)
         setMaxBytes(r.max_total_bytes)
         if (r.session_status !== session.status) {
-          setSession(prev => prev ? { ...prev, status: r.session_status } : null)
+          setSession({ ...session, status: r.session_status })
         }
         if (['closed', 'timeout', 'failed'].includes(r.session_status)) {
           // server 가 이미 종료 → drawer 측 session 정리
@@ -496,18 +505,8 @@ function TerminalTab({ workerId }: { workerId: number }) {
     }
   }, [chunks, autoScroll])
 
-  // drawer 닫힐 때 자동 close (Phase 4 plan v3: 안전망)
-  useEffect(() => {
-    return () => {
-      // unmount 시 best-effort close
-      if (session) {
-        fetchApi(`/api/admin/terminal/${session.session_id}/close`, {
-          method: 'POST',
-        }).catch(() => undefined)
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  // drawer close 시 명시적 close 는 WorkerDebugDrawer 의 onOpenChange 가 처리.
+  // tab 전환 시 unmount 돼도 session state 는 부모 (drawer) 가 보존.
 
   const statusColor: Record<string, string> = {
     pending: 'text-amber-500',
@@ -646,10 +645,29 @@ export function WorkerDebugDrawer({
 }) {
   const [verbose, setVerbose] = useState(false)
   const [toggling, setToggling] = useState(false)
+  // Codex frontend follow-up: terminal session state 를 lift.
+  // tab 전환에도 session 보존, drawer close 시 명시적 cleanup.
+  const [terminalSession, setTerminalSession] = useState<TerminalSessionState | null>(null)
+  const sessionRef = useRef<TerminalSessionState | null>(null)
+  useEffect(() => {
+    sessionRef.current = terminalSession
+  }, [terminalSession])
 
   useEffect(() => {
     if (worker) setVerbose(worker.verbose_mode)
   }, [worker])
+
+  // Codex follow-up: drawer 가 다른 worker 로 바뀌거나 닫힐 때 명시적 close.
+  // sessionRef 로 최신 세션 추적 (closure stale 회피).
+  const handleOpenChange = (next: boolean) => {
+    if (!next && sessionRef.current) {
+      const sid = sessionRef.current.session_id
+      fetchApi(`/api/admin/terminal/${sid}/close`, { method: 'POST' })
+        .catch(() => undefined)
+      setTerminalSession(null)
+    }
+    onOpenChange(next)
+  }
 
   if (!worker) return null
 
@@ -677,7 +695,7 @@ export function WorkerDebugDrawer({
   }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent className='w-full sm:max-w-2xl flex flex-col gap-4'>
         <SheetHeader className='gap-1'>
           <SheetTitle className='flex items-center gap-2'>
@@ -712,7 +730,11 @@ export function WorkerDebugDrawer({
             <CommandsTab workerId={worker.id} />
           </TabsContent>
           <TabsContent value='terminal' className='flex-1 min-h-0 mt-3'>
-            <TerminalTab workerId={worker.id} />
+            <TerminalTab
+              workerId={worker.id}
+              session={terminalSession}
+              setSession={setTerminalSession}
+            />
           </TabsContent>
         </Tabs>
       </SheetContent>
