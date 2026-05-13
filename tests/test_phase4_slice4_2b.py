@@ -171,12 +171,17 @@ def test_worker_post_chunks_rejects_invalid_stream(env):
 
 
 def test_worker_post_chunks_rejects_oversize_chunk(env):
+    """Codex 4.2b blocker 3 fix: server 가 byte_size worker 주장 무시 +
+    실제 data 길이로 검증. 65KB data 면 byte_size 1 로 주장해도 400.
+    """
     sid, _, h = _open_active(env)
+    big_data = "x" * (65 * 1024)  # 64KB 초과 실제 데이터
     r = env["client"].post(
         f"/api/workers/terminal/{sid}/chunks", headers=h,
-        json={"chunks": [{"stream": "stdout", "data": "x", "byte_size": 65 * 1024}]},
+        json={"chunks": [{"stream": "stdout", "data": big_data, "byte_size": 1}]},
     )
     assert r.status_code == 400
+    assert "exceeds" in r.text.lower()
 
 
 def test_worker_post_chunks_session_total_limit_force_closes(env):
@@ -190,10 +195,10 @@ def test_worker_post_chunks_session_total_limit_force_closes(env):
         produced_at=datetime.now(UTC),
     ))
     db.commit(); db.close()
-    # incoming 300 bytes → 한도 초과
+    # incoming 300 bytes 실제 data → 한도 초과 (server 가 byte_size 재계산)
     r = env["client"].post(
         f"/api/workers/terminal/{sid}/chunks", headers=h,
-        json={"chunks": [{"stream": "stdout", "data": "y", "byte_size": 300}]},
+        json={"chunks": [{"stream": "stdout", "data": "y" * 300, "byte_size": 300}]},
     )
     assert r.status_code == 400
     assert "output_size_exceeded" in r.text
@@ -257,51 +262,86 @@ def test_admin_get_chunks_404(env):
 # ───────── 4. _stream_reader_loop ─────────
 
 class _FakeStream:
-    """io.BytesIO-like 으로 read1 지원."""
-    def __init__(self, chunks: list[bytes]):
-        self._chunks = list(chunks)
-    def read1(self, n: int):
-        if not self._chunks:
-            return b""
-        return self._chunks.pop(0)
+    """1 byte 단위 read 지원. 끝나면 b'' 반환 (EOF)."""
+    def __init__(self, data: bytes):
+        self._buf = bytearray(data)
     def read(self, n: int):
-        return self.read1(n)
+        if not self._buf:
+            return b""
+        out = bytes(self._buf[:n])
+        del self._buf[:n]
+        return out
 
 
-def test_stream_reader_flushes_on_size(monkeypatch):
-    """64KB 모이면 flush."""
+def test_stream_reader_flushes_small_output_on_eof(monkeypatch):
+    """작은 출력도 EOF (또는 timer) 시 flush. persistent shell race fix."""
     from worker import agent_terminal as _term
     client = MagicMock(); client.headers = {}
     resp = MagicMock(); resp.status_code = 200
     client._request.return_value = resp
 
-    big = b"a" * _term.CHUNK_FLUSH_BYTES
-    stream = _FakeStream([big, b""])  # 64KB + EOF
+    stream = _FakeStream(b"hi\n")
     stop_event = threading.Event()
-    monkeypatch.setattr(_term, "CHUNK_FLUSH_INTERVAL_SEC", 60.0)  # interval 안 발동
+    monkeypatch.setattr(_term, "CHUNK_FLUSH_INTERVAL_SEC", 60.0)  # timer 안 발동
     _term._stream_reader_loop(client, 1, "tok", "stdout", stream, stop_event)
-    # POST chunks 호출됨
     calls = [c for c in client._request.call_args_list if "/chunks" in c.args[1]]
     assert len(calls) >= 1
+    body = calls[-1].kwargs["json"]
+    assert body["chunks"][0]["data"] == "hi\n"
 
 
-def test_stream_reader_flushes_on_eof(monkeypatch):
-    """EOF 시 잔여 buffer flush."""
+def test_stream_reader_size_flush(monkeypatch):
+    """64KB 모이면 즉시 flush (timer 무관)."""
     from worker import agent_terminal as _term
     client = MagicMock(); client.headers = {}
     resp = MagicMock(); resp.status_code = 200
     client._request.return_value = resp
 
-    stream = _FakeStream([b"hello\n", b""])
+    stream = _FakeStream(b"a" * _term.CHUNK_FLUSH_BYTES)
     stop_event = threading.Event()
     monkeypatch.setattr(_term, "CHUNK_FLUSH_INTERVAL_SEC", 60.0)
     _term._stream_reader_loop(client, 1, "tok", "stdout", stream, stop_event)
     calls = [c for c in client._request.call_args_list if "/chunks" in c.args[1]]
-    # EOF flush 로 최소 1회
     assert len(calls) >= 1
-    body = calls[-1].kwargs["json"]
-    assert body["chunks"][0]["stream"] == "stdout"
-    assert body["chunks"][0]["data"] == "hello\n"
+
+
+def test_stream_reader_force_kill_on_size_400(monkeypatch):
+    """server 400 (size exceeded) → proc.terminate 호출."""
+    from worker import agent_terminal as _term
+    client = MagicMock(); client.headers = {}
+    resp = MagicMock(); resp.status_code = 400
+    client._request.return_value = resp
+
+    proc = MagicMock()
+    proc.wait.return_value = 0
+
+    stream = _FakeStream(b"x" * _term.CHUNK_FLUSH_BYTES)
+    stop_event = threading.Event()
+    monkeypatch.setattr(_term, "CHUNK_FLUSH_INTERVAL_SEC", 60.0)
+    _term._stream_reader_loop(client, 1, "tok", "stdout", stream, stop_event, proc)
+    # 400 응답 → terminate 호출
+    proc.terminate.assert_called()
+
+
+def test_stream_reader_utf8_incremental_decoder(monkeypatch):
+    """chunk 경계에서 멀티바이트 (한글) 잘려도 안전 decode.
+    한글 '가' = 3 bytes (EA B0 80). 첫 byte 만 들어와도 decoder 가 hold.
+    """
+    from worker import agent_terminal as _term
+    client = MagicMock(); client.headers = {}
+    resp = MagicMock(); resp.status_code = 200
+    client._request.return_value = resp
+
+    # '가\n' = E1 B0 80 0A (실제 EA B0 80 0A)
+    data = "가\n".encode("utf-8")
+    stream = _FakeStream(data)
+    stop_event = threading.Event()
+    monkeypatch.setattr(_term, "CHUNK_FLUSH_INTERVAL_SEC", 60.0)
+    _term._stream_reader_loop(client, 1, "tok", "stdout", stream, stop_event)
+    calls = [c for c in client._request.call_args_list if "/chunks" in c.args[1]]
+    # 모든 chunks 의 data 합친 게 "가\n" 와 일치 (잘려도 incremental decode 가 hold + final 처리)
+    combined = "".join(c.kwargs["json"]["chunks"][0]["data"] for c in calls)
+    assert combined == "가\n"
 
 
 def test_stream_reader_exits_on_stop_event(monkeypatch):
@@ -309,10 +349,11 @@ def test_stream_reader_exits_on_stop_event(monkeypatch):
     client = MagicMock(); client.headers = {}
     stop_event = threading.Event()
     stop_event.set()
-    stream = _FakeStream([b"x" * 100])
-    # 즉시 return — read 호출 안 함
+    stream = _FakeStream(b"x" * 100)
     _term._stream_reader_loop(client, 1, "tok", "stdout", stream, stop_event)
-    client._request.assert_not_called()
+    # stop 직후 read 안 함 (while 첫 iter 에서 종료). final drain 만 호출되며 buf 비어있어 POST 도 없음
+    calls = [c for c in client._request.call_args_list if "/chunks" in c.args[1]]
+    assert len(calls) == 0
 
 
 def test_stream_reader_constants():

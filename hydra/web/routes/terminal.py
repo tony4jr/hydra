@@ -493,70 +493,80 @@ def worker_post_chunks(
     if not req.chunks:
         return {"ok": True, "accepted": 0}
 
+    # Codex Slice 4.2b blocker 3 fix: server 가 byte_size 재계산.
+    # worker 주장값만 신뢰하면 64KB/10MB 우회 가능 → 실제 데이터 길이 검증.
     for c in req.chunks:
         if c.stream not in ("stdout", "stderr"):
             raise HTTPException(400, f"invalid stream: {c.stream}")
-        if c.byte_size < 0 or c.byte_size > CHUNK_MAX_BYTES:
+        actual = len(c.data.encode("utf-8"))
+        if actual > CHUNK_MAX_BYTES:
             raise HTTPException(
-                400, f"chunk byte_size out of range (0..{CHUNK_MAX_BYTES})",
+                400, f"chunk data exceeds {CHUNK_MAX_BYTES} bytes (actual={actual})",
             )
+        # client byte_size 무시하고 server 계산값으로 덮어쓰기.
+        c.byte_size = actual
 
+    # Codex 4.2b minor: concurrent chunk POST 시 seq race retry (4.2a 패턴).
+    MAX_CHUNK_RETRY = 5
+    from sqlalchemy import func
     db = _db_session.SessionLocal()
     try:
-        ts = _verify_worker_session(db, session_id, worker, x_terminal_session_token)
-        # session total bytes 한도 검사
-        from sqlalchemy import func
-        current_total = (
-            db.query(func.coalesce(func.sum(TerminalChunk.byte_size), 0))
-            .filter(TerminalChunk.session_id == session_id)
-            .scalar()
-        ) or 0
-        incoming_total = sum(c.byte_size for c in req.chunks)
-        if int(current_total) + incoming_total > SESSION_OUTPUT_MAX_BYTES:
-            # force close 트리거
-            ts.status = "closing"
-            ts.closing_at = datetime.now(UTC)
-            ts.last_activity_at = datetime.now(UTC)
-            err = (
-                f"output_size_exceeded:limit={SESSION_OUTPUT_MAX_BYTES},"
-                f"current={current_total},incoming={incoming_total}"
-            )
-            ts.error_message = (
-                (ts.error_message + " | " + err) if ts.error_message else err
-            )
-            db.commit()
-            raise HTTPException(400, err)
-
-        # stream 별 max(seq) 한 번에 조회 — batch 안의 chunk 들에 monotonic
-        # 할당. 같은 stream 의 chunk 가 N개면 max+1 .. max+N.
-        max_seqs: dict[str, int] = {}
-        for stream in {"stdout", "stderr"}:
-            prev = (
-                db.query(TerminalChunk)
-                .filter(
-                    TerminalChunk.session_id == session_id,
-                    TerminalChunk.stream == stream,
+        for attempt in range(MAX_CHUNK_RETRY):
+            ts = _verify_worker_session(db, session_id, worker, x_terminal_session_token)
+            current_total = (
+                db.query(func.coalesce(func.sum(TerminalChunk.byte_size), 0))
+                .filter(TerminalChunk.session_id == session_id)
+                .scalar()
+            ) or 0
+            incoming_total = sum(c.byte_size for c in req.chunks)
+            if int(current_total) + incoming_total > SESSION_OUTPUT_MAX_BYTES:
+                ts.status = "closing"
+                ts.closing_at = datetime.now(UTC)
+                ts.last_activity_at = datetime.now(UTC)
+                err = (
+                    f"output_size_exceeded:limit={SESSION_OUTPUT_MAX_BYTES},"
+                    f"current={current_total},incoming={incoming_total}"
                 )
-                .order_by(TerminalChunk.seq.desc())
-                .first()
-            )
-            max_seqs[stream] = prev.seq if prev is not None else 0
+                ts.error_message = (
+                    (ts.error_message + " | " + err) if ts.error_message else err
+                )
+                db.commit()
+                raise HTTPException(400, err)
 
-        accepted = 0
-        for c in req.chunks:
-            max_seqs[c.stream] += 1
-            db.add(TerminalChunk(
-                session_id=session_id, stream=c.stream, seq=max_seqs[c.stream],
-                data=c.data, byte_size=c.byte_size,
-                produced_at=datetime.now(UTC),
-            ))
-            accepted += 1
-        ts.last_activity_at = datetime.now(UTC)
-        db.commit()
-        return {
-            "ok": True, "accepted": accepted,
-            "total_bytes": int(current_total) + incoming_total,
-        }
+            max_seqs: dict[str, int] = {}
+            for stream in ("stdout", "stderr"):
+                prev = (
+                    db.query(TerminalChunk)
+                    .filter(
+                        TerminalChunk.session_id == session_id,
+                        TerminalChunk.stream == stream,
+                    )
+                    .order_by(TerminalChunk.seq.desc())
+                    .first()
+                )
+                max_seqs[stream] = prev.seq if prev is not None else 0
+
+            accepted = 0
+            for c in req.chunks:
+                max_seqs[c.stream] += 1
+                db.add(TerminalChunk(
+                    session_id=session_id, stream=c.stream, seq=max_seqs[c.stream],
+                    data=c.data, byte_size=c.byte_size,
+                    produced_at=datetime.now(UTC),
+                ))
+                accepted += 1
+            ts.last_activity_at = datetime.now(UTC)
+            try:
+                db.commit()
+            except IntegrityError:
+                db.rollback()
+                if attempt == MAX_CHUNK_RETRY - 1:
+                    raise HTTPException(500, "chunk seq race could not resolve")
+                continue
+            return {
+                "ok": True, "accepted": accepted,
+                "total_bytes": int(current_total) + incoming_total,
+            }
     finally:
         db.close()
 

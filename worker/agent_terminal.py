@@ -207,9 +207,10 @@ def _post_chunks(
     session_id: int,
     session_token: str,
     chunks: list[dict],
-) -> bool:
+) -> tuple[bool, int]:
+    """chunks POST. (ok, status_code) 반환. 400 (size 초과) 구분용."""
     if not chunks:
-        return True
+        return True, 200
     try:
         resp = client._request(
             "POST",
@@ -217,9 +218,9 @@ def _post_chunks(
             headers={**client.headers, "X-Terminal-Session-Token": session_token},
             json={"chunks": chunks},
         )
-        return resp.status_code == 200
+        return (resp.status_code == 200, resp.status_code)
     except Exception:
-        return False
+        return False, 0
 
 
 def _stream_reader_loop(
@@ -229,43 +230,71 @@ def _stream_reader_loop(
     stream_name: str,
     stream_fileobj,
     stop_event: threading.Event,
+    proc=None,
 ) -> None:
-    """워커 측 stdout 또는 stderr reader. 64KB 또는 100ms 단위로 batch POST.
+    """워커 측 stdout/stderr reader. Codex Slice 4.2b blocker fix.
 
-    종료 조건:
-      - stream 닫힘 (read 가 빈 bytes 반환)
-      - stop_event set
+    구조:
+      - 1 byte blocking read 로 작은 출력 즉시 감지 (persistent shell EOF 없음 대응)
+      - 별도 timer thread 가 100ms 마다 buf flush (작은 출력도 UI 에 빨리 뜸)
+      - 64KB 도달 시 즉시 flush (큰 출력)
+      - server 400 (10MB 초과) → force_kill 플래그 + process terminate
+      - UTF-8 incremental decoder 로 chunk 경계 멀티바이트 안전
     """
+    import codecs
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
     buf = bytearray()
-    last_flush = time.monotonic()
-    while not stop_event.is_set():
-        try:
-            chunk = stream_fileobj.read1(CHUNK_FLUSH_BYTES) if hasattr(stream_fileobj, "read1") else stream_fileobj.read(CHUNK_FLUSH_BYTES)
-        except Exception:
-            return
-        if not chunk:
-            # EOF — 남은 buffer flush 후 종료
-            if buf:
-                _post_chunks(client, session_id, session_token, [{
-                    "stream": stream_name,
-                    "data": buf.decode("utf-8", errors="replace"),
-                    "byte_size": len(buf),
-                }])
-            return
-        buf.extend(chunk)
-        now = time.monotonic()
-        if len(buf) >= CHUNK_FLUSH_BYTES or (now - last_flush) >= CHUNK_FLUSH_INTERVAL_SEC:
+    flush_lock = threading.Lock()
+    force_kill = threading.Event()
+
+    def _drain_and_post(final: bool = False) -> None:
+        with flush_lock:
+            if not buf and not final:
+                return
             data = bytes(buf)
             buf.clear()
-            last_flush = now
-            ok = _post_chunks(client, session_id, session_token, [{
-                "stream": stream_name,
-                "data": data.decode("utf-8", errors="replace"),
-                "byte_size": len(data),
-            }])
-            if not ok:
-                # 400 (size limit) 등 — server 가 closing 트리거. 다음 iter 에서
-                # poller 가 status closing 받고 정리.
+        decoded = decoder.decode(data, final=final)
+        if not decoded:
+            return
+        ok, code = _post_chunks(client, session_id, session_token, [{
+            "stream": stream_name, "data": decoded, "byte_size": len(data),
+        }])
+        if not ok and code == 400:
+            force_kill.set()
+
+    def _timer():
+        while not stop_event.is_set() and not force_kill.is_set():
+            stop_event.wait(CHUNK_FLUSH_INTERVAL_SEC)
+            if stop_event.is_set() or force_kill.is_set():
+                return
+            _drain_and_post()
+    threading.Thread(
+        target=_timer, name=f"term-{stream_name}-flush-{session_id}", daemon=True,
+    ).start()
+
+    try:
+        while not stop_event.is_set() and not force_kill.is_set():
+            try:
+                b = stream_fileobj.read(1)
+            except Exception:
+                break
+            if not b:
+                break  # EOF
+            with flush_lock:
+                buf.extend(b)
+                should_flush = len(buf) >= CHUNK_FLUSH_BYTES
+            if should_flush:
+                _drain_and_post()
+    finally:
+        _drain_and_post(final=True)
+        if force_kill.is_set() and proc is not None:
+            try:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=2)
+                except Exception:
+                    proc.kill()
+            except Exception:
                 pass
 
 
@@ -359,13 +388,13 @@ def open_session(
     # 5) output reader threads (Phase 4 Slice 4.2b)
     stdout_thread = threading.Thread(
         target=_stream_reader_loop,
-        args=(client, session_id, session_token, "stdout", proc.stdout, stop_event),
+        args=(client, session_id, session_token, "stdout", proc.stdout, stop_event, proc),
         name=f"term-stdout-reader-{session_id}",
         daemon=True,
     )
     stderr_thread = threading.Thread(
         target=_stream_reader_loop,
-        args=(client, session_id, session_token, "stderr", proc.stderr, stop_event),
+        args=(client, session_id, session_token, "stderr", proc.stderr, stop_event, proc),
         name=f"term-stderr-reader-{session_id}",
         daemon=True,
     )
