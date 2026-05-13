@@ -592,6 +592,8 @@ ALLOWED_COMMANDS = frozenset({
     "desktop_cutover_status",
     "desktop_cutover_apply",
     "agent_update_now",
+    # Slice 3.3 — admin agent self-restart (ack-then-spawn detached helper).
+    "agent_self_restart",
 })
 
 
@@ -606,6 +608,7 @@ _CMD_REQUIRED_ROLE: dict[str, str] = {
     "desktop_cutover_status": "admin_agent",
     "desktop_cutover_apply": "admin_agent",
     "agent_update_now": "admin_agent",
+    "agent_self_restart": "admin_agent",
 }
 
 

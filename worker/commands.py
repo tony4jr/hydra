@@ -116,6 +116,75 @@ async def execute_command(client: "ServerClient", cmd: dict) -> None:
             timeout_sec = int(payload.get("timeout_sec", 30))
             result = _run_shell_exec(shell=shell, script=script, timeout_sec=timeout_sec)
 
+        elif name == "agent_self_restart":
+            # Slice 3.3 — admin agent 자기 자신 NSSM restart.
+            # Codex 권고: ack-then-spawn. helper 를 ack 후에만 띄움.
+            import json as _json
+            current_role = os.environ.get("HYDRA_PROCESS_ROLE", "")
+            if current_role != "admin_agent":
+                _ack(
+                    client, cmd_id, "failed", None,
+                    f"agent_self_restart requires admin_agent runtime "
+                    f"(HYDRA_PROCESS_ROLE={current_role!r})",
+                )
+                return
+            # ack 전 검증: nssm path resolve (못 찾으면 helper 가 들고 가도
+            # 결과 못 받음 → 미리 fail 처리).
+            from worker.agent_self_restart import (
+                ADMIN_AGENT_SERVICE_NAME, resolve_nssm_path,
+                helper_log_path, spawn_restart_helper,
+            )
+            try:
+                nssm_path = resolve_nssm_path()
+            except RuntimeError as e:
+                _ack(client, cmd_id, "failed", None, str(e))
+                return
+
+            delay_sec = int(payload.get("delay_sec", 3))
+            if not (1 <= delay_sec <= 60):
+                _ack(client, cmd_id, "failed", None, f"delay_sec out of range: {delay_sec}")
+                return
+            log_path = helper_log_path()
+            service_name = ADMIN_AGENT_SERVICE_NAME  # payload 의 service_name 무시 (보안)
+
+            scheduled = {
+                "status": "restart_scheduled",
+                "delay_sec": delay_sec,
+                "service_name": service_name,
+                "nssm_path": nssm_path,
+                "helper_log": log_path,
+            }
+            # ack 먼저 — 성공 시에만 spawn.
+            ok = _ack(client, cmd_id, "done", _json.dumps(scheduled, ensure_ascii=False))
+            if not ok:
+                # ack 실패 → spawn 하지 않음. 다음 lease 만료 후 non-redeliverable
+                # 정책에 의해 failed 처리됨.
+                return
+            try:
+                spawn_restart_helper(
+                    nssm_path=nssm_path,
+                    service_name=service_name,
+                    delay_sec=delay_sec,
+                    log_path=log_path,
+                )
+            except Exception as e:
+                # ack 이미 done. 실제 restart 실패는 운영자가 helper_log 확인 가능
+                # + worker_error 로 알람.
+                try:
+                    client.report_error(
+                        kind="update_fail",
+                        message=f"agent_self_restart helper spawn failed: "
+                                f"{type(e).__name__}: {e}",
+                        context={
+                            "service_name": service_name,
+                            "nssm_path": nssm_path,
+                            "helper_log": log_path,
+                        },
+                    )
+                except Exception:
+                    pass
+            return
+
         elif name in ("desktop_cutover_status", "desktop_cutover_apply", "agent_update_now"):
             # Slice 2.5 — Cutover + agent-owned update. admin_agent runtime 전용.
             import json as _json
@@ -204,15 +273,27 @@ async def execute_command(client: "ServerClient", cmd: dict) -> None:
 
 
 def _ack(client: "ServerClient", cmd_id: int, status: str,
-         result: str | None = None, err: str | None = None) -> None:
+         result: str | None = None, err: str | None = None) -> bool:
+    """ack 시도. Slice 3.3 — bool 반환 (호환: 옛 호출자는 무시).
+
+    True 조건: HTTP 200 + response json 의 ok == True.
+    False: 그 외 (5xx, 4xx, 네트워크 실패, ok 누락).
+    """
     try:
-        client._request(
+        resp = client._request(
             "POST", f"/api/workers/command/{cmd_id}/ack",
             headers=client.headers,
             json={"status": status, "result": result, "error_message": err},
         )
+        if resp.status_code != 200:
+            return False
+        try:
+            body = resp.json()
+        except Exception:
+            return False
+        return bool(body.get("ok") is True)
     except Exception:
-        pass
+        return False
 
 
 # Slice 1 — shell_exec implementation -------------------------------------

@@ -55,6 +55,10 @@ _CMD_NON_REDELIVERABLE = frozenset({
     "desktop_restart",
     "desktop_cutover_apply",
     "agent_update_now",
+    # Slice 3.3 — agent_self_restart: ack 후 detached helper 가 nssm restart.
+    # ack 전에 죽으면 lease 만료 후 failed (재배달 시 새 NSSM child 가 또
+    # restart 시도 → restart loop 위험). 재배달 금지.
+    "agent_self_restart",
 })
 
 # Default lease window. shell_exec 만 timeout 기반으로 길게.
