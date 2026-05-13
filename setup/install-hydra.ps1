@@ -408,12 +408,19 @@ if (-not (Test-Path $envRegPath)) {
 New-ItemProperty -Path $envRegPath -Name AppEnvironmentExtra `
     -PropertyType MultiString -Value $envBlock -Force | Out-Null
 
-# 시작
-Run-Native -What "nssm start $ServiceName" -ScriptBlock {
-    & $nssmExe start $ServiceName
+# 시작 — nssm start 는 PENDING 을 exit 1 로 잘못 처리. Start-Service 는 RUNNING 까지 대기.
+try {
+    Start-Service -Name $ServiceName -ErrorAction Stop
+} catch {
+    # 일시 timeout 일 수 있음 — 아래 폴링으로 최종 판정.
+    Write-Warning "Start-Service 즉시 응답 안 함: $($_.Exception.Message). 30초 폴링."
 }
-Start-Sleep -Seconds 3
-$svcAfter = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+$deadline = (Get-Date).AddSeconds(30)
+do {
+    Start-Sleep -Seconds 2
+    $svcAfter = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    if ($svcAfter -and $svcAfter.Status -eq 'Running') { break }
+} while ((Get-Date) -lt $deadline)
 if (-not $svcAfter -or $svcAfter.Status -ne 'Running') {
     throw "$ServiceName 시작 실패 (status=$($svcAfter.Status)). $agentLog 또는 nssm dump $ServiceName 확인."
 }
