@@ -24,6 +24,10 @@ class BackgroundScheduler:
             "phase1_poll_30min": 1800,        # 30분
             "phase1_poll_daily": 86400,       # 1일 (03:00 KST)
             "worker_log_tail_cleanup": 3600,  # 1시간마다 24h 초과분 정리
+            # Phase 4 Slice 4.4 — web terminal lifecycle batch
+            "terminal_inactivity_batch": 60,      # 1분마다 15분 idle 마킹
+            "terminal_max_lifetime_batch": 300,   # 5분마다 4시간 hard cap
+            "terminal_retention_cleanup": 3600,   # 1시간마다 7일 retention
         }
         self._last_run = {}
 
@@ -66,6 +70,12 @@ class BackgroundScheduler:
                 await self._phase1_poll('daily')
             elif task_name == "worker_log_tail_cleanup":
                 await self._cleanup_worker_log_tail()
+            elif task_name == "terminal_inactivity_batch":
+                await self._terminal_inactivity_batch()
+            elif task_name == "terminal_max_lifetime_batch":
+                await self._terminal_max_lifetime_batch()
+            elif task_name == "terminal_retention_cleanup":
+                await self._terminal_retention_cleanup()
 
     async def _cleanup_worker_log_tail(self):
         """worker_log_tail 24시간 초과분 삭제. 무한 누적 방지."""
@@ -82,6 +92,45 @@ class BackgroundScheduler:
             db.commit()
             if deleted:
                 print(f"[Scheduler] worker_log_tail cleanup: {deleted} rows removed")
+        finally:
+            db.close()
+
+    async def _terminal_inactivity_batch(self):
+        """Phase 4 Slice 4.4 — last_activity 15분 초과 → timeout + close 명령."""
+        from hydra.web.routes.terminal import inactivity_timeout_batch
+        db = SessionLocal()
+        try:
+            n = inactivity_timeout_batch(db)
+            db.commit()
+            if n:
+                print(f"[Scheduler] terminal inactivity timeout: {n} sessions")
+        finally:
+            db.close()
+
+    async def _terminal_max_lifetime_batch(self):
+        """Phase 4 Slice 4.4 — opened_at 4시간 초과 hard cap."""
+        from hydra.web.routes.terminal import max_lifetime_batch
+        db = SessionLocal()
+        try:
+            n = max_lifetime_batch(db)
+            db.commit()
+            if n:
+                print(f"[Scheduler] terminal max lifetime: {n} sessions")
+        finally:
+            db.close()
+
+    async def _terminal_retention_cleanup(self):
+        """Phase 4 Slice 4.4 — 7일 지난 closed/timeout/failed 세션 chunks/inputs 삭제."""
+        from hydra.web.routes.terminal import retention_cleanup_batch
+        db = SessionLocal()
+        try:
+            r = retention_cleanup_batch(db)
+            db.commit()
+            if r.get("sessions"):
+                print(
+                    f"[Scheduler] terminal retention: {r['sessions']} sessions, "
+                    f"{r['chunks']} chunks, {r['inputs']} inputs"
+                )
         finally:
             db.close()
 

@@ -1,3 +1,6 @@
 httpx>=0.27
 pyotp>=2.9
 playwright>=1.40
+# Phase 4 Slice 4.3 — terminal_interrupt 의 process tree kill 용.
+# pyproject.toml 의 psutil>=5.9 와 동일. 두 설치 경로 모두 OK.
+psutil>=5.9

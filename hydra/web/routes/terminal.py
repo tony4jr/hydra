@@ -612,8 +612,104 @@ def admin_interrupt(
         db.close()
 
 
-# Slice 4.3 — stale recovery batch helper. heartbeat 또는 admin trigger 시 호출.
-STALE_IDLE_SEC = 5 * 60  # 5분 idle 시 stale
+# Phase 4 timing constants. 4.3 + 4.4.
+STALE_IDLE_SEC = 5 * 60                # 5분 idle 시 stale
+INACTIVITY_TIMEOUT_SEC = 15 * 60       # 15분 idle 시 timeout (4.4)
+MAX_SESSION_LIFETIME_SEC = 4 * 3600    # 4시간 hard cap (4.4)
+CHUNK_RETENTION_DAYS = 7               # chunks/inputs 7일 cleanup (4.4)
+
+
+def inactivity_timeout_batch(db) -> int:
+    """Phase 4 Slice 4.4 — last_activity 15분 초과 → timeout + closing 명령.
+
+    stale_recovery_batch 가 5분 기준 단순 마킹이라면 이건 본격 운영 정책.
+    timeout 마킹 + worker 에 terminal_close command 발행 (정리 흐름 일관).
+    """
+    cutoff = datetime.now(UTC) - timedelta(seconds=INACTIVITY_TIMEOUT_SEC)
+    rows = (
+        db.query(TerminalSession)
+        .filter(
+            TerminalSession.status == "active",
+            TerminalSession.last_activity_at < cutoff,
+        )
+        .all()
+    )
+    now = datetime.now(UTC)
+    for s in rows:
+        s.status = "timeout"
+        s.closed_at = now
+        msg = f"inactivity_timeout_after={INACTIVITY_TIMEOUT_SEC}s"
+        s.error_message = (s.error_message + " | " + msg) if s.error_message else msg
+        # worker 에 close 명령 (registry 있으면 process kill)
+        db.add(WorkerCommand(
+            worker_id=s.worker_id, command="terminal_close",
+            payload=json.dumps(
+                {"session_id": s.id, "session_token": s.session_token},
+                ensure_ascii=False,
+            ),
+            status="pending", issued_at=now, target_role="admin_agent",
+        ))
+    return len(rows)
+
+
+def max_lifetime_batch(db) -> int:
+    """Phase 4 Slice 4.4 — opened_at 4시간 초과 → timeout. hard cap."""
+    cutoff = datetime.now(UTC) - timedelta(seconds=MAX_SESSION_LIFETIME_SEC)
+    rows = (
+        db.query(TerminalSession)
+        .filter(
+            TerminalSession.status.in_(("active", "closing", "pending")),
+            TerminalSession.opened_at < cutoff,
+        )
+        .all()
+    )
+    now = datetime.now(UTC)
+    for s in rows:
+        s.status = "timeout"
+        s.closed_at = now
+        msg = f"max_lifetime_exceeded={MAX_SESSION_LIFETIME_SEC}s"
+        s.error_message = (s.error_message + " | " + msg) if s.error_message else msg
+        db.add(WorkerCommand(
+            worker_id=s.worker_id, command="terminal_close",
+            payload=json.dumps(
+                {"session_id": s.id, "session_token": s.session_token},
+                ensure_ascii=False,
+            ),
+            status="pending", issued_at=now, target_role="admin_agent",
+        ))
+    return len(rows)
+
+
+def retention_cleanup_batch(db) -> dict:
+    """Phase 4 Slice 4.4 — N일 지난 closed/timeout/failed 세션의 chunks/inputs
+    삭제. 세션 row 자체는 보존 (audit log)."""
+    cutoff = datetime.now(UTC) - timedelta(days=CHUNK_RETENTION_DAYS)
+    old_sessions = (
+        db.query(TerminalSession.id)
+        .filter(
+            TerminalSession.status.in_(("closed", "timeout", "failed")),
+            TerminalSession.closed_at < cutoff,
+        )
+        .all()
+    )
+    old_ids = [s.id for s in old_sessions]
+    if not old_ids:
+        return {"sessions": 0, "chunks": 0, "inputs": 0}
+    chunks_deleted = (
+        db.query(TerminalChunk)
+        .filter(TerminalChunk.session_id.in_(old_ids))
+        .delete(synchronize_session=False)
+    )
+    inputs_deleted = (
+        db.query(TerminalInput)
+        .filter(TerminalInput.session_id.in_(old_ids))
+        .delete(synchronize_session=False)
+    )
+    return {
+        "sessions": len(old_ids),
+        "chunks": chunks_deleted,
+        "inputs": inputs_deleted,
+    }
 
 
 def stale_recovery_batch(db) -> int:

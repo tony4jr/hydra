@@ -534,13 +534,10 @@ def close_session(
             try:
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait(timeout=2)
+                # graceful 실패 → tree kill (4.4: Windows orphan child 방지)
+                _kill_process_tree(proc)
         except Exception:
-            try:
-                proc.kill()
-            except Exception:
-                pass
+            _kill_process_tree(proc)
 
     _post_closed(client, session_id, session_token)
     return {"ok": True}
@@ -572,13 +569,9 @@ def shutdown_all(client: Optional["ServerClient"] = None) -> int:
                     try:
                         proc.wait(timeout=3)
                     except subprocess.TimeoutExpired:
-                        proc.kill()
-                        proc.wait(timeout=2)
+                        _kill_process_tree(proc)
                 except Exception:
-                    try:
-                        proc.kill()
-                    except Exception:
-                        pass
+                    _kill_process_tree(proc)
             # client 가 있으면 closed POST (lock 밖)
             if client is not None and token:
                 try:
