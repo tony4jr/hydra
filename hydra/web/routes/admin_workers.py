@@ -199,14 +199,20 @@ def create_enrollment_paired(
         parent_worker_id=desktop_id,
     )
 
-    # PowerShell 한 줄로 두 service 모두 설치.
-    # setup.ps1 가 -Token + -ServerUrl 받음. role 분기는 setup 안에서
-    # token payload role 보고 결정. 두 번 호출.
+    # Codex root-cause review: installer v2.
+    # 단일 진입점 install-hydra.ps1 — 절대경로 + cache 회피 + 실패 즉시 abort.
+    # 이전 "setup.ps1 두 번 호출" 방식은 캐시/상대경로 fragility 로 폐기.
+    import time as _time
+    ts = int(_time.time())
     install_command = (
+        "$ErrorActionPreference='Stop'; "
         "Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force; "
-        f"iwr -Uri {server_url}/api/workers/setup.ps1 -OutFile setup.ps1; "
-        f".\\setup.ps1 -Token '{desktop_token}' -ServerUrl '{server_url}'; "
-        f".\\setup.ps1 -Token '{agent_token}' -ServerUrl '{server_url}'"
+        "$p = Join-Path $env:TEMP ('hydra-install-' + [guid]::NewGuid() + '.ps1'); "
+        f"iwr -Uri '{server_url}/api/workers/install-hydra.ps1?ts={ts}' "
+        "-OutFile $p -UseBasicParsing; "
+        f"& $p -ServerUrl '{server_url}' "
+        f"-DesktopToken '{desktop_token}' "
+        f"-AgentToken '{agent_token}'"
     )
 
     return EnrollPairedResponse(

@@ -32,6 +32,32 @@ router = APIRouter()
 
 _SETUP_PS1 = _Path(__file__).resolve().parents[3] / "setup" / "hydra-worker-setup.ps1"
 _INSTALL_BAT = _Path(__file__).resolve().parents[3] / "setup" / "install-worker.bat"
+_INSTALL_HYDRA_PS1 = _Path(__file__).resolve().parents[3] / "setup" / "install-hydra.ps1"
+
+
+def _no_cache_headers(extra: dict | None = None) -> dict:
+    """Codex root-cause review: setup script 응답 캐시 차단 + commit hash 노출.
+
+    nginx / browser / proxy 어디서든 옛 파일 캐시 안 되도록.
+    """
+    import subprocess as _sp
+    try:
+        head = _sp.run(
+            ["git", "-C", str(_INSTALL_HYDRA_PS1.parent.parent), "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=3, check=False,
+        )
+        commit = head.stdout.strip() if head.returncode == 0 else "unknown"
+    except Exception:
+        commit = "unknown"
+    h = {
+        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        "Pragma": "no-cache",
+        "Expires": "0",
+        "X-Hydra-Commit": commit,
+    }
+    if extra:
+        h.update(extra)
+    return h
 
 
 # ──────── Slice 1 follow-up #2: lease hardening 정책 상수/헬퍼 ────────
@@ -104,10 +130,12 @@ def _sha256_hex(s: str) -> str:
 
 @router.get("/setup.ps1")
 def serve_setup_ps1() -> Response:
-    """Windows 워커 설치 스크립트 (공개 — 토큰은 유저가 param 으로 전달).
+    """Windows 워커 설치 스크립트 (legacy).
 
     UTF-8 BOM 을 prepend — PowerShell 5.1 (Windows 기본) 은 BOM 없으면 cp949 로
     해석해 한글 주석이 깨지며 ParseError 발생.
+
+    Codex root-cause review: no-cache + X-Hydra-Commit 헤더 추가.
     """
     if not _SETUP_PS1.is_file():
         raise HTTPException(500, "setup script missing")
@@ -115,6 +143,35 @@ def serve_setup_ps1() -> Response:
     return Response(
         bom + _SETUP_PS1.read_bytes(),
         media_type="text/plain; charset=utf-8",
+        headers=_no_cache_headers(),
+    )
+
+
+@router.get("/install-hydra.ps1")
+def serve_install_hydra_ps1() -> Response:
+    """Installer v2 — 단일 진입점 (desktop + admin_agent 한 번에).
+
+    SCRIPT_VERSION placeholder 를 현재 git HEAD 로 치환해서 serve. cache 차단.
+    paired enroll endpoint 의 install_command 가 이 URL 사용.
+    """
+    if not _INSTALL_HYDRA_PS1.is_file():
+        raise HTTPException(500, "install-hydra.ps1 missing")
+    import subprocess as _sp
+    try:
+        head = _sp.run(
+            ["git", "-C", str(_INSTALL_HYDRA_PS1.parent.parent), "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=3, check=False,
+        )
+        commit = head.stdout.strip() if head.returncode == 0 else "unknown"
+    except Exception:
+        commit = "unknown"
+    raw = _INSTALL_HYDRA_PS1.read_text(encoding="utf-8")
+    body = raw.replace("__HYDRA_COMMIT__", commit)
+    bom = b"\xef\xbb\xbf"
+    return Response(
+        bom + body.encode("utf-8"),
+        media_type="text/plain; charset=utf-8",
+        headers=_no_cache_headers(),
     )
 
 
