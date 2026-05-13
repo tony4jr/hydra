@@ -97,6 +97,20 @@ try {
 $svcExists = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($svcExists) {
     try { Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue } catch {}
+    # Codex review: stop 만으로는 부족 — nssm install 시 이름 충돌 "Error creating service".
+    # nssm remove + sc.exe delete 둘 다 시도 (NSSM/일반 서비스 어느 쪽이든 정리).
+    $nssmEarly = ''
+    $nssmEarlyCmd = Get-Command nssm.exe -ErrorAction SilentlyContinue
+    if ($nssmEarlyCmd) { $nssmEarly = $nssmEarlyCmd.Source }
+    elseif (Test-Path 'C:\ProgramData\chocolatey\bin\nssm.exe') {
+        $nssmEarly = 'C:\ProgramData\chocolatey\bin\nssm.exe'
+    }
+    if ($nssmEarly) {
+        & $nssmEarly remove $ServiceName confirm 2>$null | Out-Null
+    }
+    & sc.exe delete $ServiceName 2>$null | Out-Null
+    # service marked for deletion → SCM 가 핸들 닫을 시간 대기
+    Start-Sleep -Seconds 5
 }
 Get-CimInstance Win32_Process |
     Where-Object { $_.CommandLine -match 'python.*-m\s+worker' } |
