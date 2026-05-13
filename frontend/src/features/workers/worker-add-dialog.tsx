@@ -163,27 +163,36 @@ export function WorkerAddDialog({
 
         {hasResult ? (
           <div className='space-y-4'>
-            <div className='rounded-md border bg-emerald-500/5 border-emerald-500/30 p-3'>
-              <div className='flex items-center justify-between mb-2'>
-                <p className='font-semibold text-sm'>방법 A · 더블클릭 (권장)</p>
-                <span className='text-[11px] text-muted-foreground'>PowerShell 몰라도 OK</span>
+            {/* legacy install-worker.bat — single 모드 (desktop_worker) 전용.
+                paired (installer v2) 는 PowerShell 한 줄만 사용. */}
+            {!pairedResult && result && (
+              <div className='rounded-md border bg-amber-500/5 border-amber-500/30 p-3'>
+                <div className='flex items-center justify-between mb-2'>
+                  <p className='font-semibold text-sm'>방법 A · 더블클릭 (legacy)</p>
+                  <span className='text-[11px] text-muted-foreground'>단일 워커 전용</span>
+                </div>
+                <ol className='text-xs text-muted-foreground space-y-1 mb-3 list-decimal list-inside'>
+                  <li>install-worker.bat 다운로드</li>
+                  <li>토큰을 복사</li>
+                  <li>.bat 더블클릭 → 토큰 붙여넣기</li>
+                </ol>
+                <Button
+                  variant='outline'
+                  size='sm'
+                  className='w-full'
+                  onClick={() => {
+                    window.location.href = '/api/workers/install-worker.bat'
+                  }}
+                >
+                  <Download className='h-3.5 w-3.5 mr-1.5' />
+                  install-worker.bat 다운로드
+                </Button>
               </div>
-              <ol className='text-xs text-muted-foreground space-y-1 mb-3 list-decimal list-inside'>
-                <li>아래 버튼으로 install-worker.bat 다운로드</li>
-                <li>토큰을 복사 (아래 박스 옆 복사 버튼)</li>
-                <li>다운로드한 .bat 파일 더블클릭 → UAC "예" → 토큰 붙여넣기</li>
-              </ol>
-              <Button
-                variant='outline'
-                size='sm'
-                className='w-full'
-                onClick={() => {
-                  window.location.href = '/api/workers/install-worker.bat'
-                }}
-              >
-                <Download className='h-3.5 w-3.5 mr-1.5' />
-                install-worker.bat 다운로드
-              </Button>
+            )}
+
+            {/* 토큰 표시 박스 — paired / single 둘 다 */}
+            <div className='rounded-md border bg-muted/30 p-3 space-y-2'>
+              <p className='font-semibold text-sm'>발급된 토큰</p>
               {pairedResult ? (
                 <div className='space-y-1'>
                   <p className='text-[11px] text-muted-foreground'>
@@ -249,7 +258,9 @@ export function WorkerAddDialog({
             </div>
 
             <div className='rounded-md border bg-muted/30 p-3'>
-              <p className='font-semibold text-sm mb-2'>방법 B · PowerShell 한 줄</p>
+              <p className='font-semibold text-sm mb-2'>
+                {pairedResult ? '관리자 PowerShell 한 줄 (권장)' : '방법 B · PowerShell 한 줄'}
+              </p>
               <p className='text-xs text-muted-foreground mb-2'>
                 관리자 PowerShell 에 아래 명령 붙여넣기.
               </p>

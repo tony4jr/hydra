@@ -315,12 +315,18 @@ Run-Native -What "nssm start $ServiceName" -ScriptBlock {
 Start-Sleep -Seconds 3
 $svcAfter = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if (-not $svcAfter -or $svcAfter.Status -ne 'Running') {
-    Write-Warning "$ServiceName 시작 실패. nssm dump $ServiceName 또는 $agentLog 확인."
+    throw "$ServiceName 시작 실패 (status=$($svcAfter.Status)). $agentLog 또는 nssm dump $ServiceName 확인."
 }
 
-# ─── Desktop Task 시작 ───────────────────────────────────────────────────
+# ─── Desktop Task 시작 + 검증 ─────────────────────────────────────────────
 Write-Host "[start] Desktop Task..." -ForegroundColor Yellow
-Start-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+Start-ScheduledTask -TaskName $TaskName
+Start-Sleep -Seconds 3
+$taskInfo = Get-ScheduledTaskInfo -TaskName $TaskName -ErrorAction Stop
+# LastTaskResult 0 = success, 267009 = running, 0x80070420 = 서비스 비활성 등 fail
+if ($taskInfo.LastTaskResult -ne 0 -and $taskInfo.LastTaskResult -ne 267009) {
+    throw "Desktop Task '$TaskName' 시작 실패 (LastTaskResult=$($taskInfo.LastTaskResult)). $logDir 확인."
+}
 
 # ─── Done ────────────────────────────────────────────────────────────────
 Write-Host ""
