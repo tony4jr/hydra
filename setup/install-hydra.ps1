@@ -133,9 +133,29 @@ w32tm /resync /nowait | Out-Null
 
 # ─── Repo clone / pull ───────────────────────────────────────────────────
 Write-Host "[install] Repo $InstallPath..." -ForegroundColor Yellow
+# Codex installer v2 retry review: clone 중간 실패 → 디렉터리 반쯤 만들어진
+# broken install 상태 위험. .git 없는 디렉터리 발견 시 .bak-<timestamp> 로
+# rename 해서 fresh clone 보장.
+if (Test-Path $InstallPath) {
+    $gitDir = Join-Path $InstallPath '.git'
+    if (-not (Test-Path $gitDir)) {
+        $bak = $InstallPath + '.bak-' + (Get-Date -Format 'yyyyMMdd-HHmmss')
+        Write-Warning "$InstallPath 가 broken (.git 없음) — $bak 로 rename 후 fresh clone"
+        Rename-Item -Path $InstallPath -NewName (Split-Path $bak -Leaf) -Force
+    }
+}
+
 if (-not (Test-Path $InstallPath)) {
+    # clone — partial dir 가 남아있으면 다음 retry 위해 정리
     Run-Native -What "git clone" -Retries 3 -RetryDelaySec 5 -ScriptBlock {
+        if ((Test-Path $InstallPath) -and -not (Test-Path (Join-Path $InstallPath '.git'))) {
+            Remove-Item -Recurse -Force $InstallPath -ErrorAction SilentlyContinue
+        }
         git clone $RepoUrl $InstallPath
+    }
+    # 마지막 검증
+    if (-not (Test-Path (Join-Path $InstallPath '.git'))) {
+        throw "git clone 후에도 $InstallPath\.git 없음 — 수동 확인 필요"
     }
 } else {
     Push-Location $InstallPath
