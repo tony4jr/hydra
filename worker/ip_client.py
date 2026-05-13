@@ -41,10 +41,8 @@ async def ensure_safe_ip_via_server(
 
     Returns:
         log_id (int) — session.start 가 보관 후 session_end 에서 ip_log_end 호출용.
-        None — log endpoint 호출 실패 시 (rotation 자체는 정상이지만 log 못 남김).
-
     Raises:
-        IPRotationFailed — ADB device 미설정 또는 rotate 실패.
+        IPRotationFailed — ADB device 미설정, rotate 실패, ip-log/start 실패.
     """
     device_id = adb_device_id or settings.adb_device_id or None
     if not device_id:
@@ -106,8 +104,8 @@ async def ensure_safe_ip_via_server(
         resp.raise_for_status()
         return int(resp.json().get("log_id"))
     except Exception as e:
-        log.warning(f"ip-log/start API failed ({type(e).__name__}): {e}. log_id=None.")
-        return None
+        log.warning(f"ip-log/start API failed ({type(e).__name__}): {e}")
+        raise IPRotationFailed(f"ip-log/start failed: {type(e).__name__}")
 
 
 def end_ip_log_via_server(client, log_id: Optional[int]) -> None:
