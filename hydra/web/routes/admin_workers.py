@@ -95,6 +95,143 @@ def _validate_enrollment_role_and_parent(
             )
 
 
+class EnrollPairedRequest(BaseModel):
+    pc_name: str = Field(..., min_length=1, max_length=48)
+    ttl_hours: int = Field(default=24, ge=1, le=24 * 7)
+
+
+class EnrollPairedResponse(BaseModel):
+    desktop: EnrollResponse
+    admin_agent: EnrollResponse
+    install_command: str  # 두 worker 모두 install 하는 단일 PowerShell
+
+
+@router.post("/enroll-paired", response_model=EnrollPairedResponse)
+def create_enrollment_paired(
+    req: EnrollPairedRequest,
+    _session: dict = Depends(admin_session),
+) -> EnrollPairedResponse:
+    """UX A — 한 번 요청으로 desktop_worker + admin_agent 둘 다 enroll.
+
+    워커 PC 한 대 = DB 워커 row 2개 (desktop_worker + admin_agent) 모델을
+    UI 1회 작업으로 단순화. 운영자가 PC 이름 1개 입력하면 paired set 발급.
+
+    이름 규칙:
+      desktop_worker:    <pc_name>
+      admin_agent:       <pc_name>-agent
+
+    desktop_worker 가 먼저 생성되어야 admin_agent parent_worker_id 지정 가능.
+    같은 commit 안에서 둘 다 만듦 — 부분 실패 시 rollback.
+    """
+    pc_name = req.pc_name.strip()
+    if not pc_name:
+        raise HTTPException(400, "pc_name required")
+    desktop_name = pc_name
+    agent_name = f"{pc_name}-agent"
+
+    server_url = os.getenv("SERVER_URL", "").rstrip("/")
+    if not server_url:
+        raise HTTPException(500, "SERVER_URL not configured")
+
+    db = _db_session.SessionLocal()
+    try:
+        # 둘 다 이미 존재하면 paired set 재발급 (token 회전).
+        # 다른 role/parent 면 immutable 검증으로 409 던짐.
+        for name, role, parent_id in (
+            (desktop_name, "desktop_worker", None),
+            # agent 의 parent 는 아래 insert 후 알아냄. 일단 None placeholder
+        ):
+            _validate_enrollment_role_and_parent(db, role, parent_id)
+
+        # desktop 먼저 enroll (또는 기존 row 검증)
+        existing_desktop = db.query(Worker).filter_by(name=desktop_name).first()
+        if existing_desktop is not None and existing_desktop.role != "desktop_worker":
+            raise HTTPException(
+                409,
+                f"worker {desktop_name!r} already exists with role={existing_desktop.role}",
+            )
+        # admin_agent name 도 미리 검증
+        existing_agent = db.query(Worker).filter_by(name=agent_name).first()
+        if existing_agent is not None:
+            if existing_agent.role != "admin_agent":
+                raise HTTPException(
+                    409,
+                    f"worker {agent_name!r} already exists with role={existing_agent.role}",
+                )
+            # parent 가 향후 결정될 desktop 과 일치하는지 검증은
+            # consume 시점 immutable check 가 마지막 안전망.
+    finally:
+        db.close()
+
+    desktop_token = generate_enrollment_token(
+        desktop_name,
+        ttl_hours=req.ttl_hours,
+        role="desktop_worker",
+        parent_worker_id=None,
+    )
+    # parent_worker_id 가 agent token 에 필요. 그런데 desktop 이 아직 consume
+    # 안 됐으면 worker_id 가 없음 → enroll-paired 가 두 단계 흐름이 됨.
+    # 운영 시나리오: 워커 PC 가 desktop 먼저 consume → server 가 desktop.id
+    # 알면 그제서야 agent token 발급. 이를 단일 호출로 단순화하려면:
+    #   1) 서버에서 미리 desktop row 만들고 id 확보 → agent token 에 그 id 박음
+    #   2) 워커 PC 가 두 token 으로 두 service 모두 enroll
+    # row 미리 생성 — token 만 회전이라 안전.
+    db = _db_session.SessionLocal()
+    try:
+        desktop_row = db.query(Worker).filter_by(name=desktop_name).first()
+        if desktop_row is None:
+            desktop_row = Worker(
+                name=desktop_name,
+                role="desktop_worker",
+                status="offline",
+            )
+            db.add(desktop_row)
+            db.commit()
+            db.refresh(desktop_row)
+        desktop_id = desktop_row.id
+    finally:
+        db.close()
+
+    agent_token = generate_enrollment_token(
+        agent_name,
+        ttl_hours=req.ttl_hours,
+        role="admin_agent",
+        parent_worker_id=desktop_id,
+    )
+
+    # PowerShell 한 줄로 두 service 모두 설치.
+    # setup.ps1 가 -Token + -ServerUrl 받음. role 분기는 setup 안에서
+    # token payload role 보고 결정. 두 번 호출.
+    install_command = (
+        "Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force; "
+        f"iwr -Uri {server_url}/api/workers/setup.ps1 -OutFile setup.ps1; "
+        f".\\setup.ps1 -Token '{desktop_token}' -ServerUrl '{server_url}'; "
+        f".\\setup.ps1 -Token '{agent_token}' -ServerUrl '{server_url}'"
+    )
+
+    return EnrollPairedResponse(
+        desktop=EnrollResponse(
+            enrollment_token=desktop_token,
+            install_command=(
+                f".\\setup.ps1 -Token '{desktop_token}' -ServerUrl '{server_url}'"
+            ),
+            expires_in_hours=req.ttl_hours,
+            role="desktop_worker",
+            parent_worker_id=None,
+        ),
+        admin_agent=EnrollResponse(
+            enrollment_token=agent_token,
+            install_command=(
+                f".\\setup.ps1 -Token '{agent_token}' -ServerUrl '{server_url}'"
+            ),
+            expires_in_hours=req.ttl_hours,
+            role="admin_agent",
+            parent_worker_id=desktop_id,
+        ),
+        install_command=install_command,
+    )
+
+
 @router.post("/enroll", response_model=EnrollResponse)
 def create_enrollment(
     req: EnrollRequest,

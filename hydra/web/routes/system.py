@@ -1,6 +1,10 @@
 """System control API — pause/resume, emergency stop, status, maintenance."""
 
+import os
+import subprocess
 from datetime import datetime, timezone, timedelta
+from functools import lru_cache
+from pathlib import Path
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -11,6 +15,37 @@ from hydra.db.session import get_db
 from hydra.db.models import ActionLog, ErrorLog, IpLog, Campaign, Video
 
 router = APIRouter()
+
+
+@lru_cache(maxsize=1)
+def _git_short_sha() -> str:
+    """현재 deploy 의 git short SHA. 시작 시 1회 캐시. service 재시작 시 갱신."""
+    repo_root = Path(__file__).resolve().parents[3]
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=3, check=False,
+        )
+        if out.returncode == 0:
+            return out.stdout.strip()
+    except Exception:
+        pass
+    return "unknown"
+
+
+@router.get("/version")
+def system_version() -> dict:
+    """UX A — 홈 대시보드 상단 배포 버전 표시.
+
+    프로세스 시작 시 git HEAD 캐시. hydra-deploy.service 가 재시작하면 갱신.
+    """
+    return {
+        "git_sha": _git_short_sha(),
+        "started_at": _STARTED_AT_ISO,
+    }
+
+
+_STARTED_AT_ISO = datetime.now(timezone.utc).isoformat()
 
 
 @router.post("/api/pause")

@@ -38,9 +38,22 @@ function Pulse({ variant }: PulseProps) {
   )
 }
 
+interface VersionInfo {
+  git_sha: string
+  started_at: string
+}
+
 export function LiveStatusBar() {
   const [data, setData] = useState<LiveData | null>(null)
+  const [version, setVersion] = useState<VersionInfo | null>(null)
   const [now, setNow] = useState(Date.now())
+
+  // UX A — 배포 버전 1회 로드. server 재시작 시 갱신은 다음 페이지 진입.
+  useEffect(() => {
+    fetchApi<VersionInfo>('/system/version')
+      .then(setVersion)
+      .catch(() => undefined)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -163,6 +176,18 @@ export function LiveStatusBar() {
         <div className='hydra-livebar-cell'>
           <Wifi className={cn('size-3.5', variant === 'fail' ? 'text-rose-500' : 'text-emerald-500')} />
         </div>
+
+        {/* UX A — 배포 버전 */}
+        {version && (
+          <div className='hydra-livebar-cell hidden md:flex'>
+            <span
+              className='font-mono text-[10px] text-muted-foreground/70'
+              title={`Deployed: ${version.git_sha}  Started: ${new Date(version.started_at).toLocaleString('ko')}`}
+            >
+              {version.git_sha}
+            </span>
+          </div>
+        )}
 
         {/* Now */}
         <div className='hydra-livebar-cell hidden md:flex'>

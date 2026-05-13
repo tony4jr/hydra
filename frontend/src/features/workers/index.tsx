@@ -106,6 +106,21 @@ export default function WorkersPage() {
   const onlineCount = workers.filter(w => w.status === 'online').length
   const totalTasks = workers.reduce((sum, w) => sum + (w.running_tasks || 0), 0)
 
+  // UX A — paired grouping. desktop 위주 카드 + 같은 PC 의 admin_agent inline 표시.
+  // orphan admin_agent (parent 가 없거나 삭제된 desktop) 는 별도 카드.
+  const isAgent = (w: Worker) => w.role === 'admin_agent'
+  const isDesktop = (w: Worker) => !w.role || w.role === 'desktop_worker'
+  const agentByParent = new Map<number, Worker>()
+  for (const w of workers) {
+    if (isAgent(w) && w.parent_worker_id != null) {
+      agentByParent.set(w.parent_worker_id, w)
+    }
+  }
+  const desktops = workers.filter(isDesktop)
+  const orphanAgents = workers.filter(
+    (w) => isAgent(w) && (w.parent_worker_id == null || !desktops.some(d => d.id === w.parent_worker_id)),
+  )
+
   const handlePause = async (id: number) => {
     try {
       await fetchApi(`/api/workers/${id}/pause`, { method: 'POST' })
@@ -208,8 +223,10 @@ export default function WorkersPage() {
             </div>
           ) : (
             <div className='grid gap-3 md:grid-cols-2 lg:grid-cols-3'>
-              {workers.map(worker => {
+              {[...desktops, ...orphanAgents].map(worker => {
                 const isOffline = worker.status === 'offline'
+                // UX A — desktop 인 경우 paired admin_agent 정보 inline.
+                const pairedAgent = isDesktop(worker) ? agentByParent.get(worker.id) : null
                 return (
                   <div
                     key={worker.id}
@@ -220,6 +237,9 @@ export default function WorkersPage() {
                       <div className='flex items-center gap-2.5'>
                         <div className={`hydra-led-${worker.status === 'online' ? 'online' : worker.status === 'paused' ? 'paused' : 'offline'}`} />
                         <span className='text-foreground font-semibold text-[15px]'>{worker.name}</span>
+                        {isAgent(worker) && (
+                          <span className='hydra-tag hydra-tag-muted text-[10px]'>admin_agent</span>
+                        )}
                       </div>
                       <span className={`hydra-tag ${
                         worker.status === 'online' ? 'hydra-tag-success' :
@@ -228,6 +248,23 @@ export default function WorkersPage() {
                         {worker.status === 'online' ? '온라인' : worker.status === 'paused' ? '일시정지' : '오프라인'}
                       </span>
                     </div>
+
+                    {/* UX A — paired admin_agent 상태 inline */}
+                    {pairedAgent && (
+                      <div className='mb-3 rounded-md border bg-muted/30 px-2.5 py-1.5 text-[11px] flex items-center gap-2'>
+                        <div className={`hydra-led-${pairedAgent.status === 'online' ? 'online' : 'offline'}`} />
+                        <span className='text-muted-foreground'>admin_agent:</span>
+                        <span className='font-mono'>{pairedAgent.name}</span>
+                        <span className={`ml-auto hydra-tag text-[10px] ${
+                          pairedAgent.status === 'online' ? 'hydra-tag-success' : 'hydra-tag-muted'
+                        }`}>{pairedAgent.status}</span>
+                      </div>
+                    )}
+                    {isDesktop(worker) && !pairedAgent && (
+                      <div className='mb-3 rounded-md border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 text-[11px] text-amber-600'>
+                        admin_agent 미등록 — 웹 터미널 / agent_update 발행 불가
+                      </div>
+                    )}
 
                     {/* Info rows */}
                     <div className='space-y-1.5 text-[13px] mb-3'>

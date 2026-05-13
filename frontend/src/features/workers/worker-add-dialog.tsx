@@ -28,6 +28,12 @@ interface EnrollResponse {
   parent_worker_id?: number | null
 }
 
+interface EnrollPairedResponse {
+  desktop: EnrollResponse
+  admin_agent: EnrollResponse
+  install_command: string  // 통합 PowerShell
+}
+
 interface WorkerSummary {
   id: number
   name: string
@@ -48,52 +54,60 @@ export function WorkerAddDialog({
   onOpenChange,
   onCreated,
 }: WorkerAddDialogProps) {
+  // UX A — 기본은 paired (desktop+admin_agent 1회). 고급 모드는 단일.
+  const [mode, setMode] = useState<'paired' | 'single'>('paired')
   const [name, setName] = useState('')
   const [ttlHours, setTtlHours] = useState(24)
+  // 단일 모드 전용
   const [role, setRole] = useState<'desktop_worker' | 'admin_agent'>('desktop_worker')
   const [parentWorkerId, setParentWorkerId] = useState<number | null>(null)
   const [desktops, setDesktops] = useState<WorkerSummary[]>([])
   const [creating, setCreating] = useState(false)
   const [result, setResult] = useState<EnrollResponse | null>(null)
+  const [pairedResult, setPairedResult] = useState<EnrollPairedResponse | null>(null)
   const [copied, setCopied] = useState(false)
 
-  // admin_agent 선택 시 paired desktop_worker 목록 로드
+  // 단일 admin_agent 선택 시 paired desktop_worker 목록 로드
   useEffect(() => {
     if (!open) return
-    if (role !== 'admin_agent') return
+    if (mode !== 'single' || role !== 'admin_agent') return
     fetchApi<WorkerSummary[]>('/api/admin/workers/')
       .then((rows) => setDesktops(rows.filter((w) => w.role === 'desktop_worker')))
       .catch(() => undefined)
-  }, [open, role])
+  }, [open, mode, role])
 
   const handleCreate = async () => {
     const worker_name = name.trim()
     if (!worker_name) {
-      toast.error('워커 이름을 입력해주세요')
-      return
-    }
-    if (role === 'admin_agent' && !parentWorkerId) {
-      toast.error('admin_agent 는 parent desktop_worker 선택 필수')
+      toast.error(mode === 'paired' ? 'PC 이름 필수' : '워커 이름 필수')
       return
     }
     setCreating(true)
     try {
-      const body: Record<string, unknown> = {
-        worker_name,
-        ttl_hours: ttlHours,
-        role,
+      if (mode === 'paired') {
+        const data = await fetchApi<EnrollPairedResponse>(
+          '/api/admin/workers/enroll-paired',
+          {
+            method: 'POST',
+            body: JSON.stringify({ pc_name: worker_name, ttl_hours: ttlHours }),
+          },
+        )
+        setPairedResult(data)
+      } else {
+        if (role === 'admin_agent' && !parentWorkerId) {
+          toast.error('admin_agent 는 parent desktop_worker 선택 필수')
+          return
+        }
+        const body: Record<string, unknown> = {
+          worker_name, ttl_hours: ttlHours, role,
+        }
+        if (role === 'admin_agent') body.parent_worker_id = parentWorkerId
+        const data = await fetchApi<EnrollResponse>(
+          '/api/admin/workers/enroll',
+          { method: 'POST', body: JSON.stringify(body) },
+        )
+        setResult(data)
       }
-      if (role === 'admin_agent') {
-        body.parent_worker_id = parentWorkerId
-      }
-      const data = await fetchApi<EnrollResponse>(
-        '/api/admin/workers/enroll',
-        {
-          method: 'POST',
-          body: JSON.stringify(body),
-        },
-      )
-      setResult(data)
       onCreated?.()
     } catch (e) {
       toast.error((e as Error).message || 'enrollment 토큰 발급 실패')
@@ -102,9 +116,11 @@ export function WorkerAddDialog({
     }
   }
 
+  const installCommand = pairedResult?.install_command ?? result?.install_command ?? ''
+
   const handleCopy = async () => {
-    if (!result) return
-    await navigator.clipboard.writeText(result.install_command)
+    if (!installCommand) return
+    await navigator.clipboard.writeText(installCommand)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
     toast.success('클립보드에 복사됨')
@@ -117,26 +133,35 @@ export function WorkerAddDialog({
       setRole('desktop_worker')
       setParentWorkerId(null)
       setResult(null)
+      setPairedResult(null)
       setCopied(false)
+      setMode('paired')
     }
     onOpenChange(v)
   }
+
+  const hasResult = pairedResult !== null || result !== null
+  const expiresHours = pairedResult?.desktop.expires_in_hours
+    ?? result?.expires_in_hours ?? ttlHours
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className='sm:max-w-lg'>
         <DialogHeader>
           <DialogTitle>
-            {result ? '설치 명령 발급 완료' : '워커 추가'}
+            {hasResult ? '설치 명령 발급 완료' : '워커 추가'}
           </DialogTitle>
           <DialogDescription>
-            {result
-              ? `${result.expires_in_hours}시간 내 Windows PC에서 실행하세요`
-              : 'Windows 워커 PC를 등록합니다'}
+            {hasResult
+              ? `${expiresHours}시간 내 Windows PC에서 실행하세요`
+              : (mode === 'paired'
+                  ? 'PC 한 대에 desktop_worker + admin_agent 둘 다 자동 등록'
+                  : '단일 워커 등록')
+            }
           </DialogDescription>
         </DialogHeader>
 
-        {result ? (
+        {hasResult ? (
           <div className='space-y-4'>
             <div className='rounded-md border bg-emerald-500/5 border-emerald-500/30 p-3'>
               <div className='flex items-center justify-between mb-2'>
@@ -159,23 +184,68 @@ export function WorkerAddDialog({
                 <Download className='h-3.5 w-3.5 mr-1.5' />
                 install-worker.bat 다운로드
               </Button>
-              <div className='mt-2 relative rounded-md border bg-muted/50 p-2'>
-                <code className='pr-9 block font-mono text-[10px] break-all text-muted-foreground'>
-                  {result.enrollment_token}
-                </code>
-                <Button
-                  variant='ghost'
-                  size='sm'
-                  className='absolute top-1 right-1 h-6 w-6 p-0'
-                  onClick={async () => {
-                    await navigator.clipboard.writeText(result.enrollment_token)
-                    toast.success('토큰 복사됨')
-                  }}
-                  aria-label='토큰 복사'
-                >
-                  <Copy className='h-3 w-3' />
-                </Button>
-              </div>
+              {pairedResult ? (
+                <div className='space-y-1'>
+                  <p className='text-[11px] text-muted-foreground'>
+                    desktop_worker token:
+                  </p>
+                  <div className='relative rounded-md border bg-muted/50 p-2'>
+                    <code className='pr-9 block font-mono text-[10px] break-all text-muted-foreground'>
+                      {pairedResult.desktop.enrollment_token}
+                    </code>
+                    <Button
+                      variant='ghost'
+                      size='sm'
+                      className='absolute top-1 right-1 h-6 w-6 p-0'
+                      onClick={async () => {
+                        await navigator.clipboard.writeText(pairedResult.desktop.enrollment_token)
+                        toast.success('desktop 토큰 복사됨')
+                      }}
+                      aria-label='desktop 토큰 복사'
+                    >
+                      <Copy className='h-3 w-3' />
+                    </Button>
+                  </div>
+                  <p className='text-[11px] text-muted-foreground mt-1'>
+                    admin_agent token:
+                  </p>
+                  <div className='relative rounded-md border bg-muted/50 p-2'>
+                    <code className='pr-9 block font-mono text-[10px] break-all text-muted-foreground'>
+                      {pairedResult.admin_agent.enrollment_token}
+                    </code>
+                    <Button
+                      variant='ghost'
+                      size='sm'
+                      className='absolute top-1 right-1 h-6 w-6 p-0'
+                      onClick={async () => {
+                        await navigator.clipboard.writeText(pairedResult.admin_agent.enrollment_token)
+                        toast.success('admin_agent 토큰 복사됨')
+                      }}
+                      aria-label='admin_agent 토큰 복사'
+                    >
+                      <Copy className='h-3 w-3' />
+                    </Button>
+                  </div>
+                </div>
+              ) : result ? (
+                <div className='mt-2 relative rounded-md border bg-muted/50 p-2'>
+                  <code className='pr-9 block font-mono text-[10px] break-all text-muted-foreground'>
+                    {result.enrollment_token}
+                  </code>
+                  <Button
+                    variant='ghost'
+                    size='sm'
+                    className='absolute top-1 right-1 h-6 w-6 p-0'
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(result.enrollment_token)
+                      toast.success('토큰 복사됨')
+                    }}
+                    aria-label='토큰 복사'
+                  >
+                    <Copy className='h-3 w-3' />
+                  </Button>
+                </div>
+              ) : null}
             </div>
 
             <div className='rounded-md border bg-muted/30 p-3'>
@@ -185,7 +255,7 @@ export function WorkerAddDialog({
               </p>
               <div className='relative rounded-md border bg-muted/50 p-3'>
                 <pre className='pr-12 whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed'>
-                  {result.install_command}
+                  {installCommand}
                 </pre>
                 <Button
                   variant='secondary'
@@ -209,50 +279,86 @@ export function WorkerAddDialog({
         ) : (
           <div className='space-y-4'>
             <div className='space-y-2'>
-              <Label htmlFor='worker-name'>워커 이름</Label>
-              <Input
-                id='worker-name'
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder='예: pc-01, office-desk'
-                autoFocus
-                disabled={creating}
-              />
+              <Label>모드</Label>
+              <div className='grid grid-cols-2 gap-2'>
+                <Button
+                  type='button'
+                  variant={mode === 'paired' ? 'default' : 'outline'}
+                  size='sm'
+                  onClick={() => setMode('paired')}
+                  disabled={creating}
+                  className='h-9'
+                >
+                  Paired (권장)
+                </Button>
+                <Button
+                  type='button'
+                  variant={mode === 'single' ? 'default' : 'outline'}
+                  size='sm'
+                  onClick={() => setMode('single')}
+                  disabled={creating}
+                  className='h-9'
+                >
+                  단일
+                </Button>
+              </div>
               <p className='text-xs text-muted-foreground'>
-                고유 식별자. 같은 이름으로 재발급 시 토큰만 회전됩니다.
+                {mode === 'paired'
+                  ? 'PC 한 대 = desktop_worker + admin_agent 1회 자동 발급'
+                  : '단일 워커 발급 (기존 desktop 에 admin_agent 추가 시 사용)'
+                }
               </p>
             </div>
 
             <div className='space-y-2'>
-              <Label>역할 (role)</Label>
-              <div className='grid grid-cols-2 gap-2'>
-                <Button
-                  type='button'
-                  variant={role === 'desktop_worker' ? 'default' : 'outline'}
-                  size='sm'
-                  onClick={() => setRole('desktop_worker')}
-                  disabled={creating}
-                  className='h-9'
-                >
-                  desktop_worker
-                </Button>
-                <Button
-                  type='button'
-                  variant={role === 'admin_agent' ? 'default' : 'outline'}
-                  size='sm'
-                  onClick={() => setRole('admin_agent')}
-                  disabled={creating}
-                  className='h-9'
-                >
-                  admin_agent
-                </Button>
-              </div>
+              <Label htmlFor='worker-name'>
+                {mode === 'paired' ? 'PC 이름' : '워커 이름'}
+              </Label>
+              <Input
+                id='worker-name'
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder={mode === 'paired' ? '예: pc-01' : '예: agent-pc-01'}
+                autoFocus
+                disabled={creating}
+              />
               <p className='text-xs text-muted-foreground'>
-                desktop_worker = 자동화 task. admin_agent = PC 관리 / 웹 터미널 (NSSM service).
+                {mode === 'paired'
+                  ? `desktop_worker name = ${name || '<pc-name>'}, admin_agent name = ${name || '<pc-name>'}-agent`
+                  : '고유 식별자. 같은 이름으로 재발급 시 토큰만 회전.'
+                }
               </p>
             </div>
 
-            {role === 'admin_agent' && (
+            {mode === 'single' && (
+              <div className='space-y-2'>
+                <Label>역할 (role)</Label>
+                <div className='grid grid-cols-2 gap-2'>
+                  <Button
+                    type='button'
+                    variant={role === 'desktop_worker' ? 'default' : 'outline'}
+                    size='sm'
+                    onClick={() => setRole('desktop_worker')}
+                    disabled={creating}
+                    className='h-9'
+                  >
+                    desktop_worker
+                  </Button>
+                  <Button
+                    type='button'
+                    variant={role === 'admin_agent' ? 'default' : 'outline'}
+                    size='sm'
+                    onClick={() => setRole('admin_agent')}
+                    disabled={creating}
+                    className='h-9'
+                  >
+                    admin_agent
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {mode === 'single' && role === 'admin_agent' && (
               <div className='space-y-2'>
                 <Label htmlFor='parent'>Paired desktop_worker</Label>
                 <select
