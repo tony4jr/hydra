@@ -630,8 +630,12 @@ SESSION_RETENTION_DAYS = 90            # session row 90일 audit (minor #3)
 
 def _has_pending_terminal_close(db, session_id: int, worker_id: int) -> bool:
     """Phase 4 minor follow-up #2: 이미 pending terminal_close 명령이 있으면
-    배치/admin 가 중복 발행 안 함. 명령 payload 의 session_id 매칭.
+    배치/admin 가 중복 발행 안 함.
+
+    Codex review fix: payload session_id 가 str/int 어느 쪽이든 비교 정확.
+    int 변환 실패 시 무시.
     """
+    target = int(session_id)
     rows = (
         db.query(WorkerCommand)
         .filter(
@@ -644,9 +648,12 @@ def _has_pending_terminal_close(db, session_id: int, worker_id: int) -> bool:
     for r in rows:
         try:
             payload = json.loads(r.payload or "{}")
-            if payload.get("session_id") == session_id:
+            raw_sid = payload.get("session_id")
+            if raw_sid is None:
+                continue
+            if int(raw_sid) == target:
                 return True
-        except Exception:
+        except (ValueError, TypeError, json.JSONDecodeError):
             continue
     return False
 

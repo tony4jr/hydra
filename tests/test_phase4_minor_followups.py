@@ -271,6 +271,30 @@ def test_retention_deletes_old_sessions_after_90d(env):
     db.close()
 
 
+def test_pending_close_dedup_handles_string_session_id(env):
+    """Codex review fix: payload session_id 가 string 으로 저장돼도 dedup 동작."""
+    from hydra.web.routes.terminal import _has_pending_terminal_close
+    db = env["Session"]()
+    ts = TerminalSession(
+        worker_id=env["agent_id"],
+        opened_at=datetime.now(UTC),
+        last_activity_at=datetime.now(UTC),
+        status="active", shell="powershell", session_token="tok-s",
+    )
+    db.add(ts); db.commit(); db.refresh(ts)
+    sid = ts.id
+    # payload 에 session_id 를 str 로 저장 (악의/버그 시나리오)
+    db.add(WorkerCommand(
+        worker_id=env["agent_id"], command="terminal_close",
+        payload=json.dumps({"session_id": str(sid), "session_token": "tok-s"}),
+        status="pending", issued_at=datetime.now(UTC),
+        target_role="admin_agent",
+    ))
+    db.commit()
+    assert _has_pending_terminal_close(db, sid, env["agent_id"]) is True
+    db.close()
+
+
 def test_retention_keeps_recent_sessions(env):
     """1주일 미만 세션은 chunks 도 유지."""
     from hydra.web.routes.terminal import retention_cleanup_batch
