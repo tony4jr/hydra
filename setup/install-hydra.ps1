@@ -398,10 +398,15 @@ $envBlock = @(
     "HYDRA_UPDATE_OWNER=agent",
     "PYTHONIOENCODING=utf-8"
 )
-$envArgs = @('set', $ServiceName, 'AppEnvironmentExtra') + $envBlock
-Run-Native -What "nssm AppEnvironmentExtra" -ScriptBlock {
-    & $nssmExe @envArgs
+# NSSM 의 multi-arg env 설정은 argv splatting 과 자주 충돌 (exit 6).
+# NSSM 은 HKLM\SYSTEM\CurrentControlSet\Services\<svc>\Parameters\AppEnvironmentExtra
+# 를 REG_MULTI_SZ 로 읽으므로 PowerShell 이 직접 써도 동일 효과.
+$envRegPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName\Parameters"
+if (-not (Test-Path $envRegPath)) {
+    New-Item -Path $envRegPath -Force | Out-Null
 }
+New-ItemProperty -Path $envRegPath -Name AppEnvironmentExtra `
+    -PropertyType MultiString -Value $envBlock -Force | Out-Null
 
 # 시작
 Run-Native -What "nssm start $ServiceName" -ScriptBlock {
