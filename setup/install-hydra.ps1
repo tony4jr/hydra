@@ -33,6 +33,22 @@ $ErrorActionPreference = 'Stop'
 # server 가 serve 시 치환하는 placeholder. 직접 실행 시 dev.
 $SCRIPT_VERSION = '__HYDRA_COMMIT__'
 
+# Codex installer v2 review: $ErrorActionPreference='Stop' 은 PowerShell native
+# command (git, choco, nssm) 의 non-zero exit 을 자동 throw 안 함. 모든 외부
+# 명령은 이 helper 로 호출 → exit code != 0 면 abort.
+function Run-Native {
+    param(
+        [Parameter(Mandatory=$true)][scriptblock]$ScriptBlock,
+        [Parameter(Mandatory=$true)][string]$What,
+        [int[]]$AllowedExitCodes = @(0)
+    )
+    & $ScriptBlock
+    $code = $LASTEXITCODE
+    if ($AllowedExitCodes -notcontains $code) {
+        throw "$What 실패 (exit $code). 이전 출력 참고."
+    }
+}
+
 Write-Host "=== HYDRA installer v2 ===" -ForegroundColor Cyan
 Write-Host "  Version:     $SCRIPT_VERSION"
 Write-Host "  ServerUrl:   $ServerUrl"
@@ -88,8 +104,11 @@ if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
         'https://community.chocolatey.org/install.ps1'))
     $env:Path += ";C:\ProgramData\chocolatey\bin"
 }
-choco install -y python311 git adb nssm --no-progress
-choco install -y tailscale --no-progress 2>$null
+Run-Native -What "choco install python311/git/adb/nssm" -ScriptBlock {
+    choco install -y python311 git adb nssm --no-progress
+}
+# tailscale 은 선택 — 실패해도 진행. exit 1 (이미 설치) / 1641 도 허용.
+& choco install -y tailscale --no-progress 2>$null | Out-Null
 $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + `
             [System.Environment]::GetEnvironmentVariable("Path", "User")
 
@@ -104,32 +123,49 @@ w32tm /resync /nowait | Out-Null
 # ─── Repo clone / pull ───────────────────────────────────────────────────
 Write-Host "[install] Repo $InstallPath..." -ForegroundColor Yellow
 if (-not (Test-Path $InstallPath)) {
-    git clone $RepoUrl $InstallPath
+    Run-Native -What "git clone" -ScriptBlock {
+        git clone $RepoUrl $InstallPath
+    }
 } else {
     Push-Location $InstallPath
-    git fetch origin main
-    git reset --hard origin/main
-    Pop-Location
+    try {
+        Run-Native -What "git fetch origin main" -ScriptBlock {
+            git fetch origin main
+        }
+        Run-Native -What "git reset --hard origin/main" -ScriptBlock {
+            git reset --hard origin/main
+        }
+    } finally {
+        Pop-Location
+    }
 }
 Set-Location $InstallPath
-$repoHead = (git -C $InstallPath rev-parse --short HEAD).Trim()
+$repoHead = ((git -C $InstallPath rev-parse --short HEAD) | Out-String).Trim()
+if (-not $repoHead) { throw "git rev-parse 실패 — repo 상태 확인" }
 Write-Host "  repo HEAD: $repoHead"
 
 # ─── venv + pip + playwright chromium ─────────────────────────────────────
 Write-Host "[install] venv + pip install + playwright chromium..." -ForegroundColor Yellow
 $pythonExe = Join-Path $InstallPath '.venv\Scripts\python.exe'
 if (-not (Test-Path $pythonExe)) {
-    py -3.11 -m venv (Join-Path $InstallPath '.venv')
+    Run-Native -What "py -3.11 -m venv" -ScriptBlock {
+        py -3.11 -m venv (Join-Path $InstallPath '.venv')
+    }
 }
 if (-not (Test-Path $pythonExe)) {
     throw "venv python.exe 미생성: $pythonExe"
 }
-& $pythonExe -m pip install --quiet --upgrade pip
-if ($LASTEXITCODE -ne 0) { throw "pip upgrade 실패 (DNS/network 확인)" }
-& $pythonExe -m pip install --quiet -e $InstallPath
-if ($LASTEXITCODE -ne 0) { throw "pip install -e 실패 (DNS/network/의존성 확인)" }
+Run-Native -What "pip upgrade" -ScriptBlock {
+    & $pythonExe -m pip install --quiet --upgrade pip
+}
+Run-Native -What "pip install -e $InstallPath" -ScriptBlock {
+    & $pythonExe -m pip install --quiet -e $InstallPath
+}
+# playwright install — 일부 환경에서 이미 있어 non-zero 가능. 비-치명적이라 warn 만.
 & $pythonExe -m playwright install chromium
-# playwright install 실패는 비-치명적 (이미 있을 수 있음)
+if ($LASTEXITCODE -ne 0) {
+    Write-Warning "playwright install chromium exit $LASTEXITCODE — 이미 설치된 상태일 가능성. 계속 진행."
+}
 
 # ─── Desktop_worker enroll ────────────────────────────────────────────────
 Write-Host "[enroll] desktop_worker..." -ForegroundColor Yellow
@@ -225,33 +261,57 @@ if ($svcExists) {
 }
 
 $agentLog = Join-Path $logDir 'admin-agent.log'
-& $nssmExe install $ServiceName $pythonExe '-m' 'worker.admin_agent' | Out-Null
-if ($LASTEXITCODE -ne 0) { throw "nssm install 실패" }
-& $nssmExe set $ServiceName AppDirectory $InstallPath | Out-Null
-& $nssmExe set $ServiceName Description "Hydra Admin Agent (PC management / web terminal)" | Out-Null
-& $nssmExe set $ServiceName Start SERVICE_AUTO_START | Out-Null
-& $nssmExe set $ServiceName AppStdout $agentLog | Out-Null
-& $nssmExe set $ServiceName AppStderr $agentLog | Out-Null
-& $nssmExe set $ServiceName AppRotateFiles 1 | Out-Null
-& $nssmExe set $ServiceName AppRotateBytes 10485760 | Out-Null
-& $nssmExe set $ServiceName AppExit Default Restart | Out-Null
-& $nssmExe set $ServiceName AppRestartDelay 5000 | Out-Null
+Run-Native -What "nssm install $ServiceName" -ScriptBlock {
+    & $nssmExe install $ServiceName $pythonExe '-m' 'worker.admin_agent'
+}
+Run-Native -What "nssm set AppDirectory" -ScriptBlock {
+    & $nssmExe set $ServiceName AppDirectory $InstallPath
+}
+Run-Native -What "nssm set Description" -ScriptBlock {
+    & $nssmExe set $ServiceName Description "Hydra Admin Agent (PC management / web terminal)"
+}
+Run-Native -What "nssm set Start" -ScriptBlock {
+    & $nssmExe set $ServiceName Start SERVICE_AUTO_START
+}
+Run-Native -What "nssm set AppStdout" -ScriptBlock {
+    & $nssmExe set $ServiceName AppStdout $agentLog
+}
+Run-Native -What "nssm set AppStderr" -ScriptBlock {
+    & $nssmExe set $ServiceName AppStderr $agentLog
+}
+Run-Native -What "nssm set AppRotateFiles" -ScriptBlock {
+    & $nssmExe set $ServiceName AppRotateFiles 1
+}
+Run-Native -What "nssm set AppRotateBytes" -ScriptBlock {
+    & $nssmExe set $ServiceName AppRotateBytes 10485760
+}
+Run-Native -What "nssm set AppExit" -ScriptBlock {
+    & $nssmExe set $ServiceName AppExit Default Restart
+}
+Run-Native -What "nssm set AppRestartDelay" -ScriptBlock {
+    & $nssmExe set $ServiceName AppRestartDelay 5000
+}
 
-# NSSM env (secrets.enc 와 분리)
+# Codex review fix: SERVER_URL → HYDRA_SERVER_URL (worker.config 가 읽는 이름).
+# desktop 의 secrets.enc 의 SERVER_URL 우연 의존 X — admin_agent 단독 env.
 $envBlock = @(
-    "SERVER_URL=$ServerUrl",
+    "HYDRA_SERVER_URL=$ServerUrl",
     "HYDRA_PROCESS_ROLE=admin_agent",
     "HYDRA_AGENT_WORKER_TOKEN=$($agentResp.worker_token)",
+    "DB_CRYPTO_KEY=$($agentResp.secrets.DB_CRYPTO_KEY)",
     "HYDRA_DISABLE_TASK_REGISTER=1",
     "HYDRA_UPDATE_OWNER=agent",
     "PYTHONIOENCODING=utf-8"
 )
 $envArgs = @('set', $ServiceName, 'AppEnvironmentExtra') + $envBlock
-& $nssmExe @envArgs | Out-Null
-if ($LASTEXITCODE -ne 0) { throw "nssm AppEnvironmentExtra 실패" }
+Run-Native -What "nssm AppEnvironmentExtra" -ScriptBlock {
+    & $nssmExe @envArgs
+}
 
 # 시작
-& $nssmExe start $ServiceName | Out-Null
+Run-Native -What "nssm start $ServiceName" -ScriptBlock {
+    & $nssmExe start $ServiceName
+}
 Start-Sleep -Seconds 3
 $svcAfter = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if (-not $svcAfter -or $svcAfter.Status -ne 'Running') {
