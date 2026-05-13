@@ -213,6 +213,10 @@ def close_terminal(
         ts.status = "closing"
         ts.closing_at = datetime.now(UTC)
         ts.last_activity_at = datetime.now(UTC)
+        # Phase 4 minor follow-up #2: 이미 pending close 있으면 재발행 skip.
+        if _has_pending_terminal_close(db, ts.id, ts.worker_id):
+            db.commit()
+            return {"ok": True, "status": ts.status, "dedup": True}
         # Slice 4.1b — worker dispatcher 가 session_token 도 필요로 함
         # (callback POST 인증 + registry 조회). payload 에 같이 박음.
         cmd = WorkerCommand(
@@ -295,12 +299,16 @@ def worker_mark_closed(
     worker: Worker = Depends(worker_auth),
     x_terminal_session_token: str = Header(default=""),
 ) -> dict:
-    """워커가 shell process 종료 확인 후 호출. closing → closed.
-    active 에서 직접 받아도 OK (워커 자체 crash 후 detect 등)."""
+    """워커가 shell process 종료 확인 후 호출. closing/active → closed.
+
+    Codex Phase 4 minor follow-up #1: timeout/failed 는 noop.
+    timeout batch 가 close 명령 보낸 후 워커가 closed POST 하면 timeout 의미
+    가 closed 로 덮여 UI/통계에서 원인 추적 불가. 종료 상태는 보존.
+    """
     db = _db_session.SessionLocal()
     try:
         ts = _verify_worker_session(db, session_id, worker, x_terminal_session_token)
-        if ts.status == "closed":
+        if ts.status in ("closed", "timeout", "failed"):
             return {"ok": True, "status": ts.status, "noop": True}
         ts.status = "closed"
         ts.closed_at = datetime.now(UTC)
@@ -617,13 +625,37 @@ STALE_IDLE_SEC = 5 * 60                # 5분 idle 시 stale
 INACTIVITY_TIMEOUT_SEC = 15 * 60       # 15분 idle 시 timeout (4.4)
 MAX_SESSION_LIFETIME_SEC = 4 * 3600    # 4시간 hard cap (4.4)
 CHUNK_RETENTION_DAYS = 7               # chunks/inputs 7일 cleanup (4.4)
+SESSION_RETENTION_DAYS = 90            # session row 90일 audit (minor #3)
+
+
+def _has_pending_terminal_close(db, session_id: int, worker_id: int) -> bool:
+    """Phase 4 minor follow-up #2: 이미 pending terminal_close 명령이 있으면
+    배치/admin 가 중복 발행 안 함. 명령 payload 의 session_id 매칭.
+    """
+    rows = (
+        db.query(WorkerCommand)
+        .filter(
+            WorkerCommand.worker_id == worker_id,
+            WorkerCommand.command == "terminal_close",
+            WorkerCommand.status.in_(("pending", "leased")),
+        )
+        .all()
+    )
+    for r in rows:
+        try:
+            payload = json.loads(r.payload or "{}")
+            if payload.get("session_id") == session_id:
+                return True
+        except Exception:
+            continue
+    return False
 
 
 def inactivity_timeout_batch(db) -> int:
     """Phase 4 Slice 4.4 — last_activity 15분 초과 → timeout + closing 명령.
 
-    stale_recovery_batch 가 5분 기준 단순 마킹이라면 이건 본격 운영 정책.
     timeout 마킹 + worker 에 terminal_close command 발행 (정리 흐름 일관).
+    minor follow-up #2: pending terminal_close 이미 있으면 발행 skip.
     """
     cutoff = datetime.now(UTC) - timedelta(seconds=INACTIVITY_TIMEOUT_SEC)
     rows = (
@@ -640,15 +672,15 @@ def inactivity_timeout_batch(db) -> int:
         s.closed_at = now
         msg = f"inactivity_timeout_after={INACTIVITY_TIMEOUT_SEC}s"
         s.error_message = (s.error_message + " | " + msg) if s.error_message else msg
-        # worker 에 close 명령 (registry 있으면 process kill)
-        db.add(WorkerCommand(
-            worker_id=s.worker_id, command="terminal_close",
-            payload=json.dumps(
-                {"session_id": s.id, "session_token": s.session_token},
-                ensure_ascii=False,
-            ),
-            status="pending", issued_at=now, target_role="admin_agent",
-        ))
+        if not _has_pending_terminal_close(db, s.id, s.worker_id):
+            db.add(WorkerCommand(
+                worker_id=s.worker_id, command="terminal_close",
+                payload=json.dumps(
+                    {"session_id": s.id, "session_token": s.session_token},
+                    ensure_ascii=False,
+                ),
+                status="pending", issued_at=now, target_role="admin_agent",
+            ))
     return len(rows)
 
 
@@ -669,46 +701,67 @@ def max_lifetime_batch(db) -> int:
         s.closed_at = now
         msg = f"max_lifetime_exceeded={MAX_SESSION_LIFETIME_SEC}s"
         s.error_message = (s.error_message + " | " + msg) if s.error_message else msg
-        db.add(WorkerCommand(
-            worker_id=s.worker_id, command="terminal_close",
-            payload=json.dumps(
-                {"session_id": s.id, "session_token": s.session_token},
-                ensure_ascii=False,
-            ),
-            status="pending", issued_at=now, target_role="admin_agent",
-        ))
+        if not _has_pending_terminal_close(db, s.id, s.worker_id):
+            db.add(WorkerCommand(
+                worker_id=s.worker_id, command="terminal_close",
+                payload=json.dumps(
+                    {"session_id": s.id, "session_token": s.session_token},
+                    ensure_ascii=False,
+                ),
+                status="pending", issued_at=now, target_role="admin_agent",
+            ))
     return len(rows)
 
 
 def retention_cleanup_batch(db) -> dict:
-    """Phase 4 Slice 4.4 — N일 지난 closed/timeout/failed 세션의 chunks/inputs
-    삭제. 세션 row 자체는 보존 (audit log)."""
-    cutoff = datetime.now(UTC) - timedelta(days=CHUNK_RETENTION_DAYS)
-    old_sessions = (
-        db.query(TerminalSession.id)
+    """Phase 4 Slice 4.4 + minor follow-up #3.
+
+    2단계 retention:
+      1. 7일 지난 closed/timeout/failed 세션의 chunks/inputs 삭제 (audit row 보존)
+      2. 90일 지난 closed/timeout/failed 세션 row 자체도 삭제 (무한 누적 방지)
+
+    FK ondelete=CASCADE 라 session 삭제 시 남은 chunks/inputs 도 자동 삭제.
+    """
+    now = datetime.now(UTC)
+    chunk_cutoff = now - timedelta(days=CHUNK_RETENTION_DAYS)
+    session_cutoff = now - timedelta(days=SESSION_RETENTION_DAYS)
+
+    # 1단계: 7일 지난 세션의 chunks/inputs 삭제
+    chunk_old_ids = [
+        r.id for r in db.query(TerminalSession.id).filter(
+            TerminalSession.status.in_(("closed", "timeout", "failed")),
+            TerminalSession.closed_at < chunk_cutoff,
+        ).all()
+    ]
+    chunks_deleted = 0
+    inputs_deleted = 0
+    if chunk_old_ids:
+        chunks_deleted = (
+            db.query(TerminalChunk)
+            .filter(TerminalChunk.session_id.in_(chunk_old_ids))
+            .delete(synchronize_session=False)
+        )
+        inputs_deleted = (
+            db.query(TerminalInput)
+            .filter(TerminalInput.session_id.in_(chunk_old_ids))
+            .delete(synchronize_session=False)
+        )
+
+    # 2단계: 90일 지난 세션 row 삭제 (FK CASCADE 가 잔여 chunks/inputs 정리)
+    sessions_deleted = (
+        db.query(TerminalSession)
         .filter(
             TerminalSession.status.in_(("closed", "timeout", "failed")),
-            TerminalSession.closed_at < cutoff,
+            TerminalSession.closed_at < session_cutoff,
         )
-        .all()
-    )
-    old_ids = [s.id for s in old_sessions]
-    if not old_ids:
-        return {"sessions": 0, "chunks": 0, "inputs": 0}
-    chunks_deleted = (
-        db.query(TerminalChunk)
-        .filter(TerminalChunk.session_id.in_(old_ids))
         .delete(synchronize_session=False)
     )
-    inputs_deleted = (
-        db.query(TerminalInput)
-        .filter(TerminalInput.session_id.in_(old_ids))
-        .delete(synchronize_session=False)
-    )
+
     return {
-        "sessions": len(old_ids),
+        "sessions": len(chunk_old_ids),
         "chunks": chunks_deleted,
         "inputs": inputs_deleted,
+        "sessions_deleted": sessions_deleted,
     }
 
 
