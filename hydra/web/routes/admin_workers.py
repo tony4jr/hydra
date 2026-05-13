@@ -254,7 +254,7 @@ def delete_worker(
     """
     from hydra.db.models import (
         WorkerCommand, WorkerError, ProfileLock,
-        AccountProfileHistory, ExecutionLog,
+        AccountProfileHistory, ExecutionLog, IpLog,
     )
     db = _db_session.SessionLocal()
     try:
@@ -285,6 +285,12 @@ def delete_worker(
         ).update({AccountProfileHistory.worker_id: None}, synchronize_session=False)
         db.query(ExecutionLog).filter(ExecutionLog.worker_id == worker_id).update(
             {ExecutionLog.worker_id: None}, synchronize_session=False,
+        )
+        # Codex 5/12 P2 follow-up — IpLog.worker_id 도 NULL 처리. FK 의
+        # ondelete=SET NULL 과 중복이지만 application 단계에서도 명시 — 둘
+        # 중 하나만 작동해도 worker 삭제가 끊기지 않게 안전망.
+        db.query(IpLog).filter(IpLog.worker_id == worker_id).update(
+            {IpLog.worker_id: None}, synchronize_session=False,
         )
         # 운영 산출물 / ephemeral lock 은 함께 삭제
         db.query(WorkerCommand).filter(WorkerCommand.worker_id == worker_id).delete(

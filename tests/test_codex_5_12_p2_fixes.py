@@ -191,6 +191,65 @@ def test_iplog_end_accepts_same_worker(env):
     assert end_r.status_code == 200
 
 
+def test_delete_worker_clears_iplog_worker_id(env):
+    """worker 삭제 시 IpLog.worker_id 가 NULL 처리되어 FK 위반 안 남.
+
+    Codex 5/12 P2 follow-up — delete_worker 의 IpLog 처리 + FK ondelete
+    SET NULL 안전망.
+    """
+    # 1. worker A 가 IpLog 만든 후
+    r = env["client"].post(
+        "/api/workers/ip-log/start",
+        headers=_hdr(env["tok_a"]),
+        json={"account_id": env["account_id"], "ip_address": "5.5.5.5", "device_id": "d1"},
+    )
+    assert r.status_code == 200
+    log_id = r.json()["log_id"]
+
+    # 2. admin 으로 worker A 삭제 — running task 가 없도록 미리 task 정리
+    db = env["Session"]()
+    try:
+        from hydra.db.models import Task
+        db.query(Task).filter(Task.worker_id == env["worker_a_id"]).update(
+            {Task.status: "completed"}, synchronize_session=False,
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    # admin JWT 만들기
+    import jwt as _jwt
+    from datetime import UTC, datetime, timedelta
+    now = datetime.now(UTC)
+    admin_jwt = _jwt.encode(
+        {"user_id": 1, "role": "admin", "iat": now, "exp": now + timedelta(hours=1)},
+        "test-jwt-secret-123456789", algorithm="HS256",
+    )
+    r = env["client"].delete(
+        f"/api/admin/workers/{env['worker_a_id']}",
+        headers={"Authorization": f"Bearer {admin_jwt}"},
+    )
+    assert r.status_code in (200, 204), r.text
+
+    # 3. IpLog.worker_id 가 NULL 인지 확인
+    db = env["Session"]()
+    try:
+        rec = db.get(IpLog, log_id)
+        assert rec is not None  # IpLog 자체는 보존 (historical)
+        assert rec.worker_id is None
+    finally:
+        db.close()
+
+
+def test_iplog_fk_uses_set_null_ondelete():
+    """model 의 FK 정의가 ondelete='SET NULL' 사용."""
+    from hydra.db.models import IpLog
+    col = IpLog.__table__.columns["worker_id"]
+    fks = list(col.foreign_keys)
+    assert len(fks) == 1
+    assert fks[0].ondelete == "SET NULL"
+
+
 def test_iplog_end_soft_passes_legacy_null_worker(env):
     """worker_id 가 NULL 인 옛 row 는 (backfill 없음) soft pass."""
     db = env["Session"]()

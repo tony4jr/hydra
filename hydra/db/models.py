@@ -496,9 +496,11 @@ class IpLog(Base):
     device_id = Column(String)
     # Codex 5/12 P2 — ip-log/end 소유권 검증. start 시 worker 가 기록되고,
     # end 시 동일 worker_id 인지 verify. nullable (backfill 호환).
+    # ondelete=SET NULL — Codex P2 follow-up: worker 삭제 시 IpLog 가
+    # historical 자료로 보존되되 dangling FK 안 만들어 worker delete 안 깸.
     worker_id = Column(
         Integer,
-        ForeignKey("workers.id", name="fk_ip_log_worker"),
+        ForeignKey("workers.id", name="fk_ip_log_worker", ondelete="SET NULL"),
         nullable=True,
     )
 
