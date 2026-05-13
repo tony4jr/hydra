@@ -32,6 +32,55 @@ if (-not $isAdmin) {
     exit 1
 }
 
+# ─── 0.5. Token role 분기 (Slice 3.2 UX A) ─────────────────────────────
+# JWT payload (middle part) 디코드해서 role 확인.
+# admin_agent 토큰이면 별도 NSSM 설치 스크립트로 이관.
+# desktop_worker (또는 role 없는 옛 토큰) 는 아래 흐름 그대로.
+function Get-TokenRole {
+    param([string]$Tok)
+    try {
+        $parts = $Tok -split '\.'
+        if ($parts.Length -lt 2) { return '' }
+        $payload = $parts[1]
+        # base64url → base64 + padding
+        $payload = $payload.Replace('-', '+').Replace('_', '/')
+        switch ($payload.Length % 4) {
+            2 { $payload += '==' }
+            3 { $payload += '=' }
+        }
+        $bytes = [Convert]::FromBase64String($payload)
+        $json = [System.Text.Encoding]::UTF8.GetString($bytes)
+        $obj = $json | ConvertFrom-Json
+        return $obj.role
+    } catch {
+        return ''
+    }
+}
+
+$tokenRole = Get-TokenRole -Tok $Token
+if ($tokenRole -eq 'admin_agent') {
+    Write-Host "토큰 role=admin_agent → install-admin-agent-service.ps1 으로 분기" -ForegroundColor Cyan
+    if (-not (Test-Path $InstallPath)) {
+        Write-Host "[admin-agent] repo 미존재 — 먼저 clone 필요. desktop_worker 가 설치된 PC 인가요?" -ForegroundColor Yellow
+        Write-Host "  desktop_worker 가 먼저 install 되어 있어야 admin_agent NSSM service 가능" -ForegroundColor Yellow
+        exit 1
+    }
+    $installerPath = Join-Path $InstallPath 'setup\install-admin-agent-service.ps1'
+    if (-not (Test-Path $installerPath)) {
+        # repo 가 최신이 아닐 수 있음 → pull 시도
+        Push-Location $InstallPath
+        git fetch origin main 2>$null
+        git reset --hard origin/main 2>$null
+        Pop-Location
+    }
+    if (-not (Test-Path $installerPath)) {
+        Write-Error "install-admin-agent-service.ps1 미발견: $installerPath"
+        exit 1
+    }
+    & $installerPath -ServerUrl $ServerUrl -EnrollmentToken $Token -InstallPath $InstallPath -Start -Force
+    exit $LASTEXITCODE
+}
+
 # ─── 1. Chocolatey ───
 if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
     Write-Host "[1/8] Chocolatey 설치..." -ForegroundColor Yellow

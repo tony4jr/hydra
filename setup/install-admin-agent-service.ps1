@@ -146,8 +146,12 @@ function Get-AgentWorkerTokenViaEnrollment {
     Write-Info "DRYRUN: enrollment skipped"
     return 'DRYRUN-AGENT-TOKEN'
   }
-  # role 은 첫 heartbeat 에서 admin_agent 로 자동 갱신됨. Slice 2.3 은 server API 안 건드림.
-  $body = @{ enrollment_token = $EnrollmentToken } | ConvertTo-Json -Compress
+  # Codex follow-up: server EnrollRequest 가 hostname 필수. 없으면 422.
+  # role 은 토큰 payload 에서 자동 결정 (Slice 3.2). admin_agent enroll 가능.
+  $body = @{
+    enrollment_token = $EnrollmentToken
+    hostname = $env:COMPUTERNAME
+  } | ConvertTo-Json -Compress
   try {
     $resp = Invoke-RestMethod -Method Post -Uri $endpoint -Body $body `
       -ContentType 'application/json' -TimeoutSec 30
