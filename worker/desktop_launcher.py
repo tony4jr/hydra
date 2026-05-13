@@ -13,6 +13,9 @@ process 식별:
   - command line 이 `python -m worker` 또는 `worker/__main__.py` / `worker/app.py`
     desktop worker 패턴.
   - `worker.admin_agent` 는 명시적으로 **제외** (agent 가 자기 자신 kill 방지).
+  - Windows venv launcher 가 `C:\\hydra\\.venv\\Scripts\\python.exe -m worker`
+    parent 와 `C:\\Python311\\python.exe -m worker` child 를 동시에 노출하는
+    경우가 있어 parent/child match 는 top-level PID 만 반환.
 
 env 정책 (start 시):
   - HYDRA_DISABLE_TASK_REGISTER=1
@@ -84,18 +87,24 @@ def _find_desktop_pids() -> list[int]:
     psutil 가 있으면 사용 (정확). 없으면 빈 list (운영상 admin agent 환경엔
     psutil 항상 있음 — preflight 가 import 함).
     """
-    pids: list[int] = []
+    matches: dict[int, int | None] = {}
     if not _PSUTIL_AVAILABLE:
-        return pids
-    for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+        return []
+    for proc in psutil.process_iter(["pid", "ppid", "name", "cmdline"]):
         try:
             info = proc.info
             cmdline = info.get("cmdline") or []
             if _cmdline_is_desktop(cmdline):
-                pids.append(int(info["pid"]))
+                pid = int(info["pid"])
+                ppid_raw = info.get("ppid")
+                matches[pid] = int(ppid_raw) if ppid_raw is not None else None
         except (psutil.NoSuchProcess, psutil.AccessDenied, Exception):
             continue
-    return pids
+    # Windows venv launcher may show as two matching Python processes:
+    #   venv python.exe -m worker -> base Python311 python.exe -m worker
+    # Treat that as one desktop worker and manage the top-level process.
+    matched_pids = set(matches)
+    return sorted(pid for pid, ppid in matches.items() if ppid not in matched_pids)
 
 
 # ───────── public API ─────────

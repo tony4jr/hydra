@@ -73,6 +73,28 @@ def test_desktop_status_excludes_admin_agent_process():
     assert result["pids"] == [200]
 
 
+def test_desktop_status_dedupes_windows_venv_launcher_child():
+    """Windows venv can expose launcher parent + base Python child for one worker."""
+    fake_procs = [
+        type("P", (), {"info": {"pid": 200, "ppid": 50, "name": "python.exe",
+                                "cmdline": [r"C:\hydra\.venv\Scripts\python.exe", "-m", "worker"]}})(),
+        type("P", (), {"info": {"pid": 201, "ppid": 200, "name": "python.exe",
+                                "cmdline": [r"C:\Python311\python.exe", "-m", "worker"]}})(),
+    ]
+    with patch("worker.desktop_launcher.psutil") as fake_psutil, \
+         patch("worker.desktop_launcher._PSUTIL_AVAILABLE", True):
+        fake_psutil.process_iter.return_value = iter(fake_procs)
+        fake_psutil.NoSuchProcess = Exception
+        fake_psutil.AccessDenied = Exception
+
+        from worker.desktop_launcher import desktop_status
+        result = desktop_status()
+
+    assert result["ok"] is True
+    assert result["running"] is True
+    assert result["pids"] == [200]
+
+
 # ───────── b. start 이미 running 이면 Popen 안 함 ─────────
 
 def test_desktop_start_no_op_when_running():
