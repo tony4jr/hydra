@@ -76,11 +76,22 @@ if (-not $isAdmin) {
 # ─── Preflight: DNS check ────────────────────────────────────────────────
 Write-Host "[preflight] DNS resolve check..." -ForegroundColor Yellow
 function Assert-Dns([string]$h) {
-    try {
-        [System.Net.Dns]::GetHostEntry($h) | Out-Null
-        Write-Host "  OK: $h"
-    } catch {
-        throw "DNS resolve 실패: $h — 네트워크/DNS 설정 확인 후 재시도. (8.8.8.8 시도 권장)"
+    # duckdns 같은 dynamic DNS 는 일시 lookup miss 흔함 — retry 3회.
+    $attempt = 0
+    $maxAttempts = 4
+    while ($true) {
+        $attempt++
+        try {
+            [System.Net.Dns]::GetHostEntry($h) | Out-Null
+            Write-Host "  OK: $h"
+            return
+        } catch {
+            if ($attempt -ge $maxAttempts) {
+                throw "DNS resolve 실패: $h ($attempt attempts) — 네트워크/DNS 설정 확인 후 재시도. (nslookup $h 8.8.8.8 시도)"
+            }
+            Write-Warning "  DNS miss: $h (attempt $attempt) — 5s 후 재시도..."
+            Start-Sleep -Seconds 5
+        }
     }
 }
 $serverHost = ($ServerUrl -replace '^https?://','' -split '/')[0]
