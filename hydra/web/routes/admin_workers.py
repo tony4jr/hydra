@@ -565,6 +565,7 @@ def delete_worker(
     from hydra.db.models import (
         WorkerCommand, WorkerError, ProfileLock,
         AccountProfileHistory, ExecutionLog, IpLog, WorkerLogTail,
+        TerminalSession,
     )
     db = _db_session.SessionLocal()
     try:
@@ -618,6 +619,35 @@ def delete_worker(
         db.query(WorkerLogTail).filter(WorkerLogTail.worker_id == worker_id).delete(
             synchronize_session=False,
         )
+
+        # Phase 4 follow-up — paired admin_agent 의 parent_worker_id FK 가
+        # RESTRICT (no ondelete) 라 desktop 삭제 시 FK 위반. paired admin_agent
+        # 가 있으면 같이 삭제 (1:1 정책상 desktop 죽으면 agent 도 의미 없음).
+        paired_agents = (
+            db.query(Worker)
+            .filter(Worker.parent_worker_id == worker_id, Worker.role == "admin_agent")
+            .all()
+        )
+        for agent in paired_agents:
+            # admin_agent 의 child terminal_sessions cascade
+            db.query(TerminalSession).filter(
+                TerminalSession.worker_id == agent.id
+            ).delete(synchronize_session=False)
+            db.query(WorkerCommand).filter(WorkerCommand.worker_id == agent.id).delete(
+                synchronize_session=False,
+            )
+            db.query(WorkerError).filter(WorkerError.worker_id == agent.id).delete(
+                synchronize_session=False,
+            )
+            db.query(WorkerLogTail).filter(WorkerLogTail.worker_id == agent.id).delete(
+                synchronize_session=False,
+            )
+            db.delete(agent)
+
+        # Phase 4 — 본인 워커의 terminal_sessions 도 cascade
+        db.query(TerminalSession).filter(
+            TerminalSession.worker_id == worker_id
+        ).delete(synchronize_session=False)
 
         db.delete(w)
         db.commit()
