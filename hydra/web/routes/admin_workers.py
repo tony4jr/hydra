@@ -621,14 +621,14 @@ def delete_worker(
         )
 
         # Phase 4 follow-up — paired admin_agent 의 parent_worker_id FK 가
-        # RESTRICT (no ondelete) 라 desktop 삭제 시 FK 위반. paired admin_agent
-        # 가 있으면 같이 삭제 (1:1 정책상 desktop 죽으면 agent 도 의미 없음).
-        paired_agents = (
+        # RESTRICT (no ondelete) 라 desktop 삭제 시 FK 위반. 모든 worker (role
+        # 무관) 중 parent_worker_id == this 인 것 다 처리.
+        paired_workers = (
             db.query(Worker)
-            .filter(Worker.parent_worker_id == worker_id, Worker.role == "admin_agent")
+            .filter(Worker.parent_worker_id == worker_id)
             .all()
         )
-        for agent in paired_agents:
+        for agent in paired_workers:
             # admin_agent 의 child terminal_sessions cascade
             db.query(TerminalSession).filter(
                 TerminalSession.worker_id == agent.id
@@ -643,6 +643,10 @@ def delete_worker(
                 synchronize_session=False,
             )
             db.delete(agent)
+
+        # 강제 flush — paired delete SQL 이 desktop delete 보다 먼저 발행되도록.
+        # ORM 가 자동으로 dependency 안 따져서 commit 시 순서 보장 X → 명시 flush.
+        db.flush()
 
         # Phase 4 — 본인 워커의 terminal_sessions 도 cascade
         db.query(TerminalSession).filter(
