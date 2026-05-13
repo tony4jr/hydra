@@ -562,6 +562,19 @@ def heartbeat_v2(
                 _append_err(c, "non_redeliverable_after_lease_expiry")
                 continue
 
+            # Phase 3 Slice 3.1 — target_role 가 박혀있고 현재 worker.role 와
+            # 다르면 invariant 위반 (발행 시점 auto-route 이후 role 가 바뀐 경우 등).
+            # 같은 worker 에 재배달하지 않고 failed + role_mismatch.
+            if c.target_role is not None and c.target_role != w.role:
+                c.status = "failed"
+                c.completed_at = now
+                c.lease_expires_at = None
+                _append_err(
+                    c,
+                    f"role_mismatch:target={c.target_role},actual={w.role}",
+                )
+                continue
+
             # payload parse — lease_sec 계산용
             payload_dict = None
             if c.payload:

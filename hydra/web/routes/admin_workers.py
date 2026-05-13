@@ -422,6 +422,78 @@ ALLOWED_COMMANDS = frozenset({
 })
 
 
+# Phase 3 Slice 3.1 — command policy map. admin_agent runtime 전용 명령을
+# 발행 시점에 자동 라우팅 + heartbeat lease 시 role 검증.
+# desktop_worker 전용은 현재 없음 (모든 task automation 은 envelope 로 분배).
+_CMD_REQUIRED_ROLE: dict[str, str] = {
+    "desktop_status": "admin_agent",
+    "desktop_start": "admin_agent",
+    "desktop_stop": "admin_agent",
+    "desktop_restart": "admin_agent",
+    "desktop_cutover_status": "admin_agent",
+    "desktop_cutover_apply": "admin_agent",
+    "agent_update_now": "admin_agent",
+}
+
+
+def _resolve_command_target(
+    db, worker_id: int, command: str, override: Optional[str],
+) -> tuple[Worker, Optional[str]]:
+    """발행 시점 auto-route + target_role 결정.
+
+    1) 명령에 required_role 이 있고 worker.role 가 다르면 paired worker 로 rewrite.
+       paired 매칭: admin_agent.parent_worker_id == desktop_worker.id.
+       - desktop_worker 에 admin_only 명령 → parent_worker_id 가 가리키는 admin_agent 찾기
+       - admin_agent 에 desktop_only 명령 → parent_worker_id 자기쪽 desktop 찾기
+       paired worker 없으면 409.
+    2) override (req.target_role) 있으면 우선. 단 worker.role 와 mismatch 면 400.
+    3) 일반 명령 (정책 없음) 은 worker.role 그대로 저장.
+    """
+    worker = db.get(Worker, worker_id)
+    if worker is None:
+        raise HTTPException(404, "worker not found")
+
+    required = _CMD_REQUIRED_ROLE.get(command)
+
+    if override is not None and override not in ("desktop_worker", "admin_agent"):
+        raise HTTPException(400, f"invalid target_role: {override}")
+
+    # admin-only 명령을 잘못된 role 에 발행한 경우 auto-route
+    if required and worker.role != required:
+        paired: Optional[Worker] = None
+        if required == "admin_agent" and worker.role == "desktop_worker":
+            # admin_agent 의 parent_worker_id == 이 desktop_worker.id
+            paired = (
+                db.query(Worker)
+                .filter(
+                    Worker.role == "admin_agent",
+                    Worker.parent_worker_id == worker.id,
+                )
+                .first()
+            )
+        elif required == "desktop_worker" and worker.role == "admin_agent":
+            if worker.parent_worker_id is not None:
+                paired = db.get(Worker, worker.parent_worker_id)
+                if paired is not None and paired.role != "desktop_worker":
+                    paired = None
+        if paired is None:
+            raise HTTPException(
+                409,
+                f"no paired {required} worker for worker_id={worker_id} "
+                f"(role={worker.role}); command {command} requires {required}",
+            )
+        worker = paired
+
+    # override 가 있으면 최종 worker.role 와 다시 검증
+    final_target = override if override is not None else (required or worker.role)
+    if override is not None and worker.role != override:
+        raise HTTPException(
+            400,
+            f"target_role={override} mismatches resolved worker role {worker.role}",
+        )
+    return worker, final_target
+
+
 # Slice 1 — shell_exec 가드 상한. 운영자가 보내는 script 의 크기/실행 시간/출력량 제한.
 SHELL_MAX_SCRIPT_LEN = 8000          # 8KB
 SHELL_MAX_TIMEOUT_SEC = 120          # 2분
@@ -474,6 +546,9 @@ def _validate_shell_exec_payload(payload: Optional[dict]) -> dict:
 class CommandRequest(BaseModel):
     command: str = Field(..., min_length=1, max_length=64)
     payload: Optional[dict] = None
+    # Phase 3 — 운영자가 명시적으로 대상 role 지정. 없으면 _CMD_REQUIRED_ROLE
+    # 또는 대상 worker.role 로 자동 결정.
+    target_role: Optional[str] = None
 
 
 class CommandOut(BaseModel):
@@ -487,6 +562,10 @@ class CommandOut(BaseModel):
     completed_at: Optional[str] = None
     result: Optional[str] = None
     error_message: Optional[str] = None
+    # Phase 3 — 명령에 박힌 target_role. heartbeat lease 시 worker.role 검증용.
+    target_role: Optional[str] = None
+    # Phase 3 — auto-route 발생 시 원래 발행 worker_id (감사 용).
+    requested_worker_id: Optional[int] = None
 
 
 @router.post("/{worker_id}/command", response_model=CommandOut)
@@ -510,15 +589,18 @@ def issue_command(
     from hydra.db.models import WorkerCommand
     db = _db_session.SessionLocal()
     try:
-        if db.get(Worker, worker_id) is None:
-            raise HTTPException(404, "worker not found")
+        # Phase 3 Slice 3.1 — 발행 시점 auto-route + target_role 결정.
+        worker, target_role = _resolve_command_target(
+            db, worker_id, req.command, req.target_role,
+        )
         cmd = WorkerCommand(
-            worker_id=worker_id,
+            worker_id=worker.id,
             command=req.command,
             payload=json.dumps(payload, ensure_ascii=False) if payload else None,
             status="pending",
             issued_by=session.get("user_id"),
             issued_at=datetime.now(UTC),
+            target_role=target_role,
         )
         db.add(cmd)
         db.commit()
@@ -527,6 +609,8 @@ def issue_command(
             id=cmd.id, worker_id=cmd.worker_id, command=cmd.command,
             payload=payload, status=cmd.status,
             issued_at=cmd.issued_at.isoformat(),
+            target_role=cmd.target_role,
+            requested_worker_id=(worker_id if worker.id != worker_id else None),
         )
     finally:
         db.close()
@@ -618,6 +702,7 @@ def list_commands(
                 delivered_at=c.delivered_at.isoformat() if c.delivered_at else None,
                 completed_at=c.completed_at.isoformat() if c.completed_at else None,
                 result=c.result, error_message=c.error_message,
+                target_role=c.target_role,
             ))
         return out
     finally:

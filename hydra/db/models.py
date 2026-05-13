@@ -1268,10 +1268,16 @@ class WorkerCommand(Base):
     lease_expires_at = Column(DateTime, nullable=True)
     attempt_count = Column(Integer, nullable=False, default=0, server_default="0")
     started_at = Column(DateTime, nullable=True)
+    # Phase 3 — 발행 시점에 결정된 대상 worker.role. NULL 이면 role 체크 안 함
+    # (backward compat). admin agent 전용 명령 (agent_update_now,
+    # desktop_cutover_*, desktop_* 등) 은 발행 시 "admin_agent" 강제.
+    # heartbeat lease 시 worker.role 와 mismatch 면 failed + role_mismatch.
+    target_role = Column(String(32), nullable=True)
 
     __table_args__ = (
         Index("idx_wcmd_worker_status", "worker_id", "status"),
         Index("idx_wcmd_issued", "issued_at"),
+        Index("idx_wcmd_target_role", "target_role"),
     )
 
 
