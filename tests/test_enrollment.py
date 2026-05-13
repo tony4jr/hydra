@@ -77,10 +77,28 @@ def test_enroll_endpoint_requires_bearer_token():
     assert resp.status_code == 401
 
 
-def test_enroll_endpoint_returns_token_and_install_command():
+def test_enroll_endpoint_returns_token_and_install_command(monkeypatch):
     os.environ["JWT_SECRET"] = "test-jwt-secret-123456789"
     os.environ["ENROLLMENT_SECRET"] = "test-enrollment-secret-12345"
     os.environ["SERVER_URL"] = "https://test.example.com"
+    # Slice 3.2 — admin enroll 이 이제 DB 에서 existing worker / parent 검증.
+    # in-memory schema 주입.
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+    import hydra.db.session as session_mod
+    from hydra.db.models import Base
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    TestSession = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+    monkeypatch.setattr(session_mod, "engine", engine)
+    monkeypatch.setattr(session_mod, "SessionLocal", TestSession)
+
     from hydra.web.app import app
     client = TestClient(app)
 

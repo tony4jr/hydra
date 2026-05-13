@@ -26,23 +26,33 @@ def _enrollment_secret() -> str:
     return s
 
 
-def generate_enrollment_token(worker_name: str, ttl_hours: int = 24) -> str:
+def generate_enrollment_token(
+    worker_name: str,
+    ttl_hours: int = 24,
+    role: str = "desktop_worker",
+    parent_worker_id: int | None = None,
+) -> str:
     """1회용 등록 토큰 발급.
 
     payload:
-      worker_name : str  — 등록할 워커 식별자
-      nonce       : str  — 재사용 감지용 (Task 20 에서 DB 기록)
-      type        : "enrollment"  — 세션 JWT 와 구분
-      iat / exp   : UTC unix
+      worker_name      : str  — 등록할 워커 식별자
+      role             : str  — "desktop_worker" | "admin_agent" (Slice 3.2)
+      parent_worker_id : int? — admin_agent 의 짝 desktop_worker.id (Slice 3.2)
+      nonce            : str  — 재사용 감지용
+      type             : "enrollment"
+      iat / exp        : UTC unix
     """
     now = datetime.now(UTC)
-    payload = {
+    payload: dict = {
         "worker_name": worker_name,
+        "role": role,
         "nonce": _secrets.token_hex(16),
         "type": _TYPE,
         "iat": now,
         "exp": now + timedelta(hours=ttl_hours),
     }
+    if parent_worker_id is not None:
+        payload["parent_worker_id"] = int(parent_worker_id)
     return jwt.encode(payload, _enrollment_secret(), algorithm=_ALGO)
 
 

@@ -129,9 +129,12 @@ def test_existing_worker_defaults_to_desktop_worker(env):
         db.close()
 
 
-# ───────── 3-5. heartbeat 가 role/capabilities 업데이트 ─────────
+# ───────── 3-5. heartbeat: role immutable, capabilities mutable (Slice 3.2) ─────────
 
-def test_heartbeat_updates_role_and_capabilities(env):
+def test_heartbeat_ignores_role_updates_capabilities(env):
+    """Slice 3.2 — heartbeat 가 role 보내도 무시 (immutable). capabilities 는
+    여전히 갱신 (mutable). 옛 워커가 role 보내도 silent ignore.
+    """
     body = _hb_body(role="admin_agent", capabilities=["powershell", "git"])
     r = env["client"].post(
         "/api/workers/heartbeat/v2",
@@ -142,8 +145,9 @@ def test_heartbeat_updates_role_and_capabilities(env):
     db = env["Session"]()
     try:
         w = db.get(Worker, env["desktop_id"])
-        assert w.role == "admin_agent"
-        # capabilities 는 JSON 문자열로 저장
+        # role 은 enroll 시점 desktop_worker — heartbeat 의 admin_agent 무시
+        assert w.role == "desktop_worker"
+        # capabilities 는 갱신됨
         assert json.loads(w.capabilities) == ["powershell", "git"]
     finally:
         db.close()

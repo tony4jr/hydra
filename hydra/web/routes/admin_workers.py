@@ -35,12 +35,64 @@ VALID_TASK_TYPES = {
 class EnrollRequest(BaseModel):
     worker_name: str = Field(..., min_length=1, max_length=64)
     ttl_hours: int = Field(default=24, ge=1, le=24 * 7)
+    # Slice 3.2 — role 발급 시점 결정. immutable (재발급 시 변경 거부).
+    role: str = Field(default="desktop_worker")
+    # admin_agent 발급 시 필수. 가리키는 desktop_worker.id.
+    parent_worker_id: Optional[int] = None
 
 
 class EnrollResponse(BaseModel):
     enrollment_token: str
     install_command: str
     expires_in_hours: int
+    role: str = "desktop_worker"
+    parent_worker_id: Optional[int] = None
+
+
+def _validate_enrollment_role_and_parent(
+    db, role: str, parent_worker_id: Optional[int], exclude_worker_id: Optional[int] = None,
+) -> None:
+    """Slice 3.2 — enroll/PATCH role 공통 검증.
+
+    - role: desktop_worker | admin_agent
+    - admin_agent: parent_worker_id 필수, 존재 + role == desktop_worker
+    - admin_agent : desktop 1:1 강제 (같은 parent 에 admin_agent 2번째 거부)
+      exclude_worker_id 는 PATCH 시 자기 자신 제외 (재발급/no-op 허용)
+    - desktop_worker: parent_worker_id 비워야
+    """
+    if role not in ("desktop_worker", "admin_agent"):
+        raise HTTPException(400, f"invalid role: {role!r}")
+    if role == "admin_agent":
+        if parent_worker_id is None:
+            raise HTTPException(400, "admin_agent enroll requires parent_worker_id")
+        parent = db.get(Worker, parent_worker_id)
+        if parent is None:
+            raise HTTPException(400, f"parent_worker_id={parent_worker_id} not found")
+        if parent.role != "desktop_worker":
+            raise HTTPException(
+                400,
+                f"parent_worker_id={parent_worker_id} role={parent.role}; "
+                f"admin_agent parent must be desktop_worker",
+            )
+        # 1:1 강제 — 같은 desktop 에 다른 admin_agent 이미 있으면 거부.
+        # Slice 3.1 의 ambiguous routing 을 발급 단에서 미연에 방지.
+        sibling_q = db.query(Worker).filter(
+            Worker.role == "admin_agent",
+            Worker.parent_worker_id == parent_worker_id,
+        )
+        if exclude_worker_id is not None:
+            sibling_q = sibling_q.filter(Worker.id != exclude_worker_id)
+        if sibling_q.first() is not None:
+            raise HTTPException(
+                409,
+                f"desktop_worker {parent_worker_id} already has an admin_agent; "
+                "1:1 paired admin_agent enforced",
+            )
+    else:  # desktop_worker
+        if parent_worker_id is not None:
+            raise HTTPException(
+                400, "desktop_worker enroll must not set parent_worker_id",
+            )
 
 
 @router.post("/enroll", response_model=EnrollResponse)
@@ -52,7 +104,33 @@ def create_enrollment(
     if not name:
         raise HTTPException(400, "worker_name required")
 
-    token = generate_enrollment_token(name, ttl_hours=req.ttl_hours)
+    db = _db_session.SessionLocal()
+    try:
+        _validate_enrollment_role_and_parent(db, req.role, req.parent_worker_id)
+        # 같은 name 으로 이미 존재하는 worker 가 다른 role 이면 거부 (immutable)
+        existing = db.query(Worker).filter_by(name=name).first()
+        if existing is not None:
+            if existing.role != req.role:
+                raise HTTPException(
+                    409,
+                    f"worker {name!r} already enrolled as role={existing.role}; "
+                    f"role is immutable (cannot re-enroll as {req.role})",
+                )
+            if existing.parent_worker_id != req.parent_worker_id:
+                raise HTTPException(
+                    409,
+                    f"worker {name!r} already has parent_worker_id="
+                    f"{existing.parent_worker_id}; parent is immutable",
+                )
+    finally:
+        db.close()
+
+    token = generate_enrollment_token(
+        name,
+        ttl_hours=req.ttl_hours,
+        role=req.role,
+        parent_worker_id=req.parent_worker_id,
+    )
     server_url = os.getenv("SERVER_URL", "").rstrip("/")
     if not server_url:
         raise HTTPException(500, "SERVER_URL not configured")
@@ -68,6 +146,8 @@ def create_enrollment(
         enrollment_token=token,
         install_command=install_command,
         expires_in_hours=req.ttl_hours,
+        role=req.role,
+        parent_worker_id=req.parent_worker_id,
     )
 
 
@@ -236,6 +316,79 @@ def update_worker(
             db.query(Task)
             .filter(Task.worker_id == w.id, Task.status == "running")
             .first()
+        )
+        return _worker_to_out(w, running)
+    finally:
+        db.close()
+
+
+class RolePatch(BaseModel):
+    role: str
+    parent_worker_id: Optional[int] = None
+
+
+@router.patch("/{worker_id}/role", response_model=WorkerOut)
+def update_worker_role(
+    worker_id: int,
+    req: RolePatch,
+    _session: dict = Depends(admin_session),
+) -> WorkerOut:
+    """Slice 3.2 — role 변경 admin-only endpoint.
+
+    role 은 enroll 시점 immutable. 운영상 PC 용도 전환이 필요한 경우만 이
+    endpoint 로 변경. heartbeat 차단 (Slice 3.2) 이후 유일한 정식 경로.
+
+    부수 효과: 변경 시 pending/leased 상태이고 target_role mismatch 인
+    WorkerCommand 를 즉시 failed + role_mismatch_after_role_change 로 닫음
+    (heartbeat lease 까지 미루면 운영자 혼란).
+    """
+    from hydra.db.models import WorkerCommand
+    db = _db_session.SessionLocal()
+    try:
+        w = db.get(Worker, worker_id)
+        if w is None:
+            raise HTTPException(404, "worker not found")
+
+        _validate_enrollment_role_and_parent(
+            db, req.role, req.parent_worker_id, exclude_worker_id=w.id,
+        )
+
+        # no-op (같은 role + parent) 은 그냥 통과
+        if w.role == req.role and w.parent_worker_id == req.parent_worker_id:
+            running = (
+                db.query(Task).filter(Task.worker_id == w.id, Task.status == "running").first()
+            )
+            return _worker_to_out(w, running)
+
+        w.role = req.role
+        w.parent_worker_id = req.parent_worker_id
+
+        # pending/leased 중 target_role 박혔고 mismatch 인 것 정리.
+        now = datetime.now(UTC)
+        affected = (
+            db.query(WorkerCommand)
+            .filter(
+                WorkerCommand.worker_id == w.id,
+                WorkerCommand.status.in_(["pending", "leased"]),
+                WorkerCommand.target_role.isnot(None),
+                WorkerCommand.target_role != w.role,
+            )
+            .all()
+        )
+        for c in affected:
+            c.status = "failed"
+            c.completed_at = now
+            c.lease_expires_at = None
+            msg = (
+                f"role_mismatch_after_role_change:"
+                f"target={c.target_role},new_role={w.role}"
+            )
+            c.error_message = (c.error_message + " | " + msg) if c.error_message else msg
+
+        db.commit()
+        db.refresh(w)
+        running = (
+            db.query(Task).filter(Task.worker_id == w.id, Task.status == "running").first()
         )
         return _worker_to_out(w, running)
     finally:

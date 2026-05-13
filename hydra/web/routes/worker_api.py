@@ -147,14 +147,68 @@ def enroll(req: EnrollRequest) -> EnrollResponse:
     except Exception:
         raise HTTPException(401, "invalid enrollment token")
     worker_name = data["worker_name"]
+    # Slice 3.2 — token payload 에 role/parent 박혀있음. 기본값은 legacy
+    # backward compat (이미 발급된 옛 토큰 호환).
+    token_role = data.get("role", "desktop_worker")
+    token_parent = data.get("parent_worker_id")
+    if token_role not in ("desktop_worker", "admin_agent"):
+        raise HTTPException(400, f"invalid role in token: {token_role!r}")
 
     db = _db_session.SessionLocal()
     try:
+        # Slice 3.2 — parent re-validation (consume 시점 stale token 방지).
+        # 토큰 발급 후 parent worker 가 삭제/role 변경됐을 수 있음.
+        if token_role == "admin_agent":
+            if token_parent is None:
+                raise HTTPException(400, "admin_agent token missing parent_worker_id")
+            parent = db.get(Worker, token_parent)
+            if parent is None or parent.role != "desktop_worker":
+                raise HTTPException(
+                    409,
+                    f"parent_worker_id={token_parent} invalid at consume "
+                    "(deleted or role changed); re-enroll required",
+                )
+
         worker = db.query(Worker).filter_by(name=worker_name).first()
         if worker is None:
-            worker = Worker(name=worker_name, status="offline")
+            # Slice 3.2 — 1:1 강제: 같은 desktop 에 admin_agent 이미 있으면 거부.
+            if token_role == "admin_agent":
+                sibling = (
+                    db.query(Worker)
+                    .filter(
+                        Worker.role == "admin_agent",
+                        Worker.parent_worker_id == token_parent,
+                    )
+                    .first()
+                )
+                if sibling is not None:
+                    raise HTTPException(
+                        409,
+                        f"desktop_worker {token_parent} already has admin_agent "
+                        f"(id={sibling.id}); 1:1 enforced",
+                    )
+            worker = Worker(
+                name=worker_name,
+                status="offline",
+                role=token_role,
+                parent_worker_id=token_parent,
+            )
             db.add(worker)
             db.flush()
+        else:
+            # 재발급 — role/parent immutable 검증
+            if worker.role != token_role:
+                raise HTTPException(
+                    409,
+                    f"worker {worker_name!r} already has role={worker.role}; "
+                    f"role is immutable (cannot re-enroll as {token_role})",
+                )
+            if worker.parent_worker_id != token_parent:
+                raise HTTPException(
+                    409,
+                    f"worker {worker_name!r} already has parent_worker_id="
+                    f"{worker.parent_worker_id}; parent is immutable",
+                )
 
         raw_token = _secrets.token_urlsafe(32)
         worker.token_hash = hash_password(raw_token)  # [LEGACY] 폐기 예정
@@ -484,12 +538,13 @@ def heartbeat_v2(
                 ensure_ascii=False,
             )
 
-        # Slice 2.1 — Admin Agent identity. 워커가 role/capabilities 명시했으면 갱신.
-        # 기존 워커가 안 보내면 None → 기존 값 유지 (default 'desktop_worker').
-        if req.role is not None:
-            if req.role not in ("desktop_worker", "admin_agent"):
-                raise HTTPException(400, f"invalid role: {req.role}")
-            w.role = req.role
+        # Slice 3.2 — role immutability. heartbeat 는 role 변경 절대 불가.
+        # 토큰 발급 시점에 결정된 role 만 valid; 운영상 변경은 PATCH /role 만.
+        # invalid role 은 400 (악성/실수 워커 빨리 감지), valid role 은 silent
+        # ignore (워커가 옛 코드로 role 보내도 호환).
+        if req.role is not None and req.role not in ("desktop_worker", "admin_agent"):
+            raise HTTPException(400, f"invalid role: {req.role}")
+        # capabilities 는 mutable — 워커 PC 환경 변화 (NSSM 설치 등) 반영.
         if req.capabilities is not None:
             w.capabilities = json.dumps(req.capabilities, ensure_ascii=False)
 
