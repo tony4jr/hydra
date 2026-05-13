@@ -28,6 +28,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 
 from hydra.db import session as _db_session
 from hydra.db.models import TerminalSession, Worker, WorkerCommand
@@ -155,15 +156,13 @@ def open_terminal(
         db.add(ts)
         try:
             db.flush()  # unique index 즉시 평가
-        except Exception as e:
+        except IntegrityError:
+            # partial unique 위반 → 이미 active/pending/closing 세션 있음
             db.rollback()
-            # IntegrityError → 이미 active/pending/closing 세션 있음
-            if "uq_terminal_active_session_per_worker" in str(e) or "UNIQUE" in str(e):
-                raise HTTPException(
-                    409,
-                    f"worker {worker.id} already has an open terminal session",
-                )
-            raise
+            raise HTTPException(
+                409,
+                f"worker {worker.id} already has an open terminal session",
+            )
 
         payload = {
             "session_id": ts.id,
@@ -207,7 +206,9 @@ def close_terminal(
         ts = db.get(TerminalSession, session_id)
         if ts is None:
             raise HTTPException(404, "terminal session not found")
-        if ts.status in ("closed", "timeout", "failed"):
+        # 종료 상태 또는 이미 closing 인 경우 idempotent noop — 중복 명령
+        # 발행 방지 (Codex Slice 4.1a review 권고).
+        if ts.status in ("closed", "timeout", "failed", "closing"):
             return {"ok": True, "status": ts.status, "noop": True}
         ts.status = "closing"
         ts.closing_at = datetime.now(UTC)
@@ -312,10 +313,23 @@ def worker_mark_failed(
     x_terminal_session_token: str = Header(default=""),
     error: str = "",
 ) -> dict:
-    """워커가 shell spawn 실패 등 즉시 fail 보고. pending → failed."""
+    """워커가 shell spawn 실패 등 즉시 fail 보고.
+
+    pending → failed 만 허용 (Codex Slice 4.1a review blocker).
+    active/closing/closed/timeout/failed 에 늦은 /failed 콜백이 와서 덮어쓰는
+    것 금지 — 그러면 partial unique 가 풀려 새 terminal 가 열리는데 실제
+    shell process 는 살아 있을 위험.
+    """
     db = _db_session.SessionLocal()
     try:
         ts = _verify_worker_session(db, session_id, worker, x_terminal_session_token)
+        if ts.status == "failed":
+            return {"ok": True, "status": ts.status, "noop": True}
+        if ts.status != "pending":
+            raise HTTPException(
+                409,
+                f"terminal /failed only valid from pending (current status={ts.status})",
+            )
         ts.status = "failed"
         ts.closed_at = datetime.now(UTC)
         ts.last_activity_at = datetime.now(UTC)

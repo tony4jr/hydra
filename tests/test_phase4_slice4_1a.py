@@ -378,7 +378,7 @@ def test_worker_mark_closed_from_closing(env):
     db.close()
 
 
-def test_worker_mark_failed(env):
+def test_worker_mark_failed_pending_only(env):
     s = _open_session(env)
     h = {
         "X-Worker-Token": env["agent_token"],
@@ -390,6 +390,53 @@ def test_worker_mark_failed(env):
     )
     assert r.status_code == 200
     assert r.json()["status"] == "failed"
+
+
+def test_worker_mark_failed_rejects_non_pending(env):
+    """Codex Slice 4.1a blocker: active 등 non-pending 에 /failed 콜백 오면 409.
+    pending 외 상태 덮어쓰면 lifecycle invariant 깨짐.
+    """
+    s = _open_session(env)
+    h = {
+        "X-Worker-Token": env["agent_token"],
+        "X-Terminal-Session-Token": s["session_token"],
+    }
+    # pending → active
+    env["client"].post(f"/api/workers/terminal/{s['session_id']}/active", headers=h)
+    # 늦은 /failed 콜백 → 409
+    r = env["client"].post(
+        f"/api/workers/terminal/{s['session_id']}/failed?error=late",
+        headers=h,
+    )
+    assert r.status_code == 409
+    db = env["Session"]()
+    ts = db.get(TerminalSession, s["session_id"])
+    assert ts.status == "active"  # 변경 안 됨
+    db.close()
+
+
+def test_admin_close_terminal_noop_when_already_closing(env):
+    """이미 closing 상태에 close 재호출 → noop, 중복 close command 발행 안 됨."""
+    s = _open_session(env)
+    sid = s["session_id"]
+    # 첫 close → closing
+    r1 = env["client"].post(f"/api/admin/terminal/{sid}/close", headers=_admin(env))
+    assert r1.status_code == 200
+    assert r1.json()["status"] == "closing"
+    first_cmd_id = r1.json().get("command_id")
+    # 두 번째 close → noop, 새 command 없음
+    r2 = env["client"].post(f"/api/admin/terminal/{sid}/close", headers=_admin(env))
+    assert r2.status_code == 200
+    assert r2.json().get("noop") is True
+    assert "command_id" not in r2.json() or r2.json().get("command_id") is None
+    # DB 의 terminal_close command 개수는 1개만
+    db = env["Session"]()
+    cnt = db.query(WorkerCommand).filter(
+        WorkerCommand.worker_id == env["agent_id"],
+        WorkerCommand.command == "terminal_close",
+    ).count()
+    assert cnt == 1
+    db.close()
 
 
 # ───────── 7. closing 60s forced close hook ─────────
