@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { RefreshCw, Terminal, Send, AlertTriangle } from 'lucide-react'
+import { RefreshCw, Terminal, Send, AlertTriangle, Power, Zap, X } from 'lucide-react'
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from '@/components/ui/sheet'
@@ -334,6 +334,305 @@ function CommandsTab({ workerId }: { workerId: number }) {
   )
 }
 
+// ─────────────── Phase 4 Web Terminal Tab ───────────────
+
+interface TerminalSessionState {
+  session_id: number
+  session_token: string
+  status: string
+}
+
+interface TerminalChunkEntry {
+  id: number
+  stream: 'stdout' | 'stderr'
+  seq: number
+  data: string
+  byte_size: number
+  produced_at: string
+}
+
+function TerminalTab({ workerId }: { workerId: number }) {
+  const [session, setSession] = useState<TerminalSessionState | null>(null)
+  const [chunks, setChunks] = useState<TerminalChunkEntry[]>([])
+  const [totalBytes, setTotalBytes] = useState(0)
+  const [maxBytes, setMaxBytes] = useState(10 * 1024 * 1024)
+  const [inputText, setInputText] = useState('')
+  const [opening, setOpening] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [interrupting, setInterrupting] = useState(false)
+  const [autoScroll, setAutoScroll] = useState(true)
+  const lastIdRef = useRef<number>(0)
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  const openTerminal = async () => {
+    setOpening(true)
+    try {
+      const r = await fetchApi<{
+        session_id: number
+        session_token: string
+        status: string
+        worker_id: number
+      }>(`/api/admin/workers/${workerId}/terminal/open`, {
+        method: 'POST',
+        body: JSON.stringify({ shell: 'powershell' }),
+      })
+      setSession({
+        session_id: r.session_id,
+        session_token: r.session_token,
+        status: r.status,
+      })
+      lastIdRef.current = 0
+      setChunks([])
+      setTotalBytes(0)
+      toast.success('터미널 세션 열림', {
+        description: `worker_id=${r.worker_id}, session=${r.session_id}`,
+      })
+    } catch (e) {
+      toast.error('터미널 open 실패', {
+        description: e instanceof Error ? e.message : String(e),
+      })
+    } finally {
+      setOpening(false)
+    }
+  }
+
+  const closeTerminal = async (silent: boolean = false) => {
+    if (!session) return
+    try {
+      await fetchApi(`/api/admin/terminal/${session.session_id}/close`, {
+        method: 'POST',
+      })
+      if (!silent) toast.success('터미널 close 요청')
+    } catch (e) {
+      if (!silent) {
+        toast.error('close 실패', {
+          description: e instanceof Error ? e.message : String(e),
+        })
+      }
+    } finally {
+      setSession(null)
+    }
+  }
+
+  const interruptTerminal = async () => {
+    if (!session) return
+    setInterrupting(true)
+    try {
+      await fetchApi(`/api/admin/terminal/${session.session_id}/interrupt`, {
+        method: 'POST',
+      })
+      toast.success('interrupt 발행 (process tree kill)')
+    } catch (e) {
+      toast.error('interrupt 실패', {
+        description: e instanceof Error ? e.message : String(e),
+      })
+    } finally {
+      setInterrupting(false)
+    }
+  }
+
+  const sendInput = async () => {
+    if (!session) return
+    const data = inputText
+    if (!data) return
+    setSending(true)
+    try {
+      // PowerShell 은 Enter 필요. textarea 입력 끝에 \n 보장.
+      const payload = data.endsWith('\n') ? data : data + '\n'
+      await fetchApi(`/api/admin/terminal/${session.session_id}/input`, {
+        method: 'POST',
+        body: JSON.stringify({ data: payload }),
+      })
+      setInputText('')
+    } catch (e) {
+      toast.error('input 실패', {
+        description: e instanceof Error ? e.message : String(e),
+      })
+    } finally {
+      setSending(false)
+    }
+  }
+
+  // chunks polling
+  useEffect(() => {
+    if (!session) return
+    let cancelled = false
+    const poll = async () => {
+      if (cancelled || !session) return
+      try {
+        const r = await fetchApi<{
+          chunks: TerminalChunkEntry[]
+          session_status: string
+          total_bytes: number
+          max_total_bytes: number
+        }>(`/api/admin/terminal/${session.session_id}/chunks?after_id=${lastIdRef.current}`)
+        if (cancelled) return
+        if (r.chunks.length > 0) {
+          setChunks(prev => [...prev, ...r.chunks].slice(-2000))
+          lastIdRef.current = r.chunks[r.chunks.length - 1].id
+        }
+        setTotalBytes(r.total_bytes)
+        setMaxBytes(r.max_total_bytes)
+        if (r.session_status !== session.status) {
+          setSession(prev => prev ? { ...prev, status: r.session_status } : null)
+        }
+        if (['closed', 'timeout', 'failed'].includes(r.session_status)) {
+          // server 가 이미 종료 → drawer 측 session 정리
+          setSession(null)
+        }
+      } catch {
+        // 무시
+      }
+    }
+    poll()
+    const id = setInterval(poll, 800)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [session?.session_id])
+
+  // autoscroll
+  useEffect(() => {
+    if (autoScroll && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    }
+  }, [chunks, autoScroll])
+
+  // drawer 닫힐 때 자동 close (Phase 4 plan v3: 안전망)
+  useEffect(() => {
+    return () => {
+      // unmount 시 best-effort close
+      if (session) {
+        fetchApi(`/api/admin/terminal/${session.session_id}/close`, {
+          method: 'POST',
+        }).catch(() => undefined)
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const statusColor: Record<string, string> = {
+    pending: 'text-amber-500',
+    active: 'text-emerald-500',
+    closing: 'text-amber-500',
+    closed: 'text-muted-foreground',
+    timeout: 'text-orange-500',
+    failed: 'text-destructive',
+  }
+
+  if (!session) {
+    return (
+      <div className='flex flex-col h-full gap-3'>
+        <div className='rounded-md border border-sky-500/30 bg-sky-500/5 p-3 text-xs flex items-start gap-2'>
+          <Terminal className='h-4 w-4 text-sky-500 shrink-0 mt-0.5' />
+          <div className='space-y-1'>
+            <p className='font-medium text-foreground'>웹 터미널 (Phase 4)</p>
+            <p className='text-muted-foreground'>
+              admin_agent 워커 PC 의 PowerShell 을 인터랙티브로 연결. 같은 세션에서
+              cd / env 유지. 10MB / 4시간 / 15분 idle 자동 종료.
+            </p>
+          </div>
+        </div>
+        <Button
+          onClick={openTerminal}
+          disabled={opening}
+          className='w-full'
+        >
+          <Power className='h-4 w-4 mr-2' />
+          {opening ? '세션 여는 중...' : '터미널 세션 열기'}
+        </Button>
+        <p className='text-[11px] text-muted-foreground'>
+          desktop_worker 워커 id 로 발행해도 paired admin_agent 로 자동 라우팅됩니다.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className='flex flex-col h-full gap-2'>
+      <div className='flex items-center gap-2 flex-wrap'>
+        <span className='text-xs text-muted-foreground'>session</span>
+        <span className='font-mono text-xs'>#{session.session_id}</span>
+        <span className={`text-xs font-medium ${statusColor[session.status] || ''}`}>
+          {session.status}
+        </span>
+        <span className='text-[11px] text-muted-foreground ml-2'>
+          {(totalBytes / 1024).toFixed(1)} / {(maxBytes / 1024 / 1024).toFixed(0)} MB
+        </span>
+        <label className='flex items-center gap-1.5 text-xs text-muted-foreground ml-auto'>
+          <input type='checkbox' checked={autoScroll} onChange={e => setAutoScroll(e.target.checked)} />
+          자동 스크롤
+        </label>
+        <Button
+          variant='outline'
+          size='sm'
+          onClick={interruptTerminal}
+          disabled={interrupting}
+          className='h-7 px-2 text-xs'
+        >
+          <Zap className='h-3 w-3 mr-1' />
+          interrupt
+        </Button>
+        <Button
+          variant='outline'
+          size='sm'
+          onClick={() => closeTerminal()}
+          className='h-7 px-2 text-xs'
+        >
+          <X className='h-3 w-3 mr-1' />
+          close
+        </Button>
+      </div>
+      <div
+        ref={scrollRef}
+        className='flex-1 min-h-0 overflow-y-auto rounded-md border bg-black/90 p-2 font-mono text-[11px] leading-snug text-green-200'
+      >
+        {chunks.length === 0 ? (
+          <div className='text-muted-foreground/60 text-center py-8'>
+            output 대기 중...
+          </div>
+        ) : (
+          chunks.map(c => (
+            <span
+              key={c.id}
+              className={c.stream === 'stderr' ? 'text-red-400 whitespace-pre-wrap' : 'whitespace-pre-wrap'}
+            >
+              {c.data}
+            </span>
+          ))
+        )}
+      </div>
+      <div className='flex gap-2'>
+        <Textarea
+          placeholder='명령 입력 (Enter 자동). Shift+Enter 는 줄바꿈'
+          value={inputText}
+          onChange={(e) => setInputText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              sendInput()
+            }
+          }}
+          className='text-xs font-mono min-h-[48px] flex-1'
+          disabled={sending || session.status !== 'active'}
+        />
+        <Button
+          onClick={sendInput}
+          disabled={sending || !inputText || session.status !== 'active'}
+          className='self-stretch'
+        >
+          <Send className='h-3 w-3 mr-1' />
+          send
+        </Button>
+      </div>
+      {session.status !== 'active' && (
+        <p className='text-[11px] text-amber-500'>
+          {session.status === 'pending' ? '워커 spawn 대기 중...' : '세션이 active 가 아니라 입력 불가'}
+        </p>
+      )}
+    </div>
+  )
+}
+
+
 export function WorkerDebugDrawer({
   worker,
   open,
@@ -401,15 +700,19 @@ export function WorkerDebugDrawer({
         </div>
 
         <Tabs defaultValue='logs' className='flex-1 min-h-0 flex flex-col'>
-          <TabsList className='grid grid-cols-2'>
+          <TabsList className='grid grid-cols-3'>
             <TabsTrigger value='logs'>라이브 로그</TabsTrigger>
             <TabsTrigger value='commands'>명령 이력</TabsTrigger>
+            <TabsTrigger value='terminal'>웹 터미널</TabsTrigger>
           </TabsList>
           <TabsContent value='logs' className='flex-1 min-h-0 mt-3'>
             <LogTailTab workerId={worker.id} verbose={verbose} />
           </TabsContent>
           <TabsContent value='commands' className='flex-1 min-h-0 mt-3'>
             <CommandsTab workerId={worker.id} />
+          </TabsContent>
+          <TabsContent value='terminal' className='flex-1 min-h-0 mt-3'>
+            <TerminalTab workerId={worker.id} />
           </TabsContent>
         </Tabs>
       </SheetContent>
