@@ -213,10 +213,15 @@ def close_terminal(
         ts.status = "closing"
         ts.closing_at = datetime.now(UTC)
         ts.last_activity_at = datetime.now(UTC)
+        # Slice 4.1b — worker dispatcher 가 session_token 도 필요로 함
+        # (callback POST 인증 + registry 조회). payload 에 같이 박음.
         cmd = WorkerCommand(
             worker_id=ts.worker_id,
             command="terminal_close",
-            payload=json.dumps({"session_id": ts.id}, ensure_ascii=False),
+            payload=json.dumps(
+                {"session_id": ts.id, "session_token": ts.session_token},
+                ensure_ascii=False,
+            ),
             status="pending",
             issued_by=session.get("user_id"),
             issued_at=datetime.now(UTC),

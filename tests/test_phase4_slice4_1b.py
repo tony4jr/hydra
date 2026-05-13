@@ -124,7 +124,7 @@ def test_open_session_idempotent_when_existing_alive(monkeypatch):
     """같은 session_id 재요청 시 spawn 호출 안 함, active POST 만 재시도."""
     from worker import agent_terminal as _term
     fake_proc = _fake_alive_proc(pid=2222)
-    _term._REGISTRY[5] = fake_proc
+    _term._REGISTRY[5] = {"proc": fake_proc, "session_token": "tok-5", "shell": "powershell"}
 
     client = _make_client(active_ok=True)
     with patch.object(_term, "_spawn_shell") as mspawn:
@@ -141,14 +141,15 @@ def test_open_session_cleans_up_dead_registry(monkeypatch):
     from worker import agent_terminal as _term
     dead_proc = MagicMock()
     dead_proc.poll.return_value = 1  # 죽음
-    _term._REGISTRY[3] = dead_proc
+    _term._REGISTRY[3] = {"proc": dead_proc, "session_token": "tok-old", "shell": "powershell"}
 
     new_proc = _fake_alive_proc(pid=3333)
     client = _make_client(active_ok=True)
     with patch.object(_term, "_spawn_shell", return_value=new_proc):
         out = _term.open_session(client, 3, "tok-3", "powershell")
     assert out["ok"] is True
-    assert _term._REGISTRY[3].pid == 3333
+    assert _term._REGISTRY[3]["proc"].pid == 3333
+    assert _term._REGISTRY[3]["session_token"] == "tok-3"
 
 
 def test_open_session_active_post_fail_kills_process(monkeypatch):
@@ -198,7 +199,7 @@ def test_close_session_terminates_and_posts_closed(monkeypatch):
     from worker import agent_terminal as _term
     proc = _fake_alive_proc(pid=6666)
     proc.wait.side_effect = [None]  # terminate 후 wait 성공
-    _term._REGISTRY[12] = proc
+    _term._REGISTRY[12] = {"proc": proc, "session_token": "tok-12", "shell": "powershell"}
     client = _make_client()
     out = _term.close_session(client, 12, "tok-12")
     assert out["ok"] is True
@@ -225,8 +226,8 @@ def test_shutdown_all_terminates_all_registered():
     p1.wait.side_effect = [None]
     p2 = _fake_alive_proc(pid=7002)
     p2.wait.side_effect = [None]
-    _term._REGISTRY[1] = p1
-    _term._REGISTRY[2] = p2
+    _term._REGISTRY[1] = {"proc": p1, "session_token": "tok-1", "shell": "powershell"}
+    _term._REGISTRY[2] = {"proc": p2, "session_token": "tok-2", "shell": "powershell"}
     n = _term.shutdown_all()
     assert n == 2
     assert len(_term._REGISTRY) == 0
@@ -238,8 +239,8 @@ def test_get_registered_sessions_filters_dead():
     from worker import agent_terminal as _term
     alive = _fake_alive_proc(pid=8001)
     dead = MagicMock(); dead.poll.return_value = 1
-    _term._REGISTRY[1] = alive
-    _term._REGISTRY[2] = dead
+    _term._REGISTRY[1] = {"proc": alive, "session_token": "t1", "shell": "powershell"}
+    _term._REGISTRY[2] = {"proc": dead, "session_token": "t2", "shell": "powershell"}
     assert _term.get_registered_sessions() == [1]
 
 
@@ -292,6 +293,81 @@ def test_dispatcher_terminal_open_calls_open_session(monkeypatch):
     assert body["status"] == "done"
     result = json.loads(body["result"])
     assert result["pid"] == 9999
+
+
+def test_server_close_payload_contract_carries_session_token(monkeypatch):
+    """Codex Slice 4.1b 핵심 reject 검증: 서버가 발행하는 terminal_close
+    payload 가 worker dispatcher 가 요구하는 session_token 을 포함해야 함.
+    """
+    import hashlib, json as _json
+    from datetime import UTC, datetime, timedelta
+    import jwt as _jwt
+    from fastapi.testclient import TestClient
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+    import hydra.db.session as session_mod
+    from hydra.core.auth import hash_password
+    from hydra.db.models import Base, Worker, WorkerCommand, TerminalSession
+
+    def _sha(s):
+        return hashlib.sha256(s.encode()).hexdigest()
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    TestSession = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+    monkeypatch.setattr(session_mod, "engine", engine)
+    monkeypatch.setattr(session_mod, "SessionLocal", TestSession)
+    monkeypatch.setenv("JWT_SECRET", "test-jwt-secret-123456789")
+    monkeypatch.setenv("ENROLLMENT_SECRET", "x"*32)
+    monkeypatch.setenv("HYDRA_ENCRYPTION_KEY", "inH7FBGqG6Xdp/DZU7s1CXal+EreHfYZrnOn9xbM0C4=")
+
+    db = TestSession()
+    dtoken = "d-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    d = Worker(name="d-1", token_hash=hash_password(dtoken),
+               token_sha256=_sha(dtoken), token_prefix=dtoken[:8],
+               role="desktop_worker")
+    db.add(d); db.commit(); db.refresh(d)
+    atoken = "a-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    a = Worker(name="a-1", token_hash=hash_password(atoken),
+               token_sha256=_sha(atoken), token_prefix=atoken[:8],
+               role="admin_agent", parent_worker_id=d.id)
+    db.add(a); db.commit(); db.refresh(a)
+    aid = a.id
+    db.close()
+
+    from hydra.web.app import app
+    client = TestClient(app)
+    now = datetime.now(UTC)
+    admin_jwt = _jwt.encode(
+        {"user_id": 1, "role": "admin", "iat": now, "exp": now + timedelta(hours=1)},
+        "test-jwt-secret-123456789", algorithm="HS256",
+    )
+    headers = {"Authorization": f"Bearer {admin_jwt}"}
+
+    r1 = client.post(
+        f"/api/admin/workers/{aid}/terminal/open",
+        headers=headers, json={"shell": "powershell"},
+    )
+    sid = r1.json()["session_id"]
+    r2 = client.post(f"/api/admin/terminal/{sid}/close", headers=headers)
+    assert r2.status_code == 200
+
+    db = TestSession()
+    close_cmd = db.query(WorkerCommand).filter_by(command="terminal_close").first()
+    payload = _json.loads(close_cmd.payload)
+    # Codex blocker fix: payload 에 session_token 포함 필수
+    assert "session_token" in payload, (
+        "server terminal_close payload missing session_token — worker dispatcher will fail"
+    )
+    assert payload["session_id"] == sid
+    assert isinstance(payload["session_token"], str) and len(payload["session_token"]) > 30
+    db.close()
+    engine.dispose()
 
 
 def test_dispatcher_terminal_close_calls_close_session(monkeypatch):

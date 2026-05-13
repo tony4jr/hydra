@@ -27,8 +27,10 @@ if TYPE_CHECKING:
     from worker.client import ServerClient
 
 
-# session_id → Popen
-_REGISTRY: dict[int, subprocess.Popen] = {}
+# session_id → {"proc": Popen, "session_token": str, "shell": str}
+# Codex Slice 4.1b 권고: token 도 함께 보관해서 close/shutdown 시 callback
+# 가능. lock 은 dict 조작만 보호 (network call 은 lock 밖).
+_REGISTRY: dict[int, dict] = {}
 _REGISTRY_LOCK = threading.Lock()
 
 
@@ -142,50 +144,62 @@ def open_session(
     1. registry 에 session_id 있고 살아있음 → no-op, active POST 재시도
     2. registry 에 있지만 죽음 → 정리 후 새로 spawn
     3. spawn 성공 → active POST → 실패 시 kill + failed POST
+
+    Codex Slice 4.1b 권고: network call 은 lock 밖에서 수행 (다른 thread
+    의 registry 조회 지연 회피).
     """
+    # 1) lock 안: 기존 session 검사. spawn / network 는 밖에서.
     with _REGISTRY_LOCK:
         existing = _REGISTRY.get(session_id)
-        if existing is not None:
-            if _is_alive(existing):
-                # idempotent — active POST 재시도 (lease redelivery 케이스)
-                ok = _post_active(client, session_id, session_token)
-                return {"ok": ok, "noop": True, "pid": existing.pid}
-            # dead — 정리 후 재시도
+        existing_proc = existing.get("proc") if existing else None
+        existing_alive = existing_proc is not None and _is_alive(existing_proc)
+        if existing and not existing_alive:
+            # dead — 정리
             _REGISTRY.pop(session_id, None)
 
-        try:
-            proc = _spawn_shell(shell)
-        except Exception as e:
-            _post_failed(client, session_id, session_token, f"spawn_error:{type(e).__name__}")
-            return {"ok": False, "error": f"spawn_error: {e}"}
+    if existing_alive:
+        # idempotent — active POST 재시도 (lease redelivery 케이스).
+        ok = _post_active(client, session_id, session_token)
+        return {"ok": ok, "noop": True, "pid": existing_proc.pid}
 
-        # spawn 직후 process 가 즉시 죽었는지 점검 (잘못된 shell 등)
-        try:
-            rc = proc.wait(timeout=0.1)
-        except subprocess.TimeoutExpired:
-            rc = None
-        if rc is not None:
-            _post_failed(
-                client, session_id, session_token,
-                f"spawn_exited:rc={rc}",
-            )
-            return {"ok": False, "error": f"spawn exited rc={rc}"}
+    # 2) spawn — lock 밖
+    try:
+        proc = _spawn_shell(shell)
+    except Exception as e:
+        _post_failed(client, session_id, session_token, f"spawn_error:{type(e).__name__}")
+        return {"ok": False, "error": f"spawn_error: {e}"}
 
-        # active POST 시도 — 실패 시 process kill + failed POST
-        if not _post_active(client, session_id, session_token):
+    # spawn 직후 process 가 즉시 죽었는지 점검 (잘못된 shell 등)
+    try:
+        rc = proc.wait(timeout=0.1)
+    except subprocess.TimeoutExpired:
+        rc = None
+    if rc is not None:
+        _post_failed(
+            client, session_id, session_token,
+            f"spawn_exited:rc={rc}",
+        )
+        return {"ok": False, "error": f"spawn exited rc={rc}"}
+
+    # 3) active POST — lock 밖
+    if not _post_active(client, session_id, session_token):
+        try:
+            proc.terminate()
+            proc.wait(timeout=2)
+        except Exception:
             try:
-                proc.terminate()
-                proc.wait(timeout=2)
+                proc.kill()
             except Exception:
-                try:
-                    proc.kill()
-                except Exception:
-                    pass
-            _post_failed(client, session_id, session_token, "active_post_failed")
-            return {"ok": False, "error": "active_post_failed"}
+                pass
+        _post_failed(client, session_id, session_token, "active_post_failed")
+        return {"ok": False, "error": "active_post_failed"}
 
-        _REGISTRY[session_id] = proc
-        return {"ok": True, "pid": proc.pid}
+    # 4) lock 안: registry 등록
+    with _REGISTRY_LOCK:
+        _REGISTRY[session_id] = {
+            "proc": proc, "session_token": session_token, "shell": shell,
+        }
+    return {"ok": True, "pid": proc.pid}
 
 
 def close_session(
@@ -195,9 +209,12 @@ def close_session(
 ) -> dict:
     """admin agent terminal session 종료. terminate (5s) → kill fallback.
     server 에 closed POST.
+
+    network call 은 lock 밖.
     """
     with _REGISTRY_LOCK:
-        proc = _REGISTRY.pop(session_id, None)
+        entry = _REGISTRY.pop(session_id, None)
+    proc = entry.get("proc") if entry else None
 
     if proc is not None and _is_alive(proc):
         try:
@@ -227,9 +244,11 @@ def shutdown_all(client: Optional["ServerClient"] = None) -> int:
         items = list(_REGISTRY.items())
         _REGISTRY.clear()
     count = 0
-    for sid, proc in items:
+    for sid, entry in items:
+        proc = entry.get("proc")
+        token = entry.get("session_token", "")
         try:
-            if _is_alive(proc):
+            if proc is not None and _is_alive(proc):
                 try:
                     proc.terminate()
                     try:
@@ -242,6 +261,12 @@ def shutdown_all(client: Optional["ServerClient"] = None) -> int:
                         proc.kill()
                     except Exception:
                         pass
+            # client 가 있으면 closed POST (lock 밖)
+            if client is not None and token:
+                try:
+                    _post_closed(client, sid, token)
+                except Exception:
+                    pass
             count += 1
         except Exception:
             pass
@@ -251,7 +276,7 @@ def shutdown_all(client: Optional["ServerClient"] = None) -> int:
 def get_registered_sessions() -> list[int]:
     """현재 살아있는 session_id 리스트 — 4.3 stale recovery hook 용."""
     with _REGISTRY_LOCK:
-        return [sid for sid, p in _REGISTRY.items() if _is_alive(p)]
+        return [sid for sid, e in _REGISTRY.items() if _is_alive(e.get("proc"))]
 
 
 def clear_registry_for_testing() -> None:
