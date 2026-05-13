@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Copy, Check, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -24,6 +24,15 @@ interface EnrollResponse {
   enrollment_token: string
   install_command: string
   expires_in_hours: number
+  role?: string
+  parent_worker_id?: number | null
+}
+
+interface WorkerSummary {
+  id: number
+  name: string
+  role: string
+  parent_worker_id: number | null
 }
 
 /**
@@ -41,9 +50,21 @@ export function WorkerAddDialog({
 }: WorkerAddDialogProps) {
   const [name, setName] = useState('')
   const [ttlHours, setTtlHours] = useState(24)
+  const [role, setRole] = useState<'desktop_worker' | 'admin_agent'>('desktop_worker')
+  const [parentWorkerId, setParentWorkerId] = useState<number | null>(null)
+  const [desktops, setDesktops] = useState<WorkerSummary[]>([])
   const [creating, setCreating] = useState(false)
   const [result, setResult] = useState<EnrollResponse | null>(null)
   const [copied, setCopied] = useState(false)
+
+  // admin_agent 선택 시 paired desktop_worker 목록 로드
+  useEffect(() => {
+    if (!open) return
+    if (role !== 'admin_agent') return
+    fetchApi<WorkerSummary[]>('/api/admin/workers/')
+      .then((rows) => setDesktops(rows.filter((w) => w.role === 'desktop_worker')))
+      .catch(() => undefined)
+  }, [open, role])
 
   const handleCreate = async () => {
     const worker_name = name.trim()
@@ -51,13 +72,25 @@ export function WorkerAddDialog({
       toast.error('워커 이름을 입력해주세요')
       return
     }
+    if (role === 'admin_agent' && !parentWorkerId) {
+      toast.error('admin_agent 는 parent desktop_worker 선택 필수')
+      return
+    }
     setCreating(true)
     try {
+      const body: Record<string, unknown> = {
+        worker_name,
+        ttl_hours: ttlHours,
+        role,
+      }
+      if (role === 'admin_agent') {
+        body.parent_worker_id = parentWorkerId
+      }
       const data = await fetchApi<EnrollResponse>(
         '/api/admin/workers/enroll',
         {
           method: 'POST',
-          body: JSON.stringify({ worker_name, ttl_hours: ttlHours }),
+          body: JSON.stringify(body),
         },
       )
       setResult(data)
@@ -81,6 +114,8 @@ export function WorkerAddDialog({
     if (!v) {
       setName('')
       setTtlHours(24)
+      setRole('desktop_worker')
+      setParentWorkerId(null)
       setResult(null)
       setCopied(false)
     }
@@ -187,6 +222,58 @@ export function WorkerAddDialog({
                 고유 식별자. 같은 이름으로 재발급 시 토큰만 회전됩니다.
               </p>
             </div>
+
+            <div className='space-y-2'>
+              <Label>역할 (role)</Label>
+              <div className='grid grid-cols-2 gap-2'>
+                <Button
+                  type='button'
+                  variant={role === 'desktop_worker' ? 'default' : 'outline'}
+                  size='sm'
+                  onClick={() => setRole('desktop_worker')}
+                  disabled={creating}
+                  className='h-9'
+                >
+                  desktop_worker
+                </Button>
+                <Button
+                  type='button'
+                  variant={role === 'admin_agent' ? 'default' : 'outline'}
+                  size='sm'
+                  onClick={() => setRole('admin_agent')}
+                  disabled={creating}
+                  className='h-9'
+                >
+                  admin_agent
+                </Button>
+              </div>
+              <p className='text-xs text-muted-foreground'>
+                desktop_worker = 자동화 task. admin_agent = PC 관리 / 웹 터미널 (NSSM service).
+              </p>
+            </div>
+
+            {role === 'admin_agent' && (
+              <div className='space-y-2'>
+                <Label htmlFor='parent'>Paired desktop_worker</Label>
+                <select
+                  id='parent'
+                  value={parentWorkerId ?? ''}
+                  onChange={(e) => setParentWorkerId(e.target.value ? Number(e.target.value) : null)}
+                  disabled={creating}
+                  className='h-9 w-full rounded-md border border-input bg-background px-3 text-sm'
+                >
+                  <option value=''>-- 선택 --</option>
+                  {desktops.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      #{w.id} {w.name}
+                    </option>
+                  ))}
+                </select>
+                <p className='text-xs text-muted-foreground'>
+                  같은 PC 의 desktop_worker. 1:1 강제.
+                </p>
+              </div>
+            )}
 
             <div className='space-y-2'>
               <Label htmlFor='ttl'>만료 시간 (시간)</Label>
