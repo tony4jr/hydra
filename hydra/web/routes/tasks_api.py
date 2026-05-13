@@ -10,14 +10,15 @@ Legacy `/api/tasks/fetch`, `/complete`, `/fail` (hydra.api.tasks) 는 공존 유
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import or_, text
 
 from sqlalchemy import func
 
+from hydra.core.config import settings
 from hydra.db import session as _db_session
 from hydra.db.models import (
     Account, ActionLog, ProfileLock, Task, Worker, WorkerProgress, WorkerSession,
@@ -67,6 +68,55 @@ router = APIRouter()
 
 
 _AUTO_ASSIGN_TYPES = {"comment", "reply", "like", "like_boost", "subscribe"}
+_TARGET_REQUIRED_TYPES = {"reply", "like_boost"}
+
+
+def _json_dict(raw: str | None) -> dict:
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _payload_target_comment_id(task: "Task") -> str:
+    payload = _json_dict(task.payload)
+    value = payload.get("target_comment_id")
+    return str(value).strip() if value is not None else ""
+
+
+def _result_comment_id(task: "Task") -> str:
+    result = _json_dict(task.result)
+    for key in ("youtube_comment_id", "comment_id", "reply_id"):
+        value = result.get(key)
+        if value:
+            return str(value).strip()
+    return ""
+
+
+def _guard_unenriched_child(db, task: "Task") -> bool:
+    """reply/like_boost child task 의 target 없는 dispatch 차단.
+
+    parent 가 done 인데 result 에 댓글 id 가 없으면 재시도해도 복구 불가하므로
+    fetch 시점에서 즉시 failed 처리한다. parent id 가 아직 없거나 enrichment 전이면
+    후보에서만 제외한다.
+    """
+    if task.task_type not in _TARGET_REQUIRED_TYPES:
+        return True
+    if not task.parent_task_id:
+        return True
+    if _payload_target_comment_id(task):
+        return True
+
+    parent = db.get(Task, task.parent_task_id)
+    if parent is not None and parent.status == "done" and not _result_comment_id(parent):
+        task.status = "failed"
+        task.error_message = "parent_comment_id_missing"
+        task.completed_at = datetime.now(UTC)
+        db.commit()
+    return False
 
 
 def _auto_assign_account(db, task: "Task") -> bool:
@@ -87,6 +137,8 @@ def _auto_assign_account(db, task: "Task") -> bool:
 
     now = datetime.now(UTC)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    recent_cooldown_min = int(getattr(settings, "account_recent_cooldown_min", 15))
+    recent_cutoff = now - timedelta(minutes=max(0, recent_cooldown_min))
     dialect = db.bind.dialect.name
 
     # task_type 카테고리에 따라 카운트할 ActionLog.action_type + 적용할 limit 컬럼 분기.
@@ -125,6 +177,28 @@ def _auto_assign_account(db, task: "Task") -> bool:
         .filter(
             (Account.identity_challenge_until.is_(None))
             | (Account.identity_challenge_until <= now)
+        )
+        # 의미없는 cold start churn 방지: 최근 작업/액션이 있었던 계정은 짧게 쉬게 한다.
+        .filter(
+            ~Account.id.in_(
+                db.query(Task.account_id)
+                .filter(
+                    Task.account_id.isnot(None),
+                    or_(
+                        Task.started_at >= recent_cutoff,
+                        Task.completed_at >= recent_cutoff,
+                    ),
+                )
+            )
+        )
+        .filter(
+            ~Account.id.in_(
+                db.query(ActionLog.account_id)
+                .filter(
+                    ActionLog.account_id.isnot(None),
+                    ActionLog.created_at >= recent_cutoff,
+                )
+            )
         )
         # 한도 100% 도달한 계정 제외 (단, limit_col 이 NULL 인 경우는 통과)
         .filter((limit_col.is_(None)) | (today_n < limit_col))
@@ -263,6 +337,8 @@ def fetch_tasks(worker: Worker = Depends(worker_auth)) -> dict:
                 continue
             # 워커 역할(allow_preparation/allow_campaign) 가드 — legacy 와 동일 정책.
             if not _role_allows(worker, candidate.task_type):
+                continue
+            if not _guard_unenriched_child(db, candidate):
                 continue
             # Auto-assign account_id for unassigned campaign/scenario tasks.
             # Skips candidate if no idle active account is available right now —

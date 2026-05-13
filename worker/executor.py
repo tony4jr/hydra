@@ -34,6 +34,10 @@ from worker.account_snapshot import AccountSnapshot
 from hydra.browser.adspower import adspower
 
 
+def _raise_task_error(action: str, error: str) -> None:
+    raise RuntimeError(json.dumps({"action": action, "error": error}, ensure_ascii=False))
+
+
 class TaskExecutor:
     def __init__(self):
         self.handlers = {
@@ -198,10 +202,12 @@ class TaskExecutor:
 
     async def _handle_reply(self, task: dict, payload: dict, session: WorkerSession) -> str:
         """댓글에 대댓글 작성."""
-        page = session.browser.page
         video_id = payload.get("video_id", "")
-        target_comment_selector = payload.get("target_selector", "")
+        target = (payload.get("target_selector") or payload.get("target_comment_id") or "").strip()
         text = payload.get("text", "")
+
+        if not target:
+            _raise_task_error("reply", "no_target")
 
         # AI 자동 생성 (text가 없는 경우)
         if not text and payload.get("ai_generated") is not True:
@@ -214,6 +220,7 @@ class TaskExecutor:
         if not text:
             return json.dumps({"action": "reply", "error": "no_text"})
 
+        page = session.browser.page
         await self._navigate_to_video(session, video_id, payload.get("video_title", ""))
 
         # 댓글 영역으로 스크롤
@@ -221,7 +228,9 @@ class TaskExecutor:
         await random_delay(2.0, 5.0)
 
         # 대댓글 작성
-        reply_id = await post_reply(page, target_comment_selector, text)
+        reply_id = await post_reply(page, target, text)
+        if reply_id is None:
+            _raise_task_error("reply", "target_reply_failed")
 
         return json.dumps({
             "action": "reply",
@@ -252,9 +261,10 @@ class TaskExecutor:
 
     async def _handle_like_boost(self, task: dict, payload: dict, session: WorkerSession) -> str:
         """댓글 좋아요 부스트 — 위장용 댓글도 함께 좋아요."""
-        page = session.browser.page
         video_id = payload["video_id"]
-        target_comment_id = payload.get("target_comment_id", "")
+        target_comment_id = str(payload.get("target_comment_id") or "").strip()
+        if not target_comment_id:
+            _raise_task_error("like_boost", "no_target")
 
         # 타이밍 설정 — VPS 가 task payload 에 like_boost_config 를 동봉하면 사용,
         # 없으면 DEFAULTS. 워커는 로컬 DB 를 보지 않는다 (M1-12).
@@ -266,6 +276,7 @@ class TaskExecutor:
                 if k in tc and v is not None:
                     tc[k] = v
 
+        page = session.browser.page
         await self._navigate_to_video(session, video_id, payload.get("video_title", ""))
 
         # 영상 잠시 시청
@@ -306,18 +317,20 @@ class TaskExecutor:
 
         # 타겟 댓글 좋아요
         target_liked = False
-        if target_comment_id:
-            target_sel = f"ytd-comment-thread-renderer[comment-id='{target_comment_id}']"
-            target_like = page.locator(
-                f"{target_sel} like-button-view-model button, "
-                f"{target_sel} yt-icon-button#like-button"
-            )
-            try:
-                if await target_like.count() > 0:
-                    await human_click(target_like.first)
-                    target_liked = True
-            except Exception:
-                pass
+        target_sel = f"ytd-comment-thread-renderer[comment-id='{target_comment_id}']"
+        target_like = page.locator(
+            f"{target_sel} like-button-view-model button, "
+            f"{target_sel} yt-icon-button#like-button"
+        )
+        try:
+            if await target_like.count() > 0:
+                await human_click(target_like.first)
+                target_liked = True
+        except Exception:
+            target_liked = False
+
+        if not target_liked:
+            _raise_task_error("like_boost", "target_like_failed")
 
         return json.dumps({
             "action": "like_boost",

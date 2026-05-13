@@ -64,6 +64,7 @@ class Settings(BaseSettings):
     same_task_same_video_days: int = 7
     session_gap_hours: int = 2
     ghost_cooldown_days: int = 7
+    account_recent_cooldown_min: int = 15
 
     # Backup
     backup_interval_hours: int = 4
