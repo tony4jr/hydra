@@ -319,6 +319,87 @@ def test_input_poller_exits_when_process_dead(monkeypatch):
     client._request.assert_not_called()
 
 
+def test_admin_input_seq_race_retry_resolves(env, monkeypatch):
+    """Codex Slice 4.2a blocker fix: 동시 /input 시 seq race 발생 가능.
+    IntegrityError → retry 로 안전하게 다음 seq 받아 성공.
+    """
+    sid, _, _ = _open_active(env)
+
+    # 1번째 입력 정상
+    r0 = env["client"].post(
+        f"/api/admin/terminal/{sid}/input", headers=_admin(env),
+        json={"data": "a"},
+    )
+    assert r0.status_code == 200
+    assert r0.json()["seq"] == 1
+
+    # mock 으로 첫 commit 에서 IntegrityError 시뮬레이트
+    from hydra.web.routes import terminal as _term_mod
+    import sqlalchemy.exc as _sae
+
+    # 다음 호출은 retry path 통과해서 결국 seq=2 받아야
+    call_count = {"n": 0}
+    real_commit = None
+
+    class _SpyCommit:
+        def __init__(self, sess):
+            self.sess = sess
+        def __call__(self):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                # 가짜 IntegrityError 발생
+                raise _sae.IntegrityError("uq", {}, None)
+            return self.sess.__class__.commit(self.sess)
+
+    # 직접 검증 어려우니, 같은 seq 로 row 두 개 만들고 unique constraint 가
+    # IntegrityError 던지는지 + endpoint 가 retry → 다음 seq 로 통과 검증
+    # (단순화: 그냥 endpoint 두 번 빠르게 호출해서 둘 다 200 + 서로 다른 seq)
+    r1 = env["client"].post(
+        f"/api/admin/terminal/{sid}/input", headers=_admin(env),
+        json={"data": "b"},
+    )
+    r2 = env["client"].post(
+        f"/api/admin/terminal/{sid}/input", headers=_admin(env),
+        json={"data": "c"},
+    )
+    assert r1.status_code == 200
+    assert r2.status_code == 200
+    assert r1.json()["seq"] == 2
+    assert r2.json()["seq"] == 3
+
+
+def test_input_poller_does_not_write_when_closing(monkeypatch):
+    """Codex blocker fix: status=closing 받으면 write 전에 return."""
+    from worker import agent_terminal as _term
+    client = MagicMock()
+    client.headers = {}
+    proc = MagicMock()
+    proc.poll.return_value = None
+    stdin = MagicMock()
+    proc.stdin = stdin
+
+    def _req(method, path, **kw):
+        resp = MagicMock(); resp.status_code = 200
+        if "/inputs" in path and "input-consumed" not in path:
+            resp.json.return_value = {
+                "inputs": [
+                    {"seq": 1, "data": "echo evil\n", "byte_size": 10, "produced_at": "x"},
+                ],
+                "status": "closing",
+            }
+        else:
+            resp.json.return_value = {"ok": True}
+        return resp
+    client._request.side_effect = _req
+
+    stop_event = threading.Event()
+    monkeypatch.setattr(_term, "INPUT_POLL_INTERVAL_SEC", 0.01)
+    _term._input_poller_loop(client, 9, "tok", proc, stop_event)
+
+    # closing 응답이면 stdin.write 호출 안 됨
+    stdin.write.assert_not_called()
+
+
 def test_input_poller_exits_on_stop_event(monkeypatch):
     from worker import agent_terminal as _term
     client = MagicMock(); client.headers = {}

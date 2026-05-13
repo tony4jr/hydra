@@ -173,7 +173,11 @@ def _input_poller_loop(
         if proc.poll() is not None:
             return
         rows, status = _get_inputs(client, session_id, session_token, after_seq)
-        if rows:
+        # Codex Slice 4.2a blocker fix: status != active 면 write 전에 즉시 return.
+        # 서버가 closing 응답해도 queued input 실행되는 race 회피.
+        if status in ("closing", "closed", "timeout", "failed"):
+            return
+        if rows and status == "active":
             try:
                 for r in rows:
                     data = r["data"]
@@ -190,8 +194,6 @@ def _input_poller_loop(
             except Exception:
                 # stdin closed 등 — process 곧 종료될 가능성. 다음 iter 에서 detect.
                 pass
-        if status in ("closing", "closed", "timeout", "failed"):
-            return
         stop_event.wait(INPUT_POLL_INTERVAL_SEC)
 
 

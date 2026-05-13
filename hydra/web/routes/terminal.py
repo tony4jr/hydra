@@ -352,32 +352,48 @@ def admin_post_input(
     if byte_size > INPUT_MAX_BYTES:
         raise HTTPException(400, f"input exceeds {INPUT_MAX_BYTES} bytes")
 
+    # Codex Slice 4.2a blocker fix: seq race 회피.
+    # max(seq)+1 lock 없이 계산하면 동시 /input 시 같은 seq → unique violation.
+    # IntegrityError retry 로 안전. retry 횟수 제한 (무한 loop 방지).
+    MAX_SEQ_RETRY = 5
     db = _db_session.SessionLocal()
     try:
-        ts = db.get(TerminalSession, session_id)
-        if ts is None:
-            raise HTTPException(404, "terminal session not found")
-        if ts.status != "active":
-            raise HTTPException(409, f"input only valid on active session (status={ts.status})")
+        for attempt in range(MAX_SEQ_RETRY):
+            ts = db.get(TerminalSession, session_id)
+            if ts is None:
+                raise HTTPException(404, "terminal session not found")
+            if ts.status != "active":
+                raise HTTPException(
+                    409, f"input only valid on active session (status={ts.status})",
+                )
 
-        # seq: 같은 session 안에서 max+1
-        prev_max = (
-            db.query(TerminalInput)
-            .filter(TerminalInput.session_id == session_id)
-            .order_by(TerminalInput.seq.desc())
-            .first()
-        )
-        next_seq = (prev_max.seq + 1) if prev_max is not None else 1
+            # seq: 같은 session 안에서 max+1
+            prev_max = (
+                db.query(TerminalInput)
+                .filter(TerminalInput.session_id == session_id)
+                .order_by(TerminalInput.seq.desc())
+                .first()
+            )
+            next_seq = (prev_max.seq + 1) if prev_max is not None else 1
 
-        ti = TerminalInput(
-            session_id=session_id, seq=next_seq, data=data,
-            byte_size=byte_size, produced_at=datetime.now(UTC),
-        )
-        db.add(ti)
-        ts.last_activity_at = datetime.now(UTC)
-        db.commit()
-        db.refresh(ti)
-        return {"ok": True, "id": ti.id, "seq": ti.seq, "byte_size": byte_size}
+            ti = TerminalInput(
+                session_id=session_id, seq=next_seq, data=data,
+                byte_size=byte_size, produced_at=datetime.now(UTC),
+            )
+            db.add(ti)
+            ts.last_activity_at = datetime.now(UTC)
+            try:
+                db.commit()
+            except IntegrityError:
+                db.rollback()
+                if attempt == MAX_SEQ_RETRY - 1:
+                    raise HTTPException(
+                        500, "input seq race could not be resolved after retries",
+                    )
+                # 다음 iteration 으로 retry
+                continue
+            db.refresh(ti)
+            return {"ok": True, "id": ti.id, "seq": ti.seq, "byte_size": byte_size}
     finally:
         db.close()
 
