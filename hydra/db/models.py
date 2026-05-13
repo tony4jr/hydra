@@ -494,6 +494,13 @@ class IpLog(Base):
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False)
     ip_address = Column(String, nullable=False)
     device_id = Column(String)
+    # Codex 5/12 P2 — ip-log/end 소유권 검증. start 시 worker 가 기록되고,
+    # end 시 동일 worker_id 인지 verify. nullable (backfill 호환).
+    worker_id = Column(
+        Integer,
+        ForeignKey("workers.id", name="fk_ip_log_worker"),
+        nullable=True,
+    )
 
     started_at = Column(DateTime, default=lambda: datetime.now(UTC))
     ended_at = Column(DateTime)
@@ -501,6 +508,7 @@ class IpLog(Base):
     __table_args__ = (
         Index("idx_ip_account", "account_id"),
         Index("idx_ip_address", "ip_address", "started_at"),
+        Index("idx_ip_worker", "worker_id"),
     )
 
 

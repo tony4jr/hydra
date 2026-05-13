@@ -97,10 +97,12 @@ def ip_log_start(
                 f"account_id={req.account_id} not owned by worker_id={worker.id} "
                 "(no running task)",
             )
+        # Codex 5/12 P2 — worker_id 기록. end 시 동일 worker 인지 verify.
         record = IpLog(
             account_id=req.account_id,
             ip_address=req.ip_address,
             device_id=req.device_id,
+            worker_id=worker.id,
         )
         db.add(record)
         db.commit()
@@ -118,12 +120,24 @@ def ip_log_end(
     req: IpLogEndRequest,
     worker: Worker = Depends(worker_auth),
 ) -> dict:
-    """IpLog.ended_at 기록."""
+    """IpLog.ended_at 기록.
+
+    Codex 5/12 P2 — 소유권 검증: start 시 worker_id 가 박혀있으면 호출 worker
+    와 일치해야 함. NULL (옛 backfill row) 은 soft pass (호환). 다른 worker
+    가 ended 처리 시도하면 403.
+    """
     db = _db_session.SessionLocal()
     try:
         record = db.get(IpLog, req.log_id)
         if record is None:
             raise HTTPException(404, "ip_log not found")
+        # 옛 row 는 worker_id NULL — soft pass. 새 row 는 ownership 강제.
+        if record.worker_id is not None and record.worker_id != worker.id:
+            raise HTTPException(
+                403,
+                "ip_log not owned by this worker "
+                f"(owned by worker_id={record.worker_id})",
+            )
         record.ended_at = datetime.now(UTC)
         db.commit()
         return {"ok": True}

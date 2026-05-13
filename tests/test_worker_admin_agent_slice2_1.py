@@ -314,9 +314,10 @@ def test_migration_upgrades_clean_on_sqlite_batch(tmp_path, monkeypatch):
     cfg.set_main_option("script_location", str(repo_root / "alembic"))
     cfg.set_main_option("sqlalchemy.url", db_url)
 
-    # upgrade head — z9a0wkrole 가 마지막. unnamed FK 회귀가 살아있으면
-    # 'Constraint must have a name' ValueError 로 fail.
-    _alembic_cmd.upgrade(cfg, "head")
+    # upgrade z9a0wkrole 까지만 — Slice 2.1 의 workers FK migration 회귀만 검증.
+    # head 까지 가면 후속 migration (ip_log.worker_id 등) 이 시작 state 의 빈 db
+    # 와 충돌 (ip_log 등 테이블 없음). 검증 범위 명시.
+    _alembic_cmd.upgrade(cfg, "z9a0wkrole")
 
     # 기존 row 가 backfill 됐는지 확인
     conn = sqlite3.connect(str(db_path))

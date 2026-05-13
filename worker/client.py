@@ -110,13 +110,18 @@ class ServerClient:
         # (server-side keepalive 짧음) 이라 mode 문제 아닌 경우가 대부분.
         # 같은 모드로 fresh 가 풀어주면 prefer 진동 없음. 그래도 실패면
         # 진짜 mode 깨진 거 — 그제서야 반대 모드로 토글.
+        #
+        # Codex 5/12 P2 — backoff sequence 단축 (1/2/4/8 → 0.5/1/2/4).
+        # transient DNS/keepalive 깜박이 (보통 0.5-3s) 흡수에 충분하면서
+        # heartbeat tick (10s timeout × 4) 의 worst-case 합산을 줄여
+        # command/paused/update 반응성 회복.
         last_exc: Exception = first_exc
         for attempt in range(4):
             if attempt < 2:
                 ipv4_only = self._prefer_v4
             else:
                 ipv4_only = not self._prefer_v4
-            time.sleep(min(2 ** attempt, 8))  # 1, 2, 4, 8
+            time.sleep(min(0.5 * (2 ** attempt), 4.0))  # 0.5, 1, 2, 4
             client = _mk_client(ipv4_only, persistent=False)
             try:
                 resp = client.request(method, url, **kwargs)

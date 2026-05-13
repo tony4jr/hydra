@@ -56,13 +56,21 @@ def list_adb_devices(timeout_sec: int = 3) -> list[str]:
 def adspower_ping(timeout_sec: int = 3) -> dict:
     """AdsPower local API 헬스 체크. 응답 없으면 ok=False.
 
+    Codex 5/12 P2 — security verification 활성 상태에서 인증 헤더 없이 호출
+    하면 valid key 가 있어도 거짓 실패. ADSPOWER_API_KEY env 있으면
+    Authorization: Bearer 첨부.
+
     Returns: {"ok": bool, "version": str | None, "error": str | None}
     """
     import urllib.request
     import json
+    from hydra.browser.adspower import _normalize_api_key
     url = "http://localhost:50325/api/v1/user/list?page=1&page_size=1"
     try:
         req = urllib.request.Request(url)
+        key = _normalize_api_key(os.environ.get("ADSPOWER_API_KEY", ""))
+        if key:
+            req.add_header("Authorization", f"Bearer {key}")
         with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
             data = json.loads(resp.read().decode())
             return {"ok": data.get("code") == 0, "version": "unknown", "error": None}
