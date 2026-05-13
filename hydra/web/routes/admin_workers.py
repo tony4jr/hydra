@@ -353,6 +353,26 @@ def update_worker_role(
             db, req.role, req.parent_worker_id, exclude_worker_id=w.id,
         )
 
+        # Slice 3.2 follow-up (Codex) — child invariant 보호:
+        # 이 worker 가 desktop_worker 였고 PATCH 로 admin_agent 가 되려는데
+        # 이 worker 를 parent 로 가리키는 child admin_agent 가 이미 있으면
+        # child.parent.role 가 admin_agent 가 되어 invariant 위반. 거부.
+        if req.role == "admin_agent" and w.role == "desktop_worker":
+            child = (
+                db.query(Worker)
+                .filter(
+                    Worker.role == "admin_agent",
+                    Worker.parent_worker_id == w.id,
+                )
+                .first()
+            )
+            if child is not None:
+                raise HTTPException(
+                    409,
+                    f"worker {w.id} is parent of admin_agent {child.id}; "
+                    "cannot change role to admin_agent (child invariant)",
+                )
+
         # no-op (같은 role + parent) 은 그냥 통과
         if w.role == req.role and w.parent_worker_id == req.parent_worker_id:
             running = (

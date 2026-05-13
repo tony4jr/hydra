@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 import sqlalchemy as sa
 from sqlalchemy import (
     BigInteger, Boolean, Column, Date, DateTime, Float, ForeignKey, Index, Integer,
-    SmallInteger, String, Text, UniqueConstraint,
+    SmallInteger, String, Text, UniqueConstraint, text,
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
 
@@ -825,6 +825,16 @@ class Worker(Base):
         Index("idx_workers_status", "status"),
         Index("idx_workers_role", "role"),
         Index("idx_workers_parent", "parent_worker_id"),
+        # Slice 3.2 follow-up — admin_agent : desktop_worker 1:1 DB 강제.
+        # 앱 레벨 SELECT first() 만으론 race 시 깨질 수 있어 partial unique
+        # index 로 백업. WHERE role='admin_agent' AND parent_worker_id IS NOT NULL.
+        Index(
+            "uq_workers_admin_agent_parent",
+            "parent_worker_id",
+            unique=True,
+            postgresql_where=text("role = 'admin_agent' AND parent_worker_id IS NOT NULL"),
+            sqlite_where=text("role = 'admin_agent' AND parent_worker_id IS NOT NULL"),
+        ),
     )
 
 

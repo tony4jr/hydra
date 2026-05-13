@@ -294,9 +294,13 @@ def test_target_role_override_invalid_value_400(env):
 # ───────── 9. Codex follow-up: ambiguous paired admin_agent → 409 ─────────
 
 def test_admin_only_command_with_ambiguous_paired_admin_agents_409(env):
-    """한 desktop 에 admin_agent 가 2개 이상 → first() 비결정적 routing 금지.
-    409 ambiguous + 운영자가 직접 발행하도록 강제.
+    """Slice 3.1 defensive code: paired admin_agent 가 2개 이상이면 409 ambiguous.
+
+    Slice 3.2 follow-up 이후 DB partial unique index 가 1:1 강제하므로 이
+    상태 자체가 발생 불가능 — 두 번째 admin_agent insert 가 IntegrityError.
+    Slice 3.1 의 ambiguous 분기는 방어 코드로 보존되지만 reachable 하지 않음.
     """
+    from sqlalchemy.exc import IntegrityError
     db = env["Session"]()
     extra_token = "wtok-agent2-xxxxxxxxxxxxxxxxxxxxxxxxxx"
     extra = Worker(
@@ -307,15 +311,10 @@ def test_admin_only_command_with_ambiguous_paired_admin_agents_409(env):
         role="admin_agent",
         parent_worker_id=env["desktop_id"],
     )
-    db.add(extra); db.commit(); db.close()
-
-    r = env["client"].post(
-        f"/api/admin/workers/{env['desktop_id']}/command",
-        headers=_admin(env),
-        json={"command": "agent_update_now"},
-    )
-    assert r.status_code == 409
-    assert "ambiguous" in r.json()["detail"]
+    db.add(extra)
+    with pytest.raises(IntegrityError):
+        db.commit()
+    db.rollback(); db.close()
 
 
 # ───────── 10. Codex follow-up: /shell 도 _resolve_command_target 거침 ─────────

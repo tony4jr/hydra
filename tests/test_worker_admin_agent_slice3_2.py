@@ -469,6 +469,73 @@ def test_patch_role_fails_pending_commands_with_mismatch_target_role(env):
     db.close()
 
 
+def test_patch_role_child_admin_agent_invariant_409(env):
+    """desktop_worker A 에 admin_agent B 가 붙어있을 때 A → admin_agent 로
+    PATCH 하면 B.parent.role 가 admin_agent 됨 (invariant violation). 거부.
+    Codex Slice 3.2 review 권고.
+    """
+    db = env["Session"]()
+    other_desk = Worker(
+        name="desk-parent",
+        token_hash=hash_password("zz-iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii"),
+        token_sha256=_sha("zz-iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii"),
+        token_prefix="zz-iiiii",
+        role="desktop_worker",
+    )
+    db.add(other_desk); db.commit(); db.refresh(other_desk)
+    other_id = other_desk.id
+    # desktop-1 에 admin_agent (child) 붙임
+    child = Worker(
+        name="agent-child",
+        token_hash=hash_password("zz-jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj"),
+        token_sha256=_sha("zz-jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj"),
+        token_prefix="zz-jjjjj",
+        role="admin_agent",
+        parent_worker_id=env["desktop_id"],
+    )
+    db.add(child); db.commit(); db.close()
+
+    # desktop-1 (parent of admin_agent) → admin_agent 로 PATCH 시도 → 409
+    r = env["client"].patch(
+        f"/api/admin/workers/{env['desktop_id']}/role",
+        headers=_admin(env),
+        json={"role": "admin_agent", "parent_worker_id": other_id},
+    )
+    assert r.status_code == 409
+    assert "child invariant" in r.text
+
+
+def test_db_partial_unique_index_enforces_1to1(env):
+    """1:1 강제가 DB partial unique index 로도 백업됨.
+    앱 레벨 검사가 race 등으로 우회되어도 DB 가 IntegrityError 로 차단.
+    """
+    from sqlalchemy.exc import IntegrityError
+    db = env["Session"]()
+    # 첫 admin_agent 직접 insert
+    a1 = Worker(
+        name="agent-A",
+        token_hash=hash_password("zz-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"),
+        token_sha256=_sha("zz-kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"),
+        token_prefix="zz-kkkkk",
+        role="admin_agent",
+        parent_worker_id=env["desktop_id"],
+    )
+    db.add(a1); db.commit()
+    # 두 번째 admin_agent 같은 parent 직접 insert — partial unique index 차단
+    a2 = Worker(
+        name="agent-B",
+        token_hash=hash_password("zz-llllllllllllllllllllllllllllllllll"),
+        token_sha256=_sha("zz-llllllllllllllllllllllllllllllllll"),
+        token_prefix="zz-lllll",
+        role="admin_agent",
+        parent_worker_id=env["desktop_id"],
+    )
+    db.add(a2)
+    with pytest.raises(IntegrityError):
+        db.commit()
+    db.rollback(); db.close()
+
+
 def test_patch_role_noop_does_not_touch_commands(env):
     """같은 role/parent 로 PATCH 시 command 영향 없음."""
     db = env["Session"]()
