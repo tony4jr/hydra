@@ -224,7 +224,7 @@ async def execute_command(client: "ServerClient", cmd: dict) -> None:
                     ensure_ascii=False,
                 )
 
-        elif name in ("terminal_open", "terminal_close"):
+        elif name in ("terminal_open", "terminal_close", "terminal_interrupt"):
             # Phase 4 Slice 4.1b — web terminal lifecycle.
             # idempotent open (registry 검사) + active POST → ack done.
             # close: terminate + closed POST → ack done.
@@ -260,6 +260,10 @@ async def execute_command(client: "ServerClient", cmd: dict) -> None:
                     result = _json.dumps(out, ensure_ascii=False)
                 elif name == "terminal_close":
                     out = _term.close_session(client, sid, stok)
+                    result = _json.dumps(out, ensure_ascii=False)
+                elif name == "terminal_interrupt":
+                    # Phase 4 Slice 4.3 — process tree kill via psutil
+                    out = _term.interrupt_session(client, sid, stok)
                     result = _json.dumps(out, ensure_ascii=False)
 
         elif name in ("desktop_status", "desktop_start", "desktop_stop", "desktop_restart"):

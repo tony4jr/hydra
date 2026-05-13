@@ -571,6 +571,111 @@ def worker_post_chunks(
         db.close()
 
 
+@router.post("/admin/terminal/{session_id}/interrupt")
+def admin_interrupt(
+    session_id: int,
+    session: dict = Depends(admin_session),
+) -> dict:
+    """Phase 4 Slice 4.3 — admin 이 process tree kill 트리거.
+
+    worker 에 terminal_interrupt 발행. non-redeliverable (이미 _CMD_NON_REDELIVERABLE).
+    Ctrl+C 진짜 신호는 아니고 process tree terminate.
+    """
+    db = _db_session.SessionLocal()
+    try:
+        ts = db.get(TerminalSession, session_id)
+        if ts is None:
+            raise HTTPException(404, "terminal session not found")
+        if ts.status in ("closed", "timeout", "failed"):
+            return {"ok": True, "status": ts.status, "noop": True}
+        cmd = WorkerCommand(
+            worker_id=ts.worker_id,
+            command="terminal_interrupt",
+            payload=json.dumps(
+                {"session_id": ts.id, "session_token": ts.session_token},
+                ensure_ascii=False,
+            ),
+            status="pending",
+            issued_by=session.get("user_id"),
+            issued_at=datetime.now(UTC),
+            target_role="admin_agent",
+        )
+        db.add(cmd)
+        # interrupt 발행 시점에도 closing 마킹 (kill 후 cleanup 일관)
+        if ts.status == "active":
+            ts.status = "closing"
+            ts.closing_at = datetime.now(UTC)
+        ts.last_activity_at = datetime.now(UTC)
+        db.commit()
+        return {"ok": True, "command_id": cmd.id, "status": ts.status}
+    finally:
+        db.close()
+
+
+# Slice 4.3 — stale recovery batch helper. heartbeat 또는 admin trigger 시 호출.
+STALE_IDLE_SEC = 5 * 60  # 5분 idle 시 stale
+
+
+def stale_recovery_batch(db) -> int:
+    """Phase 4 Slice 4.3 — stale active session 정리.
+
+    status=active 이고 last_activity_at > STALE_IDLE_SEC 지난 row 들을
+    status=timeout 마킹. heartbeat 시 호출 (server-side periodic) 또는
+    별도 batch.
+    """
+    cutoff = datetime.now(UTC) - timedelta(seconds=STALE_IDLE_SEC)
+    rows = (
+        db.query(TerminalSession)
+        .filter(
+            TerminalSession.status == "active",
+            TerminalSession.last_activity_at < cutoff,
+        )
+        .all()
+    )
+    now = datetime.now(UTC)
+    for s in rows:
+        s.status = "timeout"
+        s.closed_at = now
+        msg = f"stale_idle_after={STALE_IDLE_SEC}s"
+        s.error_message = (s.error_message + " | " + msg) if s.error_message else msg
+    return len(rows)
+
+
+@router.post("/workers/terminal/recover-stale")
+def worker_recover_stale(
+    worker: Worker = Depends(worker_auth),
+) -> dict:
+    """admin_agent 부팅 시 호출. 자기 worker_id 의 active/closing session 중
+    이 worker 가 더 이상 가지지 않는 것 (admin agent restart 후 registry 비어있음)
+    들을 stale → timeout 마킹.
+
+    실제 worker 가 active 중인 session_id 리스트는 worker 가 안 보냄
+    (이 endpoint 는 단순 "restart 했음" 신호). server 는 last_activity
+    기반 timeout batch 도 같이 돌림.
+    """
+    db = _db_session.SessionLocal()
+    try:
+        # 이 worker 의 모든 active/closing → timeout
+        rows = (
+            db.query(TerminalSession)
+            .filter(
+                TerminalSession.worker_id == worker.id,
+                TerminalSession.status.in_(("active", "closing", "pending")),
+            )
+            .all()
+        )
+        now = datetime.now(UTC)
+        for s in rows:
+            s.status = "timeout"
+            s.closed_at = now
+            msg = "stale_after_worker_restart"
+            s.error_message = (s.error_message + " | " + msg) if s.error_message else msg
+        db.commit()
+        return {"ok": True, "stale_marked": len(rows)}
+    finally:
+        db.close()
+
+
 @router.get("/admin/terminal/{session_id}/chunks")
 def admin_get_chunks(
     session_id: int,

@@ -445,6 +445,72 @@ def open_session(
     return {"ok": True, "pid": proc.pid}
 
 
+def _kill_process_tree(proc) -> None:
+    """psutil 로 process + 자식들 전부 kill. Slice 4.3.
+
+    psutil 없으면 fallback: proc.kill() 만 (자식 살아남을 위험).
+    Windows PowerShell 의 child cmd / git / ssh 등도 같이 죽임.
+    """
+    if proc is None:
+        return
+    try:
+        try:
+            import psutil  # type: ignore
+        except ImportError:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            return
+        parent = psutil.Process(proc.pid)
+        children = parent.children(recursive=True)
+        for c in children:
+            try:
+                c.kill()
+            except Exception:
+                pass
+        try:
+            parent.kill()
+        except Exception:
+            pass
+        try:
+            parent.wait(timeout=3)
+        except Exception:
+            pass
+    except Exception:
+        # process 이미 죽었거나 권한 없음 — 그냥 넘김
+        pass
+
+
+def interrupt_session(
+    client: "ServerClient",
+    session_id: int,
+    session_token: str,
+) -> dict:
+    """Phase 4 Slice 4.3 — process tree kill (real Ctrl+C 아니라 terminate).
+
+    psutil 로 자식 process 까지 모두 kill. 그 후 close_session 흐름과 동일하게
+    server 에 closed POST.
+    """
+    with _REGISTRY_LOCK:
+        entry = _REGISTRY.pop(session_id, None)
+    if entry is None:
+        # 이미 cleanup 된 세션 — server 에 closed 신호만
+        _post_closed(client, session_id, session_token)
+        return {"ok": True, "noop": True}
+
+    proc = entry.get("proc")
+    stop_event = entry.get("input_stop")
+    if stop_event is not None:
+        try:
+            stop_event.set()
+        except Exception:
+            pass
+    _kill_process_tree(proc)
+    _post_closed(client, session_id, session_token)
+    return {"ok": True, "killed_pid": proc.pid if proc else None}
+
+
 def close_session(
     client: "ServerClient",
     session_id: int,

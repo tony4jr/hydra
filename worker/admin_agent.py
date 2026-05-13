@@ -271,17 +271,34 @@ def main(argv: list[str] | None = None) -> int:
         except Exception:
             pass
 
+    # Phase 4 Slice 4.3 — boot 시 server 에 recover-stale POST.
+    # 이전 admin_agent 가 비정상 종료해서 server 에 active session 남았다면
+    # 다 timeout 마킹 (registry 비어있음).
+    try:
+        client = getattr(app, "client", None)
+        if client is not None:
+            try:
+                client._request(
+                    "POST", "/api/workers/terminal/recover-stale",
+                    headers=client.headers,
+                )
+            except Exception as e:
+                print(f"[admin_agent] recover-stale boot POST failed: {e}", flush=True)
+    except Exception:
+        pass
+
     loop = asyncio.new_event_loop()
     try:
         asyncio.set_event_loop(loop)
         _install_signal_handlers(loop, app)
         return loop.run_until_complete(app.run(once=args.once))
     finally:
-        # Phase 4 Slice 4.1b — admin_agent shutdown 시 terminal registry 의
-        # 모든 shell process 정리. orphan PowerShell 방지 (Codex 권고).
+        # Phase 4 Slice 4.1b/4.3 — admin_agent shutdown 시 terminal registry 의
+        # 모든 shell process 정리 + server 에 best-effort closed POST.
         try:
             from worker import agent_terminal as _term
-            _term.shutdown_all()
+            client = getattr(app, "client", None)
+            _term.shutdown_all(client=client)
         except Exception as e:
             print(f"[admin_agent] shutdown_all error: {e}", flush=True)
         loop.close()
