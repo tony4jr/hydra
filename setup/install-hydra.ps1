@@ -40,12 +40,23 @@ function Run-Native {
     param(
         [Parameter(Mandatory=$true)][scriptblock]$ScriptBlock,
         [Parameter(Mandatory=$true)][string]$What,
-        [int[]]$AllowedExitCodes = @(0)
+        [int[]]$AllowedExitCodes = @(0),
+        [int]$Retries = 0,
+        [int]$RetryDelaySec = 3
     )
-    & $ScriptBlock
-    $code = $LASTEXITCODE
-    if ($AllowedExitCodes -notcontains $code) {
-        throw "$What 실패 (exit $code). 이전 출력 참고."
+    $attempt = 0
+    while ($true) {
+        $attempt++
+        & $ScriptBlock
+        $code = $LASTEXITCODE
+        if ($AllowedExitCodes -contains $code) {
+            return
+        }
+        if ($attempt -gt $Retries) {
+            throw "$What 실패 (exit $code, attempt $attempt). 이전 출력 참고."
+        }
+        Write-Warning "$What attempt $attempt 실패 (exit $code) — ${RetryDelaySec}s 후 재시도..."
+        Start-Sleep -Seconds $RetryDelaySec
     }
 }
 
@@ -104,7 +115,7 @@ if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
         'https://community.chocolatey.org/install.ps1'))
     $env:Path += ";C:\ProgramData\chocolatey\bin"
 }
-Run-Native -What "choco install python311/git/adb/nssm" -ScriptBlock {
+Run-Native -What "choco install python311/git/adb/nssm" -Retries 2 -RetryDelaySec 10 -ScriptBlock {
     choco install -y python311 git adb nssm --no-progress
 }
 # tailscale 은 선택 — 실패해도 진행. exit 1 (이미 설치) / 1641 도 허용.
@@ -123,13 +134,13 @@ w32tm /resync /nowait | Out-Null
 # ─── Repo clone / pull ───────────────────────────────────────────────────
 Write-Host "[install] Repo $InstallPath..." -ForegroundColor Yellow
 if (-not (Test-Path $InstallPath)) {
-    Run-Native -What "git clone" -ScriptBlock {
+    Run-Native -What "git clone" -Retries 3 -RetryDelaySec 5 -ScriptBlock {
         git clone $RepoUrl $InstallPath
     }
 } else {
     Push-Location $InstallPath
     try {
-        Run-Native -What "git fetch origin main" -ScriptBlock {
+        Run-Native -What "git fetch origin main" -Retries 3 -RetryDelaySec 5 -ScriptBlock {
             git fetch origin main
         }
         Run-Native -What "git reset --hard origin/main" -ScriptBlock {
@@ -155,10 +166,10 @@ if (-not (Test-Path $pythonExe)) {
 if (-not (Test-Path $pythonExe)) {
     throw "venv python.exe 미생성: $pythonExe"
 }
-Run-Native -What "pip upgrade" -ScriptBlock {
+Run-Native -What "pip upgrade" -Retries 2 -RetryDelaySec 5 -ScriptBlock {
     & $pythonExe -m pip install --quiet --upgrade pip
 }
-Run-Native -What "pip install -e $InstallPath" -ScriptBlock {
+Run-Native -What "pip install -e $InstallPath" -Retries 2 -RetryDelaySec 5 -ScriptBlock {
     & $pythonExe -m pip install --quiet -e $InstallPath
 }
 # playwright install — 일부 환경에서 이미 있어 non-zero 가능. 비-치명적이라 warn 만.
