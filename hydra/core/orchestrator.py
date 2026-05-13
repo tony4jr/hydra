@@ -6,11 +6,92 @@ sweep_stuck_accounts 는 top-level scheduler 진입점 — 스스로 commit.
 """
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import json
+import random
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
 from hydra.db.models import Account, Task
+
+_ENRICH_CHILD_TYPES = ("reply", "like_boost")
+_CHILD_DELAY_MINUTES = 5
+_CHILD_DELAY_MAX_MINUTES = 30
+
+
+def _json_dict(raw: str | None) -> dict:
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _extract_comment_id(result_raw: str | None) -> str:
+    result = _json_dict(result_raw)
+    for key in ("youtube_comment_id", "comment_id", "reply_id"):
+        value = result.get(key)
+        if value:
+            return str(value).strip()
+    return ""
+
+
+def enrich_child_payloads_for_parent(
+    parent_task_id: int,
+    session: Session,
+    *,
+    now: datetime | None = None,
+) -> dict[str, int]:
+    """comment/reply 완료 후 자식 reply/like_boost target payload 보강.
+
+    parent result 에 댓글 id 가 없으면 자식은 실행해도 no-op 이므로 pending 자식을
+    즉시 failed 로 닫는다. 호출자는 commit 책임을 가진다.
+    """
+    parent = session.get(Task, parent_task_id)
+    stats = {"enriched": 0, "failed": 0, "skipped": 0}
+    if parent is None or parent.task_type not in ("comment", "reply"):
+        stats["skipped"] += 1
+        return stats
+
+    q = (
+        session.query(Task)
+        .filter(
+            Task.parent_task_id == parent.id,
+            Task.task_type.in_(_ENRICH_CHILD_TYPES),
+            Task.status == "pending",
+        )
+    )
+    if parent.campaign_id is not None:
+        q = q.filter(Task.campaign_id == parent.campaign_id)
+
+    children = q.all()
+    if not children:
+        return stats
+
+    now = now or datetime.now(UTC)
+    comment_id = _extract_comment_id(parent.result)
+    if not comment_id:
+        for child in children:
+            child.status = "failed"
+            child.error_message = "parent_comment_id_missing"
+            child.completed_at = now
+            stats["failed"] += 1
+        session.flush()
+        return stats
+
+    for child in children:
+        payload = _json_dict(child.payload)
+        payload["target_comment_id"] = comment_id
+        payload["target_selector"] = comment_id
+        child.payload = json.dumps(payload, ensure_ascii=False)
+        child.scheduled_at = now + timedelta(
+            minutes=random.uniform(_CHILD_DELAY_MINUTES, _CHILD_DELAY_MAX_MINUTES)
+        )
+        stats["enriched"] += 1
+    session.flush()
+    return stats
 
 
 def on_task_complete(task_id: int, session: Session) -> None:
@@ -22,6 +103,8 @@ def on_task_complete(task_id: int, session: Session) -> None:
     # T7 Circuit Breaker — 성공 시 카운터 리셋
     if task.worker_id is not None:
         reset_worker_failure_counter(task.worker_id, session)
+
+    enrich_child_payloads_for_parent(task.id, session)
 
     account = session.get(Account, task.account_id)
     if account is None:
