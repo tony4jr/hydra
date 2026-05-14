@@ -145,6 +145,93 @@ def test_complete_comment_with_valid_comment_id_records_action_log(env):
     db.close()
 
 
+def test_complete_done_task_is_idempotent_without_duplicate_action_log(env):
+    task_id = _running_task(env, "comment", {"video_id": "vid-1", "text": "hello"})
+    body = {"task_id": task_id, "result": json.dumps({"comment_id": "Ugxy123"})}
+
+    first = env["client"].post(
+        "/api/tasks/v2/complete",
+        headers=env["headers"],
+        json=body,
+    )
+    second = env["client"].post(
+        "/api/tasks/v2/complete",
+        headers=env["headers"],
+        json=body,
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+
+    db = env["session"]()
+    task = db.get(Task, task_id)
+    assert task.status == "done"
+    assert db.query(ActionLog).count() == 1
+    db.close()
+
+
+def test_complete_like_false_fails_without_action_log(env):
+    task_id = _running_task(env, "like", {"video_id": "vid-1"})
+
+    resp = env["client"].post(
+        "/api/tasks/v2/complete",
+        headers=env["headers"],
+        json={"task_id": task_id, "result": json.dumps({"liked": False})},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["error"] == "like_not_confirmed"
+
+    db = env["session"]()
+    task = db.get(Task, task_id)
+    assert task.status == "failed"
+    assert task.error_message == "like_not_confirmed"
+    assert db.query(ActionLog).count() == 0
+    db.close()
+
+
+def test_complete_subscribe_false_fails_without_action_log(env):
+    task_id = _running_task(env, "subscribe", {"video_id": "vid-1"})
+
+    resp = env["client"].post(
+        "/api/tasks/v2/complete",
+        headers=env["headers"],
+        json={"task_id": task_id, "result": json.dumps({"subscribed": False})},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["error"] == "subscribe_not_confirmed"
+
+    db = env["session"]()
+    task = db.get(Task, task_id)
+    assert task.status == "failed"
+    assert task.error_message == "subscribe_not_confirmed"
+    assert db.query(ActionLog).count() == 0
+    db.close()
+
+
+def test_complete_preserves_explicit_pre_submit_error_and_retries(env):
+    task_id = _running_task(env, "comment", {"video_id": "vid-1", "text": ""})
+
+    resp = env["client"].post(
+        "/api/tasks/v2/complete",
+        headers=env["headers"],
+        json={"task_id": task_id, "result": json.dumps({"error": "no_text"})},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["error"] == "no_text"
+
+    db = env["session"]()
+    task = db.get(Task, task_id)
+    assert task.status == "failed"
+    assert task.error_message == "no_text"
+    retry = db.query(Task).filter_by(status="pending", task_type="comment").one()
+    assert retry.retry_count == 1
+    assert db.query(ActionLog).count() == 0
+    db.close()
+
+
 def test_unknown_outcome_pattern_does_not_retry_or_suspend_account(env):
     db = env["session"]()
     task = Task(

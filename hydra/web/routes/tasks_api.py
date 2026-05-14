@@ -444,8 +444,12 @@ def _completion_integrity_error(task_type: str, result: dict) -> str | None:
         return "comment_id_missing_unknown_outcome"
     if task_type == "reply" and not _truthy_str(result, "reply_id", "youtube_comment_id"):
         return "reply_id_missing"
+    if task_type == "like" and result.get("liked") is not True:
+        return "like_not_confirmed"
     if task_type == "like_boost" and result.get("target_liked") is not True:
         return "target_like_missing"
+    if task_type == "subscribe" and result.get("subscribed") is not True:
+        return "subscribe_not_confirmed"
     return None
 
 
@@ -517,7 +521,21 @@ def complete(
             raise HTTPException(404, "task not found")
         if t.worker_id != worker.id:
             raise HTTPException(403, "task not owned by this worker")
+        if t.status == "done":
+            return {"ok": True, "status": "done"}
         result_obj = _json_dict(req.result)
+        explicit_error = _truthy_str(result_obj, "error")
+        if explicit_error:
+            t.status = "failed"
+            t.completed_at = datetime.now(UTC)
+            t.result = req.result
+            t.error_message = explicit_error
+            _release_lock(db, t.id)
+            from hydra.core.orchestrator import on_task_fail
+            on_task_fail(t.id, db)
+            db.commit()
+            return {"ok": True, "status": "failed", "error": explicit_error}
+
         integrity_error = _completion_integrity_error(t.task_type, result_obj)
         if integrity_error:
             t.status = "failed"
