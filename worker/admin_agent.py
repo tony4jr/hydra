@@ -277,11 +277,15 @@ def main(argv: list[str] | None = None) -> int:
     try:
         client = getattr(app, "client", None)
         if client is not None:
+            # boot blocker 되지 않도록 timeout 5s. 실패해도 heartbeat loop 진입.
             try:
+                print("[admin_agent] recover-stale boot POST start", flush=True)
                 client._request(
                     "POST", "/api/workers/terminal/recover-stale",
                     headers=client.headers,
+                    timeout=5,
                 )
+                print("[admin_agent] recover-stale boot POST ok", flush=True)
             except Exception as e:
                 print(f"[admin_agent] recover-stale boot POST failed: {e}", flush=True)
     except Exception:
@@ -291,6 +295,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         asyncio.set_event_loop(loop)
         _install_signal_handlers(loop, app)
+        print("[admin_agent] entering heartbeat loop", flush=True)
         return loop.run_until_complete(app.run(once=args.once))
     finally:
         # Phase 4 Slice 4.1b/4.3 — admin_agent shutdown 시 terminal registry 의
