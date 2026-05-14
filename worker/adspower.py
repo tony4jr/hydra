@@ -62,7 +62,16 @@ class AdsPowerClient:
             headers=self._headers(),
         )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        try:
+            from hydra.browser.adspower_cleanup import cleanup_adspower_processes
+            cleanup_adspower_processes(
+                profile_id=profile_id,
+                reason="legacy_worker_close_browser",
+            )
+        except Exception:
+            pass
+        return data
 
     def check_status(self) -> bool:
         """AdsPower 연결 상태 확인."""

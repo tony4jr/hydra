@@ -473,14 +473,18 @@ def _has_active_session(client: "ServerClient") -> bool:
 
 
 async def _adspower_stop_all() -> str:
-    import httpx
     base = os.environ.get("ADSPOWER_API_URL", "http://127.0.0.1:50325")
-    from hydra.browser.adspower import _normalize_api_key
+    from hydra.browser.adspower import AdsPowerClient, _normalize_api_key
+    from hydra.browser.adspower_cleanup import cleanup_stale_adspower_browsers
+
     key = _normalize_api_key(os.environ.get("ADSPOWER_API_KEY", ""))
-    headers = {"Authorization": f"Bearer {key}"} if key else {}
-    async with httpx.AsyncClient(timeout=15) as c:
-        r = await c.post(f"{base}/api/v2/browser-profile/stop-all", headers=headers)
-        return f"http {r.status_code}: {r.text[:200]}"
+    client = AdsPowerClient(base_url=base, api_key=key)
+    api_result = await asyncio.to_thread(client.stop_all_browsers)
+    cleanup = await asyncio.to_thread(
+        cleanup_stale_adspower_browsers,
+        reason="command_stop_all_browsers",
+    )
+    return f"stop_all={str(api_result)[:200]} cleanup={cleanup}"
 
 
 async def _adspower_new_fingerprint(profile_ids: list[str]) -> str:
