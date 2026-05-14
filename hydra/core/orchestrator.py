@@ -142,6 +142,11 @@ CIRCUIT_BREAKER_THRESHOLD = 5
 CIRCUIT_BREAKER_WINDOW_MINUTES = 10
 
 # T10 태스크 종류별 재시도 정책
+# 결과 확인 불가: 중복 댓글/답글 방지를 위해 재시도하지 않지만 계정 귀책도 아니다.
+UNKNOWN_OUTCOME_PATTERNS = (
+    "comment_id_missing_unknown_outcome",
+    "reply_id_missing",
+)
 # 영구 실패 키워드: 재시도 0회, 즉시 계정 격리
 PERMANENT_ERROR_PATTERNS = (
     "account suspended", "captcha_persistent", "profile_locked_elsewhere",
@@ -189,6 +194,16 @@ def _is_worker_environment_error(error_msg: str | None) -> bool:
         return False
     norm = error_msg.lower().replace("_", "").replace("-", "").replace(" ", "")
     for p in WORKER_ENVIRONMENT_ERROR_PATTERNS:
+        if p.lower().replace("_", "").replace("-", "").replace(" ", "") in norm:
+            return True
+    return False
+
+
+def _is_unknown_outcome_error(error_msg: str | None) -> bool:
+    if not error_msg:
+        return False
+    norm = error_msg.lower().replace("_", "").replace("-", "").replace(" ", "")
+    for p in UNKNOWN_OUTCOME_PATTERNS:
         if p.lower().replace("_", "").replace("-", "").replace(" ", "") in norm:
             return True
     return False
@@ -278,6 +293,10 @@ def on_task_fail(task_id: int, session: Session) -> None:
                 scheduled_at=task.scheduled_at,
             ))
             session.flush()
+            return
+
+        # 댓글/답글 ID 미확인: 실제 게시됐을 가능성이 있어 재시도 금지, 계정 suspend 금지.
+        if _is_unknown_outcome_error(task.error_message):
             return
 
         # T10: 영구 에러 → 재시도 없이 즉시 격리

@@ -19,9 +19,10 @@ from sqlalchemy import or_, text
 from sqlalchemy import func
 
 from hydra.core.config import settings
+from hydra.core.enums import ActionType
 from hydra.db import session as _db_session
 from hydra.db.models import (
-    Account, ActionLog, ProfileLock, Task, Worker, WorkerProgress, WorkerSession,
+    Account, ActionLog, IpLog, ProfileLock, Task, Worker, WorkerProgress, WorkerSession,
 )
 from hydra.protocol import (
     AccountSnapshot, SessionHeartbeat, TaskEnvelope, TaskProgress, WorkerConfig,
@@ -430,6 +431,74 @@ class TaskCompleteRequest(BaseModel):
     result: str | None = None
 
 
+def _truthy_str(data: dict, *keys: str) -> str:
+    for key in keys:
+        value = data.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return ""
+
+
+def _completion_integrity_error(task_type: str, result: dict) -> str | None:
+    if task_type == "comment" and not _truthy_str(result, "comment_id", "youtube_comment_id"):
+        return "comment_id_missing_unknown_outcome"
+    if task_type == "reply" and not _truthy_str(result, "reply_id", "youtube_comment_id"):
+        return "reply_id_missing"
+    if task_type == "like" and result.get("liked") is not True:
+        return "like_not_confirmed"
+    if task_type == "like_boost" and result.get("target_liked") is not True:
+        return "target_like_missing"
+    if task_type == "subscribe" and result.get("subscribed") is not True:
+        return "subscribe_not_confirmed"
+    return None
+
+
+def _action_type_for_task(task_type: str) -> str | None:
+    return {
+        "comment": ActionType.COMMENT,
+        "reply": ActionType.REPLY,
+        "like": ActionType.LIKE_VIDEO,
+        "like_boost": ActionType.LIKE_COMMENT,
+        "subscribe": ActionType.SUBSCRIBE,
+    }.get(task_type)
+
+
+def _last_worker_ip(db, worker_id: int, account_id: int | None) -> str | None:
+    q = db.query(IpLog).filter(IpLog.worker_id == worker_id)
+    if account_id is not None:
+        q = q.filter(IpLog.account_id == account_id)
+    rec = q.order_by(IpLog.started_at.desc()).first()
+    return rec.ip_address if rec is not None else None
+
+
+def _record_action_log_for_complete(db, task: "Task", worker_id: int, result: dict) -> None:
+    action_type = _action_type_for_task(task.task_type)
+    if action_type is None or task.account_id is None:
+        return
+
+    payload = _json_dict(task.payload)
+    youtube_comment_id = _truthy_str(
+        result, "youtube_comment_id", "comment_id", "reply_id", "target_comment_id",
+    ) or None
+    duration_sec = result.get("watched_sec")
+    try:
+        duration_sec = int(duration_sec) if duration_sec is not None else None
+    except (TypeError, ValueError):
+        duration_sec = None
+
+    db.add(ActionLog(
+        account_id=task.account_id,
+        video_id=payload.get("video_id") or result.get("video_id"),
+        campaign_id=task.campaign_id,
+        action_type=action_type,
+        is_promo=task.campaign_id is not None,
+        content=payload.get("text"),
+        youtube_comment_id=youtube_comment_id,
+        ip_address=_last_worker_ip(db, worker_id, task.account_id),
+        duration_sec=duration_sec,
+    ))
+
+
 def _release_lock(db, task_id: int) -> None:
     lock = (
         db.query(ProfileLock)
@@ -452,10 +521,38 @@ def complete(
             raise HTTPException(404, "task not found")
         if t.worker_id != worker.id:
             raise HTTPException(403, "task not owned by this worker")
+        if t.status == "done":
+            return {"ok": True, "status": "done"}
+        result_obj = _json_dict(req.result)
+        explicit_error = _truthy_str(result_obj, "error")
+        if explicit_error:
+            t.status = "failed"
+            t.completed_at = datetime.now(UTC)
+            t.result = req.result
+            t.error_message = explicit_error
+            _release_lock(db, t.id)
+            from hydra.core.orchestrator import on_task_fail
+            on_task_fail(t.id, db)
+            db.commit()
+            return {"ok": True, "status": "failed", "error": explicit_error}
+
+        integrity_error = _completion_integrity_error(t.task_type, result_obj)
+        if integrity_error:
+            t.status = "failed"
+            t.completed_at = datetime.now(UTC)
+            t.result = req.result
+            t.error_message = integrity_error
+            _release_lock(db, t.id)
+            from hydra.core.orchestrator import on_task_fail
+            on_task_fail(t.id, db)
+            db.commit()
+            return {"ok": True, "status": "failed", "error": integrity_error}
+
         t.status = "done"
         t.completed_at = datetime.now(UTC)
         t.result = req.result
         _release_lock(db, t.id)
+        _record_action_log_for_complete(db, t, worker.id, result_obj)
         # M1-7: 상태 전이 훅 — 같은 트랜잭션에서
         from hydra.core.orchestrator import on_task_complete
         on_task_complete(t.id, db)
