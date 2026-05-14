@@ -68,15 +68,15 @@ class AdsPowerClient:
             return {"Authorization": f"Bearer {key}"}
         return {}
 
-    def _get(self, path: str, params: dict | None = None) -> dict:
-        resp = httpx.get(f"{self.base_url}{path}", params=params, headers=self._headers(), timeout=30)
+    def _get(self, path: str, params: dict | None = None, *, timeout: float = 30) -> dict:
+        resp = httpx.get(f"{self.base_url}{path}", params=params, headers=self._headers(), timeout=timeout)
         data = resp.json()
         if data.get("code") != 0:
             raise RuntimeError(f"AdsPower error: {data.get('msg', data)}")
         return data.get("data", {})
 
-    def _post(self, path: str, json_body: dict | None = None) -> dict:
-        resp = httpx.post(f"{self.base_url}{path}", json=json_body, headers=self._headers(), timeout=30)
+    def _post(self, path: str, json_body: dict | None = None, *, timeout: float = 30) -> dict:
+        resp = httpx.post(f"{self.base_url}{path}", json=json_body, headers=self._headers(), timeout=timeout)
         data = resp.json()
         if data.get("code") != 0:
             raise RuntimeError(f"AdsPower error: {data.get('msg', data)}")
@@ -155,12 +155,14 @@ class AdsPowerClient:
             "launch_args": _json.dumps(args),
         }
         data = self._get("/api/v1/browser/start", params)
+        from hydra.browser.adspower_cleanup import extract_process_ids
         ws = data.get("ws", {})
         result = {
             "ws_endpoint": ws.get("puppeteer", ""),
             "selenium_endpoint": ws.get("selenium", ""),
             "debug_port": data.get("debug_port", ""),
             "webdriver": data.get("webdriver", ""),
+            "process_ids": extract_process_ids(data),
         }
         log.info(f"Started browser for profile {profile_id}, port={result['debug_port']}")
         return result
@@ -180,8 +182,25 @@ class AdsPowerClient:
         if cookie_sync_grace_sec > 0:
             import time
             time.sleep(cookie_sync_grace_sec)
-        self._get("/api/v1/browser/stop", {"user_id": profile_id})
+        self._get("/api/v1/browser/stop", {"user_id": profile_id}, timeout=15)
         log.info(f"Stopped browser for profile {profile_id}")
+
+    def stop_all_browsers(self) -> dict:
+        """Ask AdsPower to stop all running browser profiles."""
+        resp = httpx.post(
+            f"{self.base_url}/api/v2/browser-profile/stop-all",
+            headers=self._headers(),
+            timeout=15,
+        )
+        resp.raise_for_status()
+        try:
+            data = resp.json()
+        except ValueError:
+            data = {"raw": resp.text[:200]}
+        if isinstance(data, dict) and data.get("code") not in (None, 0):
+            raise RuntimeError(f"AdsPower stop-all error: {data.get('msg', data)}")
+        log.info("Requested AdsPower stop-all")
+        return data if isinstance(data, dict) else {"raw": str(data)[:200]}
 
     def check_browser_active(self, profile_id: str) -> bool:
         """Check if browser is running."""

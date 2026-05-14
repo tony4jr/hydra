@@ -56,6 +56,7 @@ class WorkerApp:
         self.running = True
         self.last_heartbeat = None
         self._current_task_id = None
+        self._adspower_boot_cleanup_done = False
         signal.signal(signal.SIGINT, self._shutdown)
         signal.signal(signal.SIGTERM, self._shutdown)
 
@@ -137,6 +138,8 @@ class WorkerApp:
             if srv_key and _os.environ.get("ADSPOWER_API_KEY") != srv_key:
                 _os.environ["ADSPOWER_API_KEY"] = srv_key
                 _hb_log.warning(f"adspower_key_debug: env updated, new_len={len(srv_key)}")
+
+            await self._cleanup_adspower_on_boot()
 
             # Verbose 디버그 모드 — 어드민이 켜면 INFO+ 로그가 서버로 push 됨.
             from worker.log_shipper import set_verbose_mode
@@ -469,6 +472,39 @@ class WorkerApp:
         finally:
             # PR-D: 워커는 더 이상 로컬 DB 세션 안 만듦. 정리 필요 없음.
             pass
+
+    async def _cleanup_adspower_on_boot(self):
+        """One-time stale AdsPower browser cleanup after heartbeat supplies API key."""
+        if self._adspower_boot_cleanup_done:
+            return
+        self._adspower_boot_cleanup_done = True
+        try:
+            from hydra.core.config import settings
+            if settings.browser_backend.lower() != "adspower":
+                return
+            from hydra.browser.adspower import adspower
+            from hydra.browser.adspower_cleanup import cleanup_stale_adspower_browsers
+
+            try:
+                await asyncio.wait_for(
+                    asyncio.to_thread(adspower.stop_all_browsers),
+                    timeout=20,
+                )
+                print("[Worker] AdsPower boot cleanup: stop-all requested")
+            except Exception as e:
+                print(f"[Worker] AdsPower boot cleanup stop-all failed: {type(e).__name__}: {e}")
+
+            try:
+                result = await asyncio.to_thread(
+                    cleanup_stale_adspower_browsers,
+                    reason="worker_boot",
+                )
+                if result.get("matched_pids"):
+                    print(f"[Worker] AdsPower boot cleanup killed stale pids: {result}")
+            except Exception as e:
+                print(f"[Worker] AdsPower boot cleanup process scan failed: {type(e).__name__}: {e}")
+        except Exception as e:
+            print(f"[Worker] AdsPower boot cleanup skipped: {type(e).__name__}: {e}")
 
 
 def _ensure_local_schema():
