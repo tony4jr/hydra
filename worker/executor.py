@@ -38,6 +38,55 @@ def _raise_task_error(action: str, error: str) -> None:
     raise RuntimeError(json.dumps({"action": action, "error": error}, ensure_ascii=False))
 
 
+async def _report_unknown_post_id(
+    session: WorkerSession,
+    task: dict,
+    *,
+    subkind: str,
+    action: str,
+    video_id: str,
+    text: str,
+) -> None:
+    """댓글/답글은 올라간 듯하지만 YouTube ID를 못 찾은 경우 진단 업로드."""
+    client = getattr(session, "server_client", None)
+    if client is None:
+        return
+
+    page = getattr(getattr(getattr(session, "browser", None), "page", None), "url", "")
+    context = {
+        "subkind": subkind,
+        "task_id": task.get("id"),
+        "task_type": task.get("task_type"),
+        "action": action,
+        "video_id": video_id,
+        "account_id": getattr(session, "account_id", None),
+        "profile_id": getattr(session, "profile_id", None),
+        "phase": getattr(session, "current_phase", None),
+        "page_url": page,
+        "text_len": len(text or ""),
+    }
+
+    shot = None
+    try:
+        shot = await session.capture_screenshot()
+    except Exception:
+        shot = None
+
+    try:
+        if shot and hasattr(client, "report_error_with_screenshot"):
+            client.report_error_with_screenshot(
+                kind="diagnostic",
+                message=subkind,
+                screenshot_bytes=shot,
+                context=context,
+                filename=f"{subkind}.png",
+            )
+        elif hasattr(client, "report_error"):
+            client.report_error(kind="diagnostic", message=subkind, context=context)
+    except Exception:
+        pass
+
+
 class TaskExecutor:
     def __init__(self):
         self.handlers = {
@@ -192,6 +241,17 @@ class TaskExecutor:
 
         # 댓글 작성
         comment_id = await post_comment(page, text)
+        if comment_id is None:
+            raise RuntimeError("post_failed")
+        if comment_id == "":
+            await _report_unknown_post_id(
+                session,
+                task,
+                subkind="comment_id_unknown",
+                action="comment",
+                video_id=video_id,
+                text=text,
+            )
 
         return json.dumps({
             "action": "comment",
@@ -230,7 +290,16 @@ class TaskExecutor:
         # 대댓글 작성
         reply_id = await post_reply(page, target, text)
         if reply_id is None:
-            _raise_task_error("reply", "target_reply_failed")
+            raise RuntimeError("post_failed")
+        if reply_id == "":
+            await _report_unknown_post_id(
+                session,
+                task,
+                subkind="reply_id_unknown",
+                action="reply",
+                video_id=video_id,
+                text=text,
+            )
 
         return json.dumps({
             "action": "reply",
