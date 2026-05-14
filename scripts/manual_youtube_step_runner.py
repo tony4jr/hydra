@@ -339,6 +339,33 @@ async def _cmd_probe_comment_box(args: argparse.Namespace) -> dict[str, Any]:
     return _record(state, step="probe_comment_box", ok=True, data=data)
 
 
+async def _cmd_expand_comment_box(args: argparse.Namespace) -> dict[str, Any]:
+    from hydra.browser.actions import random_delay
+
+    state = _load_state(args.run_id)
+
+    async def fn(page):
+        simplebox = page.locator("ytd-comment-simplebox-renderer").first
+        await simplebox.scroll_into_view_if_needed()
+        await random_delay(0.5, 1.0)
+        placeholder = simplebox.locator("#simplebox-placeholder, #placeholder-area").first
+        await placeholder.click()
+        await random_delay(0.8, 1.5)
+        input_box = simplebox.locator("#contenteditable-root")
+        submit = simplebox.locator(
+            "ytd-button-renderer#submit-button button, "
+            "#submit-button button:not([aria-disabled='true'])"
+        )
+        return {
+            "input_count": await input_box.count(),
+            "submit_count": await submit.count(),
+            "active": await input_box.first.is_visible() if await input_box.count() else False,
+        }
+
+    data = await _with_page(state, fn)
+    return _record(state, step="expand_comment_box", ok=True, data=data)
+
+
 async def _cmd_draft_comment(args: argparse.Namespace) -> dict[str, Any]:
     from hydra.browser.actions import _paste_modifier, random_delay
 
@@ -444,6 +471,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("scroll_comments")
     sub.add_parser("read_comments")
     sub.add_parser("probe_comment_box")
+    sub.add_parser("expand_comment_box")
 
     d = sub.add_parser("draft_comment")
     d.add_argument("--text")
@@ -478,6 +506,8 @@ async def _amain(args: argparse.Namespace) -> dict[str, Any]:
         return await _cmd_read_comments(args)
     if args.cmd == "probe_comment_box":
         return await _cmd_probe_comment_box(args)
+    if args.cmd == "expand_comment_box":
+        return await _cmd_expand_comment_box(args)
     if args.cmd == "draft_comment":
         return await _cmd_draft_comment(args)
     if args.cmd == "submit_comment":
