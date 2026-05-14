@@ -27,3 +27,4 @@ hydra.egg-info/
 # Redesign 문서 패키지 zip (소스 .md 만 추적)
 redesign/*.zip
 .codex_*.md
+.manual_runs/
