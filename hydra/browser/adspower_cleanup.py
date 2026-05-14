@@ -84,6 +84,29 @@ def _adspowerish(name: str, cmd: str) -> bool:
     return "adspower" in f"{name} {cmd}".lower()
 
 
+def _has_browser_session_marker(
+    *,
+    name: str,
+    cmd: str,
+    profile_id: str | None,
+    debug_port: int | str | None,
+    include_stale_remote_debugging: bool,
+) -> bool:
+    """Return True only for AdsPower-launched browser/session processes.
+
+    The AdsPower desktop app itself is also named "AdsPower Global" on Windows.
+    Never kill it by name alone; require a profile/debug-port/CDP marker.
+    """
+    needle = (profile_id or "").lower()
+    if debug_port and _debug_port_in_cmdline(cmd, debug_port):
+        return True
+    if needle and needle in cmd:
+        return True
+    if include_stale_remote_debugging and "--remote-debugging-port" in cmd:
+        return _browserish(name, cmd) or _adspowerish(name, cmd)
+    return False
+
+
 def _cmdline_text(cmdline: Any) -> str:
     if isinstance(cmdline, str):
         return cmdline
@@ -112,16 +135,12 @@ def _candidate_pids(
             cmd = _cmdline_text(info.get("cmdline")).lower()
             if not _browserish(name, cmd):
                 continue
-            if debug_port and _debug_port_in_cmdline(cmd, debug_port):
-                matched.add(pid)
-                continue
-            if needle and needle in cmd:
-                matched.add(pid)
-                continue
-            if (
-                include_stale_remote_debugging
-                and "--remote-debugging-port" in cmd
-                and _adspowerish(name, cmd)
+            if _has_browser_session_marker(
+                name=name,
+                cmd=cmd,
+                profile_id=needle,
+                debug_port=debug_port,
+                include_stale_remote_debugging=include_stale_remote_debugging,
             ):
                 matched.add(pid)
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
@@ -193,8 +212,23 @@ def cleanup_adspower_processes(
             n = int(pid)
         except (TypeError, ValueError):
             continue
-        if n > 0 and n != os.getpid():
-            matched.add(n)
+        if n <= 0 or n == os.getpid():
+            continue
+        try:
+            import psutil  # type: ignore
+            proc = psutil.Process(n)
+            name = str(proc.name() or "")
+            cmd = _cmdline_text(proc.cmdline()).lower()
+            if _has_browser_session_marker(
+                name=name,
+                cmd=cmd,
+                profile_id=profile_id,
+                debug_port=debug_port,
+                include_stale_remote_debugging=True,
+            ):
+                matched.add(n)
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            continue
     matched.update(
         _candidate_pids(
             profile_id=profile_id,
