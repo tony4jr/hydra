@@ -100,8 +100,11 @@ async def test_handle_comment_empty_id_reports_diagnostic_and_completes(monkeypa
 
     data = json.loads(result)
     assert data["comment_id"] == ""
-    assert session.server_client.screenshot_errors[0]["kind"] == "comment_id_unknown"
-    assert session.server_client.screenshot_errors[0]["screenshot_bytes"] == b"png"
+    err = session.server_client.screenshot_errors[0]
+    assert err["kind"] == "diagnostic"
+    assert err["message"] == "comment_id_unknown"
+    assert err["context"]["subkind"] == "comment_id_unknown"
+    assert err["screenshot_bytes"] == b"png"
 
 
 @pytest.mark.asyncio
@@ -154,4 +157,7 @@ async def test_handle_reply_empty_id_reports_diagnostic_and_completes(monkeypatc
 
     data = json.loads(result)
     assert data["reply_id"] == ""
-    assert session.server_client.screenshot_errors[0]["kind"] == "reply_id_unknown"
+    err = session.server_client.screenshot_errors[0]
+    assert err["kind"] == "diagnostic"
+    assert err["message"] == "reply_id_unknown"
+    assert err["context"]["subkind"] == "reply_id_unknown"

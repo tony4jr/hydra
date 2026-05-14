@@ -42,7 +42,7 @@ async def _report_unknown_post_id(
     session: WorkerSession,
     task: dict,
     *,
-    kind: str,
+    subkind: str,
     action: str,
     video_id: str,
     text: str,
@@ -54,6 +54,7 @@ async def _report_unknown_post_id(
 
     page = getattr(getattr(getattr(session, "browser", None), "page", None), "url", "")
     context = {
+        "subkind": subkind,
         "task_id": task.get("id"),
         "task_type": task.get("task_type"),
         "action": action,
@@ -64,7 +65,6 @@ async def _report_unknown_post_id(
         "page_url": page,
         "text_len": len(text or ""),
     }
-    message = f"{kind}: post returned empty id"
 
     shot = None
     try:
@@ -75,14 +75,14 @@ async def _report_unknown_post_id(
     try:
         if shot and hasattr(client, "report_error_with_screenshot"):
             client.report_error_with_screenshot(
-                kind=kind,
-                message=message,
+                kind="diagnostic",
+                message=subkind,
                 screenshot_bytes=shot,
                 context=context,
-                filename=f"{kind}.png",
+                filename=f"{subkind}.png",
             )
         elif hasattr(client, "report_error"):
-            client.report_error(kind=kind, message=message, context=context)
+            client.report_error(kind="diagnostic", message=subkind, context=context)
     except Exception:
         pass
 
@@ -247,7 +247,7 @@ class TaskExecutor:
             await _report_unknown_post_id(
                 session,
                 task,
-                kind="comment_id_unknown",
+                subkind="comment_id_unknown",
                 action="comment",
                 video_id=video_id,
                 text=text,
@@ -295,7 +295,7 @@ class TaskExecutor:
             await _report_unknown_post_id(
                 session,
                 task,
-                kind="reply_id_unknown",
+                subkind="reply_id_unknown",
                 action="reply",
                 video_id=video_id,
                 text=text,
