@@ -8,6 +8,7 @@ import asyncio
 import contextvars
 import random
 import re
+import time
 from playwright.async_api import Page
 
 from hydra.core.config import settings
@@ -316,12 +317,13 @@ async def post_reply(page: Page, target: str, text: str) -> str | None:
         if target.startswith("Ug") and not target.startswith("ytd-"):
             # Looks like a comment ID — find the thread
             comment = page.locator(
+                f"ytd-comment-thread-renderer[comment-id='{target}'], "
+                f"ytd-comment-thread-renderer[data-cid='{target}'], "
+                f"ytd-comment-thread-renderer[data-comment-id='{target}'], "
                 f"ytd-comment-thread-renderer:has([data-cid='{target}']), "
-                f"ytd-comment-thread-renderer a[href*='lc={target}']"
-            ).locator("xpath=ancestor::ytd-comment-thread-renderer[1]")
-            if await comment.count() == 0:
-                # Fallback: locator by data-cid alone
-                comment = page.locator(f"ytd-comment-thread-renderer:has([data-cid='{target}'])")
+                f"ytd-comment-thread-renderer:has([data-comment-id='{target}']), "
+                f"ytd-comment-thread-renderer:has(a[href*='lc={target}'])"
+            )
         elif target.startswith("ytd-") or "[" in target or "#" in target:
             comment = page.locator(target)
         else:
@@ -420,35 +422,69 @@ async def _extract_new_comment_id(page: Page, text: str = "") -> str | None:
     """
     if not text:
         return None
+    js = """(needle) => {
+        const clean = (s) => (s || '').replace(/\\s+/g, ' ').trim();
+        const readId = (t) => {
+            const direct = t.getAttribute('data-cid')
+                || t.getAttribute('data-comment-id')
+                || t.getAttribute('comment-id');
+            if (direct) return direct;
+            const attr = t.querySelector('[data-cid]')?.getAttribute('data-cid')
+                || t.querySelector('[data-comment-id]')?.getAttribute('data-comment-id')
+                || t.querySelector('[comment-id]')?.getAttribute('comment-id');
+            if (attr) return attr;
+            const link = t.querySelector('a[href*="lc="]')?.href || '';
+            const m = link.match(/[?&]lc=([^&]+)/);
+            return m ? decodeURIComponent(m[1]) : null;
+        };
+        const wanted = clean(needle);
+        const threads = [...document.querySelectorAll(
+            'ytd-comment-thread-renderer, ytd-comment-view-model, ytd-comment-renderer'
+        )];
+        for (const t of threads) {
+            const txt = clean(t.querySelector('#content-text')?.innerText || t.innerText || '');
+            if (wanted && txt.includes(wanted)) {
+                const id = readId(t);
+                if (id) return id;
+            }
+        }
+        return null;
+    }"""
+    deadline = time.monotonic() + random.uniform(3.0, 5.0)
+    last_error: Exception | None = None
     try:
-        # Wait briefly for YouTube to render the new comment
-        await asyncio.sleep(1.5)
-        # Search for our text in any thread (logged-in users see their own comments at top)
-        comment_id = await page.evaluate(
-            """(needle) => {
-                const threads = [...document.querySelectorAll('ytd-comment-thread-renderer, ytd-comment-view-model, ytd-comment-renderer')];
-                for (const t of threads) {
-                    const txt = t.querySelector('#content-text')?.innerText?.trim() || '';
-                    if (needle && txt.includes(needle)) {
-                        // Look for ID on common attributes
-                        const cid = t.getAttribute('data-cid')
-                            || t.querySelector('[data-cid]')?.getAttribute('data-cid')
-                            || t.getAttribute('data-comment-id');
-                        if (cid) return cid;
-                        // Look for 'lc=' in any time/author link
-                        const link = t.querySelector('a[href*="lc="]')?.href || '';
-                        const m = link.match(/[?&]lc=([^&]+)/);
-                        if (m) return decodeURIComponent(m[1]);
-                    }
-                }
-                return null;
-            }""",
-            text,
-        )
-        return comment_id
+        # YouTube가 submit 후 DOM attribute/link를 늦게 붙이는 경우가 있어 짧게 재시도.
+        while time.monotonic() < deadline:
+            try:
+                comment_id = await page.evaluate(js, text)
+                if comment_id:
+                    return comment_id
+            except Exception as e:
+                last_error = e
+            await asyncio.sleep(0.5)
     except Exception as e:
-        log.warning(f"comment_id extract failed: {e}")
-        return None
+        last_error = e
+
+    current_url = getattr(page, "url", "") or ""
+    if _looks_like_logged_out_redirect(current_url):
+        log.warning(f"comment_id extract failed after login redirect: {current_url}")
+    elif last_error is not None:
+        log.warning(f"comment_id extract failed: {last_error}")
+    else:
+        log.warning("comment_id extract timed out")
+    return None
+
+
+def _looks_like_logged_out_redirect(url: str) -> bool:
+    if not url:
+        return False
+    u = url.lower()
+    return (
+        "accounts.google." in u
+        or "/servicelogin" in u
+        or "/signin/" in u
+        or "youtube.com/signin" in u
+    )
 
 
 async def check_ghost(page: Page, youtube_comment_id: str) -> str:
