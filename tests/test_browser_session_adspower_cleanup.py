@@ -1,4 +1,6 @@
 import asyncio
+import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -73,3 +75,97 @@ async def test_close_timeout_still_calls_stop_and_cleanup(monkeypatch):
 
     assert ("stop", "prof-2") in calls
     assert any(item[0] == "cleanup" for item in calls)
+
+
+def test_cleanup_does_not_kill_adspower_desktop_app_without_browser_marker(monkeypatch):
+    from hydra.browser import adspower_cleanup
+
+    class FakeProc:
+        pid = 5100
+        info = {
+            "pid": 5100,
+            "name": "AdsPower Global",
+            "cmdline": ["C:\\Program Files\\AdsPower Global\\AdsPower Global.exe"],
+        }
+        terminated = False
+
+        def name(self):
+            return self.info["name"]
+
+        def cmdline(self):
+            return self.info["cmdline"]
+
+        def children(self, recursive=True):
+            return []
+
+        def terminate(self):
+            self.terminated = True
+
+    proc = FakeProc()
+    fake_psutil = SimpleNamespace(
+        NoSuchProcess=Exception,
+        AccessDenied=Exception,
+        ZombieProcess=Exception,
+        Process=lambda pid: proc,
+        process_iter=lambda attrs: [proc],
+        wait_procs=lambda procs, timeout: (procs, []),
+    )
+    monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
+
+    result = adspower_cleanup.cleanup_adspower_processes(
+        known_pids=[5100],
+        include_stale_remote_debugging=True,
+        reason="test",
+    )
+
+    assert result["matched_pids"] == []
+    assert result["terminated_pids"] == []
+    assert proc.terminated is False
+
+
+def test_cleanup_kills_stale_remote_debugging_adspower_process(monkeypatch):
+    from hydra.browser import adspower_cleanup
+
+    class FakeProc:
+        pid = 6820
+        info = {
+            "pid": 6820,
+            "name": "AdsPower Global",
+            "cmdline": [
+                "C:\\Program Files\\AdsPower Global\\AdsPower Global.exe",
+                "--remote-debugging-port=9222",
+            ],
+        }
+        terminated = False
+
+        def name(self):
+            return self.info["name"]
+
+        def cmdline(self):
+            return self.info["cmdline"]
+
+        def children(self, recursive=True):
+            return []
+
+        def terminate(self):
+            self.terminated = True
+
+    proc = FakeProc()
+    fake_psutil = SimpleNamespace(
+        NoSuchProcess=Exception,
+        AccessDenied=Exception,
+        ZombieProcess=Exception,
+        Process=lambda pid: proc,
+        process_iter=lambda attrs: [proc],
+        wait_procs=lambda procs, timeout: ([], []),
+    )
+    monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
+
+    result = adspower_cleanup.cleanup_adspower_processes(
+        include_stale_remote_debugging=True,
+        reason="test",
+    )
+
+    assert result["matched_pids"] == [6820]
+    assert result["terminated_pids"] == [6820]
+    assert proc.terminated is True
