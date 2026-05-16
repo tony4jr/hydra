@@ -119,6 +119,7 @@ def generate_comment(
 
     comment = call_claude(
         model=get_model("comment"),
+        agent_name="reply" if is_reply else "comment",
         system=system,
         user_message=user_msg,
         max_tokens=300,

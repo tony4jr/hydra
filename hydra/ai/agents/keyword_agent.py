@@ -29,6 +29,7 @@ def expand_keywords(db: Session, keyword: Keyword, max_count: int = 15) -> list[
 
     text = call_claude(
         model=get_model("keyword"),
+        agent_name="keyword",
         system="",
         user_message=user_msg,
         max_tokens=500,

@@ -94,6 +94,7 @@ def generate_conversation(
         # 댓글 생성
         text = call_claude(
             model=model,
+            agent_name="comment" if role in PROMO_ROLES else "casual",
             system=system_prompt,
             user_message=user_message,
             max_tokens=300 if role in PROMO_ROLES else 150,
