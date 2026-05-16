@@ -146,6 +146,42 @@ def label_unknown_screen(
         db.close()
 
 
+@router.get("/summary", response_model=dict)
+def summarize_recent_errors(
+    hours: int = Query(default=24, ge=1, le=168),
+    kind: str | None = Query(default=None),
+    _user=Depends(admin_session),
+) -> dict:
+    """Phase 4.1 — Haiku 로 worker_errors 한 줄 요약."""
+    from hydra.ai.agents.error_summary_agent import summarize_errors
+    db = _db_session.SessionLocal()
+    try:
+        cutoff = datetime.now(UTC) - timedelta(hours=hours)
+        q = db.query(WorkerError).filter(WorkerError.received_at >= cutoff)
+        if kind:
+            q = q.filter(WorkerError.kind == kind)
+        rows = q.order_by(desc(WorkerError.received_at)).limit(200).all()
+        as_dicts = [{
+            "kind": r.kind,
+            "message": r.message,
+            "screen_state": r.screen_state,
+            "failure_taxonomy": r.failure_taxonomy,
+            "captured_url": r.captured_url,
+            "received_at": r.received_at.isoformat() if r.received_at else None,
+            "worker_id": r.worker_id,
+        } for r in rows]
+        summary = summarize_errors(as_dicts, window_hint=f"최근 {hours}시간")
+        return {
+            "ok": True,
+            "count": len(rows),
+            "window_hours": hours,
+            "kind_filter": kind,
+            "summary": summary,
+        }
+    finally:
+        db.close()
+
+
 @router.get("/resolutions", response_model=list[dict])
 def list_resolutions(
     screen_state: str | None = Query(default=None),
