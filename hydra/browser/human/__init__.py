@@ -34,16 +34,38 @@ from hydra.browser.human.scroll import (
     human_scroll_into_view,
     scroll_to_element,
 )
+from hydra.browser.human.config import async_sleep_ms
+from hydra.browser.human.mouse_async import (
+    AsyncRawMouse,
+    async_human_move,
+    async_human_click,
+    async_human_idle,
+)
+from hydra.browser.human.keyboard_async import (
+    AsyncRawKeyboard,
+    async_human_type,
+)
+from hydra.browser.human.scroll_async import (
+    async_human_scroll_into_view,
+    async_scroll_to_element,
+)
 
 __all__ = [
     "HumanConfig",
     "HumanPreset",
-    "rand", "rand_range", "rand_int_range", "sleep_ms",
+    "rand", "rand_range", "rand_int_range", "sleep_ms", "async_sleep_ms",
     "resolve_config", "merge_config",
+    # sync
     "RawMouse", "Point",
     "human_move", "human_click", "human_idle", "click_target",
     "RawKeyboard",
     "human_type",
     "SHIFT_SYMBOLS", "NEARBY_KEYS",
     "human_scroll_into_view", "scroll_to_element",
+    # async
+    "AsyncRawMouse",
+    "async_human_move", "async_human_click", "async_human_idle",
+    "AsyncRawKeyboard",
+    "async_human_type",
+    "async_human_scroll_into_view", "async_scroll_to_element",
 ]
