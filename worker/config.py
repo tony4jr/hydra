@@ -75,6 +75,11 @@ class WorkerConfig:
         self.worker_version = _git_short_hash() or DEFAULT_VERSION
         self.config_path = Path.home() / ".hydra-worker" / "config.json"
 
+        # Phase 1.5.5 — CloakBrowser human/ patch_page wiring.
+        # default off; opt-in per worker via env so prod 점진 rollout 가능.
+        self.human_patch_enabled = os.getenv("HYDRA_HUMAN_PATCH", "").strip().lower() in ("1", "true", "yes")
+        self.human_patch_preset = os.getenv("HYDRA_HUMAN_PRESET", "careful").strip().lower()
+
     def save(self) -> None:
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
         data = {
