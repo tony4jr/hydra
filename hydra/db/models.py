@@ -1324,6 +1324,42 @@ class WorkerError(Base):
     )
 
 
+class ScreenResolution(Base):
+    """Phase 3 — UNKNOWN_SCREEN 운영자 라벨 → 자동 처리 룰.
+
+    매치 우선순위: dom_signature > url_pattern > title_pattern > screen_state.
+    워커가 UNKNOWN 만나면 lookup → 매치되면 resolution_type 에 따라 자동 처리.
+    매치 안 되면 캡처 + 운영자 review queue 진입.
+    """
+    __tablename__ = "screen_resolutions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    screen_state = Column(String(64), nullable=False)
+    url_pattern = Column(Text, nullable=True)
+    title_pattern = Column(Text, nullable=True)
+    dom_signature = Column(String(128), nullable=True)
+    resolution_type = Column(String(32), nullable=False)
+    # 'auto_click_skip' / 'auto_enter_code' / 'escalate_manual' / 'fail_task' / 'retry_after_cooldown'
+    action_config = Column(Text, nullable=True)  # JSON
+    source_error_id = Column(
+        Integer,
+        ForeignKey("worker_errors.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_by_user_id = Column(Integer, nullable=True)
+    approved = Column(Boolean, nullable=False, default=False)
+    hit_count = Column(Integer, nullable=False, default=0)
+    last_hit_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+    notes = Column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("idx_sres_state", "screen_state"),
+        Index("idx_sres_signature", "dom_signature"),
+        Index("idx_sres_approved", "approved", "screen_state"),
+    )
+
+
 class AITokenUsage(Base):
     """Anthropic API 호출별 토큰 사용량.
 
