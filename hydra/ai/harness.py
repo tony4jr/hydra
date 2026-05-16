@@ -21,6 +21,34 @@ def load_prompt(name: str, **kwargs: Any) -> str:
     return template
 
 
+def _log_token_usage(
+    *, agent_name: str, model: str, usage: Any,
+    task_id: int | None, account_id: int | None,
+) -> None:
+    """ai_token_usage 적재. 실패해도 작업은 진행 (silent log)."""
+    try:
+        from hydra.db.session import SessionLocal
+        from hydra.db.models import AITokenUsage
+        db = SessionLocal()
+        try:
+            row = AITokenUsage(
+                agent_name=agent_name,
+                model=model,
+                input_tokens=getattr(usage, "input_tokens", 0) or 0,
+                output_tokens=getattr(usage, "output_tokens", 0) or 0,
+                cache_read_tokens=getattr(usage, "cache_read_input_tokens", 0) or 0,
+                cache_write_tokens=getattr(usage, "cache_creation_input_tokens", 0) or 0,
+                task_id=task_id,
+                account_id=account_id,
+            )
+            db.add(row)
+            db.commit()
+        finally:
+            db.close()
+    except Exception as e:
+        log.warning(f"ai_token_usage log failed: {type(e).__name__}: {e}")
+
+
 def call_claude(
     *,
     model: str,
@@ -30,6 +58,9 @@ def call_claude(
     max_retries: int = 3,
     validator: Any | None = None,
     retry_hint_fn: Any | None = None,
+    agent_name: str = "unknown",
+    task_id: int | None = None,
+    account_id: int | None = None,
 ) -> str:
     """Call Claude with retry, rate-limit handling, and optional validation.
 
@@ -55,6 +86,10 @@ def call_claude(
                 max_tokens=max_tokens,
                 system=system,
                 messages=[{"role": "user", "content": current_msg}],
+            )
+            _log_token_usage(
+                agent_name=agent_name, model=model, usage=resp.usage,
+                task_id=task_id, account_id=account_id,
             )
             text = resp.content[0].text.strip()
 

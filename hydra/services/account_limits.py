@@ -131,7 +131,10 @@ def get_status_ratios(db: Session | None = None) -> dict[str, float]:
         db = _SL()
         own_db = True
     try:
-        row = db.query(SystemConfig).filter(SystemConfig.key == "status_ratios").first()
+        try:
+            row = db.query(SystemConfig).filter(SystemConfig.key == "status_ratios").first()
+        except Exception:
+            row = None
         if row and row.value:
             try:
                 parsed = _json.loads(row.value)

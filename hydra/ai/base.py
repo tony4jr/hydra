@@ -8,16 +8,15 @@ from hydra.core.logger import get_logger
 log = get_logger("ai.base")
 
 # Model assignments per agent type
-MODEL_SONNET = "claude-sonnet-4-20250514"
+MODEL_SONNET = "claude-sonnet-4-6"
 MODEL_HAIKU = "claude-haiku-4-5-20251001"
 
 AGENT_MODELS = {
-    "comment": MODEL_SONNET,
-    "reply": MODEL_SONNET,
+    "comment": MODEL_HAIKU,
+    "reply": MODEL_HAIKU,
     "persona": MODEL_SONNET,
     "keyword": MODEL_SONNET,
     "casual": MODEL_HAIKU,
-    # PR-C: 슬롯 엔진 댓글 생성은 Haiku (운영 환경 매칭, 비용 1/8)
     "slot": MODEL_HAIKU,
 }
 

@@ -463,6 +463,9 @@ def generate_comment_for_task(
 
     text = call_claude(
         model=get_model("slot"),  # PR-C: Haiku (운영 환경 매칭)
+        agent_name="slot",
+        task_id=task.id,
+        account_id=task.account_id,
         system=system,
         user_message=user,
         max_tokens=LENGTH_GUIDES.get(slot.length, LENGTH_GUIDES["medium"])[1],

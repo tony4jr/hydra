@@ -201,6 +201,7 @@ def test_worker_app_skips_fetch_when_paused(monkeypatch):
     import worker.client as cli_mod
     import worker.app as app_mod
     new_cfg = WorkerConfig()
+    new_cfg.worker_version = "v1"  # match FakeClient.heartbeat current_version → no updater trigger
     for m in (cfg_mod, cli_mod, app_mod):
         monkeypatch.setattr(m, "config", new_cfg)
     from worker.app import WorkerApp

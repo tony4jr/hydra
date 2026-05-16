@@ -1316,6 +1316,31 @@ class WorkerError(Base):
     )
 
 
+class AITokenUsage(Base):
+    """Anthropic API 호출별 토큰 사용량.
+
+    모든 client.messages.create 호출 후 hydra.ai.harness.call_claude 가 적재.
+    agent_name 으로 분류, task_id/account_id 로 운영 컨텍스트 연결.
+    """
+    __tablename__ = "ai_token_usage"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    agent_name = Column(String(32), nullable=False)
+    model = Column(String(64), nullable=False)
+    input_tokens = Column(Integer, nullable=False, default=0)
+    output_tokens = Column(Integer, nullable=False, default=0)
+    cache_read_tokens = Column(Integer, nullable=False, default=0)
+    cache_write_tokens = Column(Integer, nullable=False, default=0)
+    task_id = Column(Integer, ForeignKey("tasks.id"), nullable=True)
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True)
+    occurred_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+
+    __table_args__ = (
+        Index("idx_aitku_time", "occurred_at"),
+        Index("idx_aitku_agent_time", "agent_name", "occurred_at"),
+    )
+
+
 class CommentSnapshot(Base):
     """Periodic snapshot of one of our comments — used to track ranking / hold / ghost over time.
 

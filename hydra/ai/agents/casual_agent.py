@@ -22,6 +22,7 @@ def generate_non_promo_comment(persona: dict, video_title: str) -> str:
 
     comment = call_claude(
         model=get_model("casual"),
+        agent_name="casual",
         system=system,
         user_message=f"영상: {video_title}",
         max_tokens=150,

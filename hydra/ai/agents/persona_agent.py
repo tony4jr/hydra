@@ -53,6 +53,7 @@ def generate_persona(slot: PersonaSlot) -> dict:
 
     text = call_claude(
         model=get_model("persona"),
+        agent_name="persona",
         system="",
         user_message=user_msg,
         max_tokens=700,
