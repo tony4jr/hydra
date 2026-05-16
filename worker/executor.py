@@ -488,12 +488,25 @@ class TaskExecutor:
         password = payload["password"]
         totp_secret = payload.get("totp_secret")
 
-        success = await auto_login(page, email, password, totp_secret)
+        success = await auto_login(
+            page, email, password,
+            totp_secret=totp_secret,
+            client=getattr(session, "server_client", None),
+            task_id=task.get("id") if isinstance(task, dict) else None,
+            account_id=payload.get("account_id"),
+        )
+
+        # Phase 1 — silent success 박멸의 일부: success=False는 task fail로 전파.
+        # 이전엔 {"success": false} 반환 → app.py가 complete_task → 서버 done 마킹 →
+        # 실패가 done으로 기록되는 false positive. RuntimeError raise하면 워커의 task_fail
+        # 경로 (server에 /fail 호출 + retry budget 적용)로 정확히 라우팅됨.
+        if not success:
+            raise RuntimeError(f"auto_login failed for {email} — see UNKNOWN_SCREEN evidence")
 
         return json.dumps({
             "action": "login",
             "email": email,
-            "success": success,
+            "success": True,
         })
 
     async def _handle_channel_setup(self, task: dict, payload: dict, session: WorkerSession) -> str:
