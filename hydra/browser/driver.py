@@ -81,11 +81,35 @@ class BrowserSession:
             else:
                 self._page = await self._context.new_page()
 
+            # Phase 1.5.5 — opt-in CloakBrowser human/ patch_page wiring.
+            # When HYDRA_HUMAN_PATCH=true on worker, all existing + future pages
+            # in this context get bezier mouse, NEARBY_KEYS typing, wheel-burst
+            # scroll, and CDP isolated DOM reads. Failure is non-fatal.
+            self._apply_human_patch_if_enabled()
+
             log.info(f"Connected to profile {self.profile_id}")
             return self
         except Exception:
             await self.close(force_process_cleanup=True)
             raise
+
+    def _apply_human_patch_if_enabled(self) -> None:
+        """Apply hydra.browser.human.patch_context_async if env opt-in.
+
+        Lazy import + try/except so a patch failure never blocks task execution
+        (caller can disable via HYDRA_HUMAN_PATCH=false to immediately roll back).
+        """
+        import os
+        if os.getenv("HYDRA_HUMAN_PATCH", "").strip().lower() not in ("1", "true", "yes"):
+            return
+        try:
+            from hydra.browser.human import patch_context_async, resolve_config
+            preset = os.getenv("HYDRA_HUMAN_PRESET", "careful").strip().lower()
+            cfg = resolve_config(preset)
+            patch_context_async(self._context, cfg)
+            log.info(f"human patch applied (preset={preset})")
+        except Exception as e:
+            log.warning(f"human patch skipped — {type(e).__name__}: {e}")
 
     @property
     def page(self) -> Page:
