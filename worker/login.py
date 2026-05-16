@@ -43,6 +43,9 @@ async def auto_login(
     totp_secret: str | None = None,
     recovery_email: str | None = None,
     post_login_timeout_ms: int = 30_000,
+    client=None,           # Phase 1 — ServerClient (optional, for UNKNOWN_SCREEN upload)
+    task_id: int | None = None,
+    account_id: int | None = None,
 ):
     """Google 로그인 자동화. 성공 시 True.
 
@@ -98,9 +101,23 @@ async def auto_login(
                 except Exception as e:
                     log.warning(f"accountchooser click failed: {e}")
             else:
-                log.info(f"auto_login: no email input at {cur[:80]}, treating as logged-in")
-                await _skip_post_login_prompts(page, max_attempts=6)
-                return True
+                # Phase 1 — silent success 박멸. 모르는 화면이면 logged-in 가정 X.
+                # UNKNOWN_SCREEN 캡처 + 명시적 False 반환 → 호출자가 fail 처리 가능.
+                # Why: 과거 패턴(treating as logged-in)은 실제 로그인 실패를 성공으로
+                # 보고 → comment 시도 → 더 큰 실패 + 계정 의심도 증가.
+                log.warning(f"auto_login: unknown screen at {cur[:80]}")
+                from worker.capture import capture_unknown_screen
+                from hydra.protocol.failure_taxonomy import FailureTaxonomy
+                await capture_unknown_screen(
+                    page,
+                    screen_state="POST_PASSWORD_UNKNOWN",
+                    taxonomy=FailureTaxonomy.PAGE_VARIANT,
+                    reason="no email input and no known url match",
+                    client=client,
+                    task_id=task_id,
+                    account_id=account_id,
+                )
+                return False
 
         # Step 1: email
         # ⚠ typing_style="typist" 강제 — paster (clipboard paste) 는 일부 브라우저

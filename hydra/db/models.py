@@ -1302,17 +1302,25 @@ class WorkerError(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     worker_id = Column(Integer, ForeignKey("workers.id"), nullable=False)
-    kind = Column(String(32), nullable=False)           # heartbeat_fail, task_fail, diagnostic, update_fail, other
+    kind = Column(String(32), nullable=False)           # heartbeat_fail, task_fail, diagnostic, update_fail, unknown_screen, other
     message = Column(Text, nullable=False)              # 한 줄 요약
     traceback = Column(Text, nullable=True)             # full traceback (있으면)
     context = Column(Text, nullable=True)               # JSON — task_id, url, etc
     screenshot_url = Column(Text, nullable=True)        # 디스크 상대경로 e.g. 2026-04-25/<worker>-<ts>-<rand>.png
     occurred_at = Column(DateTime, nullable=False)      # 워커가 기록한 시각
     received_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+    # Phase 1 — UNKNOWN_SCREEN 캡처용 신규 컬럼
+    screen_state = Column(String(64), nullable=True)        # e.g. POST_PASSWORD_UNKNOWN
+    failure_taxonomy = Column(String(32), nullable=True)    # FailureTaxonomy enum value
+    captured_html_url = Column(Text, nullable=True)         # S3/local path to full HTML
+    captured_url = Column(Text, nullable=True)              # page.url at capture
+    captured_title = Column(Text, nullable=True)            # page.title at capture
 
     __table_args__ = (
         Index("idx_werr_worker_time", "worker_id", "received_at"),
         Index("idx_werr_kind_time", "kind", "received_at"),
+        Index("idx_werr_taxonomy_time", "failure_taxonomy", "received_at"),
+        Index("idx_werr_state_time", "screen_state", "received_at"),
     )
 
 

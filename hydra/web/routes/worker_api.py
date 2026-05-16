@@ -381,7 +381,7 @@ class HeartbeatResponse(BaseModel):
 # ───────────── error report ─────────────
 _ALLOWED_ERROR_KINDS = frozenset({
     "heartbeat_fail", "fetch_fail", "task_fail", "diagnostic",
-    "update_fail", "other",
+    "update_fail", "unknown_screen", "other",
 })
 _DEDUPE_WINDOW_SECONDS = 600  # 10분
 
@@ -432,12 +432,18 @@ def report_error(
             return ReportErrorResponse(ok=True, deduped=True)
 
         ctx_json = json.dumps(req.context, ensure_ascii=False) if req.context else None
+        # Phase 1 — mirror of /report-error-with-screenshot mapping for consistency.
+        c = req.context or {}
         err = WorkerError(
             worker_id=worker.id,
             kind=kind,
             message=req.message,
             traceback=req.traceback,
             context=ctx_json,
+            screen_state=c.get("screen_state"),
+            failure_taxonomy=c.get("failure_taxonomy"),
+            captured_url=c.get("captured_url"),
+            captured_title=c.get("captured_title"),
             occurred_at=occurred_at,
             received_at=datetime.now(UTC),
         )
@@ -526,6 +532,13 @@ async def report_error_with_screenshot(
             except Exception:
                 ctx_dict = {"_raw": context[:500]}
 
+        # Phase 1 — context dict 의 UNKNOWN_SCREEN 필드를 first-class 컬럼으로 매핑.
+        # 기존 context JSON 도 그대로 보존 (backward compat).
+        screen_state = ctx_dict.get("screen_state") if ctx_dict else None
+        failure_taxonomy = ctx_dict.get("failure_taxonomy") if ctx_dict else None
+        captured_url = ctx_dict.get("captured_url") if ctx_dict else None
+        captured_title = ctx_dict.get("captured_title") if ctx_dict else None
+
         err = WorkerError(
             worker_id=worker.id,
             kind=k,
@@ -533,6 +546,10 @@ async def report_error_with_screenshot(
             traceback=traceback,
             context=json.dumps(ctx_dict, ensure_ascii=False) if ctx_dict else None,
             screenshot_url=rel_path,
+            screen_state=screen_state,
+            failure_taxonomy=failure_taxonomy,
+            captured_url=captured_url,
+            captured_title=captured_title,
             occurred_at=now,
             received_at=now,
         )
