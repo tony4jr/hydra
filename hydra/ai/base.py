@@ -18,6 +18,9 @@ AGENT_MODELS = {
     "keyword": MODEL_SONNET,
     "casual": MODEL_HAIKU,
     "slot": MODEL_HAIKU,
+    # Phase 4 — 운영 보조 AI
+    "error_summary": MODEL_HAIKU,       # 단순 요약, Haiku 충분
+    "screen_classifier": MODEL_SONNET,  # vision 분류 (P4 후속, 데이터 모인 후)
 }
 
 _client: anthropic.Anthropic | None = None
