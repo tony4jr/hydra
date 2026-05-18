@@ -65,6 +65,18 @@ interface ChannelVerify {
   match: boolean
 }
 
+interface TimelineEntry {
+  id: number
+  event_type: string
+  message: string
+  screen_state: string | null
+  failure_taxonomy: string | null
+  task_id: number | null
+  worker_id: number | null
+  context: Record<string, unknown> | null
+  created_at: string
+}
+
 interface AccountDetailSheetProps {
   accountId: number | null
   open: boolean
@@ -105,6 +117,8 @@ export function AccountDetailSheet({ accountId, open, onOpenChange }: AccountDet
   const [channelVerify, setChannelVerify] = useState<ChannelVerify | null>(null)
   const [actioning, setActioning] = useState(false)
   const [actionMsg, setActionMsg] = useState('')
+  // Phase 3.2 — account_events timeline (task/login/UNKNOWN 등 1줄씩 append)
+  const [timeline, setTimeline] = useState<TimelineEntry[]>([])
 
   const reload = () => {
     if (!accountId) return
@@ -113,7 +127,7 @@ export function AccountDetailSheet({ accountId, open, onOpenChange }: AccountDet
 
   useEffect(() => {
     if (!accountId || !open) return
-    setDetail(null); setMetrics(null); setHistory([]); setOnboardActions([]); setChannelVerify(null); setActionMsg('')
+    setDetail(null); setMetrics(null); setHistory([]); setOnboardActions([]); setChannelVerify(null); setActionMsg(''); setTimeline([])
 
     fetchApi<AccountDetail>(`/accounts/api/${accountId}`).then(setDetail).catch(() => {})
     fetchApi<AccountMetrics>(`/accounts/api/${accountId}/metrics`).then(setMetrics).catch(() => {})
@@ -121,6 +135,10 @@ export function AccountDetailSheet({ accountId, open, onOpenChange }: AccountDet
       .then(d => setHistory(d.items || [])).catch(() => {})
     fetchApi<{ items: OnboardActionsEntry[] }>(`/accounts/api/${accountId}/onboard/actions`)
       .then(d => setOnboardActions(d.items || [])).catch(() => {})
+    // Phase 3.2 — timeline (task/login lifecycle + UNKNOWN_SCREEN).
+    // 응답은 list 직접 (admin_account_timeline 라우터 형식).
+    fetchApi<TimelineEntry[]>(`/api/admin/accounts/${accountId}/timeline?limit=50&days=30`)
+      .then(d => setTimeline(d || [])).catch(() => {})
   }, [accountId, open])
 
   const call = async (path: string, method = 'POST', body?: object, successMsg = '완료') => {
@@ -421,6 +439,38 @@ export function AccountDetailSheet({ accountId, open, onOpenChange }: AccountDet
                 </div>
               )}
             </section>
+
+            {/* Phase 3.2 — account_events timeline */}
+            <Separator />
+            <section>
+              <h4 className='text-foreground font-semibold text-[14px] mb-3'>
+                최근 이벤트 (Timeline)
+              </h4>
+              {timeline.length === 0 ? (
+                <p className='text-muted-foreground text-[13px] text-center py-4'>
+                  이벤트가 아직 없어요
+                </p>
+              ) : (
+                <div className='space-y-1'>
+                  {timeline.map(ev => (
+                    <div
+                      key={ev.id}
+                      className='flex items-center justify-between rounded-md border border-border/50 px-3 py-1.5 text-[12px]'
+                    >
+                      <div className='flex items-center gap-2 min-w-0'>
+                        <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded ${eventTypeClass(ev.event_type)}`}>
+                          {ev.event_type}
+                        </span>
+                        <span className='truncate'>{ev.message}</span>
+                      </div>
+                      <span className='text-muted-foreground text-[10px] shrink-0 ml-2'>
+                        {new Date(ev.created_at).toLocaleString('ko')}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
           </div>
         ) : (
           <div className='space-y-3 px-4 py-6'>
@@ -433,6 +483,25 @@ export function AccountDetailSheet({ accountId, open, onOpenChange }: AccountDet
       </SheetContent>
     </Sheet>
   )
+}
+
+function eventTypeClass(t: string): string {
+  switch (t) {
+    case 'task_complete':
+    case 'login_success':
+      return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'
+    case 'task_fail':
+    case 'login_fail':
+      return 'bg-red-500/15 text-red-700 dark:text-red-400'
+    case 'unknown_screen':
+      return 'bg-amber-500/15 text-amber-700 dark:text-amber-400'
+    case 'task_start':
+      return 'bg-blue-500/15 text-blue-700 dark:text-blue-400'
+    case 'note':
+      return 'bg-purple-500/15 text-purple-700 dark:text-purple-400'
+    default:
+      return 'bg-muted text-muted-foreground'
+  }
 }
 
 function Row({ label, value, mono, children }: {
