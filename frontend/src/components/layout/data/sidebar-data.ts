@@ -12,6 +12,7 @@ import {
   ScrollText,
   Settings,
   Command,
+  Eye,
 } from 'lucide-react'
 import { type SidebarData } from '../types'
 
@@ -51,6 +52,7 @@ export const sidebarData: SidebarData = {
         { title: '글로벌 프리셋', url: '/presets', icon: Puzzle },
         { title: '계정 · 아바타', url: '/accounts', icon: Users },
         { title: '워커', url: '/workers', icon: Cpu },
+        { title: 'Screen Review', url: '/screen-review', icon: Eye },
         { title: '로그', url: '/audit', icon: ScrollText },
         { title: '전역 설정', url: '/settings', icon: Settings },
       ],

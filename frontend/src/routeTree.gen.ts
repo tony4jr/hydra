@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
+import { Route as AuthenticatedScreenReviewRouteImport } from './routes/_authenticated/screen-review'
 import { Route as errors503RouteImport } from './routes/(errors)/503'
 import { Route as errors500RouteImport } from './routes/(errors)/500'
 import { Route as errors404RouteImport } from './routes/(errors)/404'
@@ -65,6 +66,12 @@ const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedScreenReviewRoute =
+  AuthenticatedScreenReviewRouteImport.update({
+    id: '/screen-review',
+    path: '/screen-review',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const errors503Route = errors503RouteImport.update({
   id: '/(errors)/503',
   path: '/503',
@@ -328,6 +335,7 @@ export interface FileRoutesByFullPath {
   '/404': typeof errors404Route
   '/500': typeof errors500Route
   '/503': typeof errors503Route
+  '/screen-review': typeof AuthenticatedScreenReviewRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/presets/$presetId': typeof AuthenticatedPresetsPresetIdRoute
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
@@ -373,6 +381,7 @@ export interface FileRoutesByTo {
   '/404': typeof errors404Route
   '/500': typeof errors500Route
   '/503': typeof errors503Route
+  '/screen-review': typeof AuthenticatedScreenReviewRoute
   '/': typeof AuthenticatedIndexRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/presets/$presetId': typeof AuthenticatedPresetsPresetIdRoute
@@ -421,6 +430,7 @@ export interface FileRoutesById {
   '/(errors)/404': typeof errors404Route
   '/(errors)/500': typeof errors500Route
   '/(errors)/503': typeof errors503Route
+  '/_authenticated/screen-review': typeof AuthenticatedScreenReviewRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/_authenticated/presets/$presetId': typeof AuthenticatedPresetsPresetIdRoute
@@ -471,6 +481,7 @@ export interface FileRouteTypes {
     | '/404'
     | '/500'
     | '/503'
+    | '/screen-review'
     | '/errors/$error'
     | '/presets/$presetId'
     | '/settings/account'
@@ -516,6 +527,7 @@ export interface FileRouteTypes {
     | '/404'
     | '/500'
     | '/503'
+    | '/screen-review'
     | '/'
     | '/errors/$error'
     | '/presets/$presetId'
@@ -563,6 +575,7 @@ export interface FileRouteTypes {
     | '/(errors)/404'
     | '/(errors)/500'
     | '/(errors)/503'
+    | '/_authenticated/screen-review'
     | '/_authenticated/'
     | '/_authenticated/errors/$error'
     | '/_authenticated/presets/$presetId'
@@ -627,6 +640,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof AuthenticatedIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/screen-review': {
+      id: '/_authenticated/screen-review'
+      path: '/screen-review'
+      fullPath: '/screen-review'
+      preLoaderRoute: typeof AuthenticatedScreenReviewRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/(errors)/503': {
@@ -1001,6 +1021,7 @@ const AuthenticatedBrandsBrandIdNichesNicheIdRouteRouteWithChildren =
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedSettingsRouteRoute: typeof AuthenticatedSettingsRouteRouteWithChildren
+  AuthenticatedScreenReviewRoute: typeof AuthenticatedScreenReviewRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
   AuthenticatedPresetsPresetIdRoute: typeof AuthenticatedPresetsPresetIdRoute
@@ -1029,6 +1050,7 @@ interface AuthenticatedRouteRouteChildren {
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedSettingsRouteRoute: AuthenticatedSettingsRouteRouteWithChildren,
+  AuthenticatedScreenReviewRoute: AuthenticatedScreenReviewRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
   AuthenticatedPresetsPresetIdRoute: AuthenticatedPresetsPresetIdRoute,
