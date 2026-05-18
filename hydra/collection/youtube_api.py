@@ -28,6 +28,25 @@ COST_SEARCH = 100
 COST_VIDEOS = 1
 
 
+def _load_keys_from_db() -> list[str]:
+    """현재 활성 (status='active') YouTube API 키 문자열 목록.
+
+    quota throttle 계산용 — len() 으로 활성 키 개수만 본다.
+    빈 리스트면 caller 가 settings.youtube_api_keys 로 fallback.
+
+    Note: 회전 키 선택은 _pick_key() 가 따로 담당. 이 헬퍼는 카운팅 전용.
+    """
+    from hydra.db.models import YouTubeApiKey
+    db = SessionLocal()
+    try:
+        rows = db.query(YouTubeApiKey).filter(
+            YouTubeApiKey.status == "active"
+        ).all()
+        return [r.key for r in rows if r.key]
+    finally:
+        db.close()
+
+
 def _pick_key():
     """현재 활성 키 1개 + id 반환. 없으면 .env fallback (id=None)."""
     db = SessionLocal()
