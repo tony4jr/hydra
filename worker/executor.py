@@ -488,13 +488,30 @@ class TaskExecutor:
         password = payload["password"]
         totp_secret = payload.get("totp_secret")
 
+        client = getattr(session, "server_client", None)
+        tid = task.get("id") if isinstance(task, dict) else None
+        # Codex P1 fix: payload account_id 누락 시 session.account_id 로 fallback.
+        aid = payload.get("account_id") or getattr(session, "account_id", None)
+
         success = await auto_login(
             page, email, password,
             totp_secret=totp_secret,
-            client=getattr(session, "server_client", None),
-            task_id=task.get("id") if isinstance(task, dict) else None,
-            account_id=payload.get("account_id"),
+            client=client,
+            task_id=tid,
+            account_id=aid,
         )
+
+        # Phase 3.2b — login lifecycle event
+        if aid is not None and client is not None and hasattr(client, "report_account_event"):
+            try:
+                client.report_account_event(
+                    account_id=aid,
+                    event_type="login_success" if success else "login_fail",
+                    message=f"auto_login {'ok' if success else 'fail'} for {email}",
+                    task_id=tid,
+                )
+            except Exception:
+                pass
 
         # Phase 1 — silent success 박멸의 일부: success=False는 task fail로 전파.
         # 이전엔 {"success": false} 반환 → app.py가 complete_task → 서버 done 마킹 →
