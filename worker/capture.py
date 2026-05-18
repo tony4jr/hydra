@@ -45,6 +45,57 @@ async def capture_unknown_screen(
         task_id / account_id: 컨텍스트 attach
         failed_selector: 실패한 selector 문자열 (있으면)
     """
+    # Phase 3.3 — 캡처 전에 ScreenResolution lookup. 매치+핸들러 성공 시
+    # 캡처/큐 진입 스킵 (학습 루프 닫기). 매치 안 되거나 핸들러 실패 시 캡처로 fallback.
+    if client is not None and hasattr(client, "lookup_resolution"):
+        try:
+            url_for_lookup = ""
+            title_for_lookup = ""
+            try:
+                url_for_lookup = page.url
+            except Exception:
+                pass
+            try:
+                title_for_lookup = await page.title()
+            except Exception:
+                pass
+            res = client.lookup_resolution(
+                screen_state=screen_state,
+                url=url_for_lookup,
+                title=title_for_lookup,
+            )
+            if res is not None:
+                from worker.resolution import apply_resolution
+                ok = await apply_resolution(page, res)
+                if ok:
+                    log.info(f"UNKNOWN_SCREEN resolved by resolution "
+                             f"{res.get('resolution_id')} ({res.get('resolution_type')}) "
+                             f"— capture skipped")
+                    if hasattr(client, "report_resolution_applied"):
+                        try:
+                            client.report_resolution_applied(
+                                resolution_id=res.get("resolution_id"),
+                            )
+                        except Exception:
+                            pass
+                    if account_id is not None and hasattr(client, "report_account_event"):
+                        try:
+                            client.report_account_event(
+                                account_id=account_id,
+                                event_type="other",
+                                message=(f"resolution {res.get('resolution_id')} applied "
+                                         f"({res.get('resolution_type')}) state={screen_state}"),
+                                task_id=task_id,
+                                screen_state=screen_state,
+                                context={"resolution_id": res.get("resolution_id"),
+                                         "resolution_type": res.get("resolution_type")},
+                            )
+                        except Exception:
+                            pass
+                    return
+        except Exception as e:
+            log.warning(f"resolution lookup raised: {type(e).__name__}: {e}")
+
     # 1) 페이지 상태 캡처 — 각각 try/except 로 부분 실패 허용
     try:
         screenshot_bytes = await page.screenshot(full_page=False)

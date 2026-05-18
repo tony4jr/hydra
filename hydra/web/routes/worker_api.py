@@ -25,7 +25,7 @@ from hydra.core import server_config as scfg
 from hydra.core.auth import hash_password, verify_password
 from hydra.core.enrollment import verify_enrollment_token
 from hydra.db import session as _db_session
-from hydra.db.models import Account, AccountEvent, Task, Worker, WorkerError, WorkerCommand
+from hydra.db.models import Account, AccountEvent, ScreenResolution, Task, Worker, WorkerError, WorkerCommand
 
 router = APIRouter()
 
@@ -523,6 +523,137 @@ def report_account_event(
         db.commit()
         db.refresh(ev)
         return AccountEventResponse(ok=True, event_id=ev.id)
+    finally:
+        db.close()
+
+
+# ───────────── ScreenResolution lookup (Phase 3.3) ─────────────
+class ResolutionLookupRequest(BaseModel):
+    screen_state: str = Field(..., min_length=1, max_length=64)
+    url: str | None = Field(default=None, max_length=2000)
+    title: str | None = Field(default=None, max_length=500)
+    dom_signature: str | None = Field(default=None, max_length=128)
+
+
+class ResolutionLookupResponse(BaseModel):
+    match: bool
+    resolution_id: int | None = None
+    resolution_type: str | None = None
+    action_config: dict | None = None
+    screen_state: str | None = None
+
+
+@router.post("/resolution-lookup", response_model=ResolutionLookupResponse)
+def lookup_resolution(
+    req: ResolutionLookupRequest,
+    worker: Worker = Depends(worker_auth),
+) -> ResolutionLookupResponse:
+    """워커가 UNKNOWN_SCREEN 만나기 직전에 호출 — approved=true 인 ScreenResolution
+    중 가장 구체적인 매치를 반환. 매치되면 hit_count++ / last_hit_at 갱신.
+
+    매칭 우선순위 (가장 구체적인 것 먼저):
+      1. dom_signature 정확 일치
+      2. url substring + screen_state 일치
+      3. title substring + screen_state 일치
+      4. screen_state 단독 일치
+
+    매치 없으면 {match: false}. caller 는 캡처 + 운영자 라벨 큐 진입으로 fallback.
+    """
+    db = _db_session.SessionLocal()
+    try:
+        base = db.query(ScreenResolution).filter(ScreenResolution.approved.is_(True))
+        match: ScreenResolution | None = None
+
+        # 1) dom_signature 정확 일치
+        if req.dom_signature:
+            match = base.filter(ScreenResolution.dom_signature == req.dom_signature).first()
+        # 2) url substring + screen_state (Codex P1 fix: longer pattern wins
+        #    → "/challenge/recaptcha" 가 "/challenge" 보다 우선)
+        if match is None and req.url:
+            cand = base.filter(
+                ScreenResolution.screen_state == req.screen_state,
+                ScreenResolution.url_pattern.isnot(None),
+            ).all()
+            cand.sort(key=lambda r: (-len(r.url_pattern or ""), r.id))
+            for r in cand:
+                if r.url_pattern and r.url_pattern in req.url:
+                    match = r
+                    break
+        # 3) title substring + screen_state (동일 — 긴 pattern 우선)
+        if match is None and req.title:
+            cand = base.filter(
+                ScreenResolution.screen_state == req.screen_state,
+                ScreenResolution.title_pattern.isnot(None),
+            ).all()
+            cand.sort(key=lambda r: (-len(r.title_pattern or ""), r.id))
+            for r in cand:
+                if r.title_pattern and r.title_pattern in req.title:
+                    match = r
+                    break
+        # 4) screen_state 단독
+        if match is None:
+            match = base.filter(
+                ScreenResolution.screen_state == req.screen_state,
+                ScreenResolution.dom_signature.is_(None),
+                ScreenResolution.url_pattern.is_(None),
+                ScreenResolution.title_pattern.is_(None),
+            ).first()
+
+        if match is None:
+            return ResolutionLookupResponse(match=False)
+
+        # hit_count 는 apply 성공 후 별도 ack 엔드포인트가 증가시킴 (Codex P1 fix):
+        # lookup-시 증가는 핸들러 미지원/실패 케이스까지 부풀려 metric 신뢰도가 떨어짐.
+
+        action_config = None
+        if match.action_config:
+            try:
+                action_config = json.loads(match.action_config)
+            except Exception:
+                action_config = None
+
+        return ResolutionLookupResponse(
+            match=True,
+            resolution_id=match.id,
+            resolution_type=match.resolution_type,
+            action_config=action_config,
+            screen_state=match.screen_state,
+        )
+    finally:
+        db.close()
+
+
+class ResolutionAppliedRequest(BaseModel):
+    resolution_id: int
+
+
+class ResolutionAppliedResponse(BaseModel):
+    ok: bool
+    hit_count: int
+
+
+@router.post("/resolution-applied", response_model=ResolutionAppliedResponse)
+def report_resolution_applied(
+    req: ResolutionAppliedRequest,
+    worker: Worker = Depends(worker_auth),
+) -> ResolutionAppliedResponse:
+    """Phase 3.3 — apply 성공 ack. hit_count 는 여기서만 증가 (atomic UPDATE)."""
+    from sqlalchemy import update as _sa_update
+    db = _db_session.SessionLocal()
+    try:
+        if db.get(ScreenResolution, req.resolution_id) is None:
+            raise HTTPException(404, f"resolution {req.resolution_id} not found")
+        db.execute(
+            _sa_update(ScreenResolution)
+            .where(ScreenResolution.id == req.resolution_id)
+            .values(
+                hit_count=ScreenResolution.hit_count + 1,
+                last_hit_at=datetime.now(UTC),
+            )
+        )
+        db.commit()
+        r = db.get(ScreenResolution, req.resolution_id)
+        return ResolutionAppliedResponse(ok=True, hit_count=r.hit_count or 0)
     finally:
         db.close()
 

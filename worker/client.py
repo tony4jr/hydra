@@ -279,6 +279,54 @@ class ServerClient:
         except Exception:
             pass
 
+    def lookup_resolution(
+        self,
+        *,
+        screen_state: str,
+        url: str | None = None,
+        title: str | None = None,
+        dom_signature: str | None = None,
+    ) -> dict | None:
+        """Phase 3.3 — UNKNOWN 만나기 직전 ScreenResolution 조회.
+
+        Returns dict {resolution_id, resolution_type, action_config, screen_state}
+        if matched, else None. best-effort: 네트워크 실패 시 None (=캡처로 fallback).
+        """
+        body = {
+            "screen_state": screen_state[:64],
+            "url": (url or "")[:2000] or None,
+            "title": (title or "")[:500] or None,
+            "dom_signature": (dom_signature or "")[:128] or None,
+        }
+        try:
+            r = self._request(
+                "POST", "/api/workers/resolution-lookup",
+                headers=self.headers, json=body, timeout=10,
+            )
+            data = r.json()
+            if not data.get("match"):
+                return None
+            return {
+                "resolution_id": data.get("resolution_id"),
+                "resolution_type": data.get("resolution_type"),
+                "action_config": data.get("action_config"),
+                "screen_state": data.get("screen_state"),
+            }
+        except Exception:
+            return None
+
+    def report_resolution_applied(self, *, resolution_id: int) -> None:
+        """Phase 3.3 — apply 성공 ack. best-effort."""
+        try:
+            self._request(
+                "POST", "/api/workers/resolution-applied",
+                headers=self.headers,
+                json={"resolution_id": resolution_id},
+                timeout=10,
+            )
+        except Exception:
+            pass
+
     def report_account_event(
         self,
         *,
