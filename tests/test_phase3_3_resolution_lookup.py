@@ -137,7 +137,8 @@ def test_lookup_dom_signature_beats_all(api_env):
     assert body["resolution_id"] == rid_dom
 
 
-def test_lookup_bumps_hit_count(api_env):
+def test_lookup_does_not_bump_hit_count(api_env):
+    """Codex P1 fix: hit_count 는 apply 성공 ack 에서만 증가."""
     rid = _seed_res(api_env["Session"], screen_state="s3")
     for _ in range(3):
         api_env["client"].post(
@@ -147,9 +148,69 @@ def test_lookup_bumps_hit_count(api_env):
         )
     s = api_env["Session"]()
     r = s.get(ScreenResolution, rid)
-    assert r.hit_count == 3
-    assert r.last_hit_at is not None
+    assert r.hit_count == 0
     s.close()
+
+
+def test_resolution_applied_endpoint_bumps_hit_count(api_env):
+    rid = _seed_res(api_env["Session"], screen_state="s4")
+    for _ in range(3):
+        r = api_env["client"].post(
+            "/api/workers/resolution-applied",
+            headers={"X-Worker-Token": api_env["wtok"]},
+            json={"resolution_id": rid},
+        )
+        assert r.status_code == 200
+    s = api_env["Session"]()
+    row = s.get(ScreenResolution, rid)
+    assert row.hit_count == 3
+    assert row.last_hit_at is not None
+    s.close()
+
+
+def test_resolution_applied_404_on_unknown(api_env):
+    r = api_env["client"].post(
+        "/api/workers/resolution-applied",
+        headers={"X-Worker-Token": api_env["wtok"]},
+        json={"resolution_id": 99999},
+    )
+    assert r.status_code == 404
+
+
+def test_lookup_longer_url_pattern_wins(api_env):
+    """Codex P1 fix: 같은 tier 에서 더 긴 pattern 우선 (DB row order 비의존)."""
+    TS = api_env["Session"]
+    # 짧은 pattern 을 먼저 insert (작은 id) → row order 가 매치를 결정한다면
+    # 짧은 게 이김. 긴 pattern 이 이겨야 정상.
+    rid_short = _seed_res(TS, screen_state="s5", url_pattern="/challenge",
+                          action_config={"selector": "SHORT"})
+    rid_long = _seed_res(TS, screen_state="s5", url_pattern="/challenge/recaptcha",
+                         action_config={"selector": "LONG"})
+    r = api_env["client"].post(
+        "/api/workers/resolution-lookup",
+        headers={"X-Worker-Token": api_env["wtok"]},
+        json={"screen_state": "s5",
+              "url": "https://accounts.google.com/challenge/recaptcha?x=1"},
+    )
+    body = r.json()
+    assert body["match"] is True
+    assert body["resolution_id"] == rid_long
+    assert body["action_config"]["selector"] == "LONG"
+
+
+def test_lookup_longer_title_pattern_wins(api_env):
+    TS = api_env["Session"]
+    _seed_res(TS, screen_state="s6", title_pattern="확인",
+              action_config={"selector": "SHORT"})
+    rid_long = _seed_res(TS, screen_state="s6", title_pattern="기기 확인 필요",
+                         action_config={"selector": "LONG"})
+    r = api_env["client"].post(
+        "/api/workers/resolution-lookup",
+        headers={"X-Worker-Token": api_env["wtok"]},
+        json={"screen_state": "s6", "title": "Google 기기 확인 필요"},
+    )
+    body = r.json()
+    assert body["resolution_id"] == rid_long
 
 
 # ───────── apply_resolution handler ─────────
@@ -240,6 +301,9 @@ async def test_capture_skips_when_resolution_applied():
     assert not client.report_error.called
     # account_event 는 'other' (resolution_applied 마커) 로 emit
     assert client.report_account_event.called
+    # apply ack endpoint 호출 — hit_count 는 여기서만 증가
+    assert client.report_resolution_applied.called
+    assert client.report_resolution_applied.call_args.kwargs["resolution_id"] == 9
 
 
 @pytest.mark.asyncio

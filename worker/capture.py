@@ -71,6 +71,13 @@ async def capture_unknown_screen(
                     log.info(f"UNKNOWN_SCREEN resolved by resolution "
                              f"{res.get('resolution_id')} ({res.get('resolution_type')}) "
                              f"— capture skipped")
+                    if hasattr(client, "report_resolution_applied"):
+                        try:
+                            client.report_resolution_applied(
+                                resolution_id=res.get("resolution_id"),
+                            )
+                        except Exception:
+                            pass
                     if account_id is not None and hasattr(client, "report_account_event"):
                         try:
                             client.report_account_event(

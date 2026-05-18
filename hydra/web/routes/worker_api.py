@@ -567,22 +567,25 @@ def lookup_resolution(
         # 1) dom_signature 정확 일치
         if req.dom_signature:
             match = base.filter(ScreenResolution.dom_signature == req.dom_signature).first()
-        # 2) url substring + screen_state
+        # 2) url substring + screen_state (Codex P1 fix: longer pattern wins
+        #    → "/challenge/recaptcha" 가 "/challenge" 보다 우선)
         if match is None and req.url:
             cand = base.filter(
                 ScreenResolution.screen_state == req.screen_state,
                 ScreenResolution.url_pattern.isnot(None),
             ).all()
+            cand.sort(key=lambda r: (-len(r.url_pattern or ""), r.id))
             for r in cand:
                 if r.url_pattern and r.url_pattern in req.url:
                     match = r
                     break
-        # 3) title substring + screen_state
+        # 3) title substring + screen_state (동일 — 긴 pattern 우선)
         if match is None and req.title:
             cand = base.filter(
                 ScreenResolution.screen_state == req.screen_state,
                 ScreenResolution.title_pattern.isnot(None),
             ).all()
+            cand.sort(key=lambda r: (-len(r.title_pattern or ""), r.id))
             for r in cand:
                 if r.title_pattern and r.title_pattern in req.title:
                     match = r
@@ -599,17 +602,8 @@ def lookup_resolution(
         if match is None:
             return ResolutionLookupResponse(match=False)
 
-        # Atomic UPDATE — 동시 lookup race 에서 카운터 손실 방지.
-        from sqlalchemy import update as _sa_update
-        db.execute(
-            _sa_update(ScreenResolution)
-            .where(ScreenResolution.id == match.id)
-            .values(
-                hit_count=ScreenResolution.hit_count + 1,
-                last_hit_at=datetime.now(UTC),
-            )
-        )
-        db.commit()
+        # hit_count 는 apply 성공 후 별도 ack 엔드포인트가 증가시킴 (Codex P1 fix):
+        # lookup-시 증가는 핸들러 미지원/실패 케이스까지 부풀려 metric 신뢰도가 떨어짐.
 
         action_config = None
         if match.action_config:
@@ -625,6 +619,41 @@ def lookup_resolution(
             action_config=action_config,
             screen_state=match.screen_state,
         )
+    finally:
+        db.close()
+
+
+class ResolutionAppliedRequest(BaseModel):
+    resolution_id: int
+
+
+class ResolutionAppliedResponse(BaseModel):
+    ok: bool
+    hit_count: int
+
+
+@router.post("/resolution-applied", response_model=ResolutionAppliedResponse)
+def report_resolution_applied(
+    req: ResolutionAppliedRequest,
+    worker: Worker = Depends(worker_auth),
+) -> ResolutionAppliedResponse:
+    """Phase 3.3 — apply 성공 ack. hit_count 는 여기서만 증가 (atomic UPDATE)."""
+    from sqlalchemy import update as _sa_update
+    db = _db_session.SessionLocal()
+    try:
+        if db.get(ScreenResolution, req.resolution_id) is None:
+            raise HTTPException(404, f"resolution {req.resolution_id} not found")
+        db.execute(
+            _sa_update(ScreenResolution)
+            .where(ScreenResolution.id == req.resolution_id)
+            .values(
+                hit_count=ScreenResolution.hit_count + 1,
+                last_hit_at=datetime.now(UTC),
+            )
+        )
+        db.commit()
+        r = db.get(ScreenResolution, req.resolution_id)
+        return ResolutionAppliedResponse(ok=True, hit_count=r.hit_count or 0)
     finally:
         db.close()
 

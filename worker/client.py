@@ -315,6 +315,18 @@ class ServerClient:
         except Exception:
             return None
 
+    def report_resolution_applied(self, *, resolution_id: int) -> None:
+        """Phase 3.3 — apply 성공 ack. best-effort."""
+        try:
+            self._request(
+                "POST", "/api/workers/resolution-applied",
+                headers=self.headers,
+                json={"resolution_id": resolution_id},
+                timeout=10,
+            )
+        except Exception:
+            pass
+
     def report_account_event(
         self,
         *,
