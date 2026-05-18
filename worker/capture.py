@@ -110,3 +110,23 @@ async def capture_unknown_screen(
             )
     except Exception as e:
         log.warning(f"capture upload failed: {type(e).__name__}: {e}")
+
+    # Phase 3.2 — account timeline 도 1줄 append (계정 있을 때만, best-effort).
+    if account_id is not None and hasattr(client, "report_account_event"):
+        try:
+            client.report_account_event(
+                account_id=account_id,
+                event_type="unknown_screen",
+                message=message,
+                task_id=task_id,
+                screen_state=screen_state,
+                failure_taxonomy=taxonomy.value,
+                context={
+                    "reason": reason[:200],
+                    "captured_url": url[:200],
+                    "captured_title": title[:200],
+                    "failed_selector": failed_selector,
+                },
+            )
+        except Exception as e:
+            log.warning(f"account_event emit failed: {type(e).__name__}: {e}")

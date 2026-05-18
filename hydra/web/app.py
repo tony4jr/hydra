@@ -21,7 +21,7 @@ from hydra.web.routes import (
     admin_auth, admin_workers, admin_avatars, admin_deploy, admin_audit,
     admin_accounts, admin_tasks, admin_adspower, admin_collection, admin_video_pool,
     admin_pipeline, admin_youtube_keys, admin_phase_gauge,
-    admin_screen_review,
+    admin_screen_review, admin_account_timeline,
     avatar_serving, worker_api, worker_iplog, tasks_api,
     analytics, terminal,
 )
@@ -134,6 +134,9 @@ app.include_router(admin_pipeline.router, tags=["admin-pipeline"], dependencies=
 app.include_router(admin_screen_review.router,
                    prefix="/api/admin/screen-review",
                    tags=["admin-screen-review"], dependencies=_ADMIN_DEPS)
+app.include_router(admin_account_timeline.router,
+                   prefix="/api/admin/accounts",
+                   tags=["admin-account-timeline"], dependencies=_ADMIN_DEPS)
 # PR-C2: phase gauge — 실시간 phase + last_progress + session/history.
 app.include_router(admin_phase_gauge.router, prefix="/api/admin",
                    tags=["admin-phase-gauge"], dependencies=_ADMIN_DEPS)

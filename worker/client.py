@@ -279,6 +279,38 @@ class ServerClient:
         except Exception:
             pass
 
+    def report_account_event(
+        self,
+        *,
+        account_id: int,
+        event_type: str,
+        message: str,
+        task_id: int | None = None,
+        screen_state: str | None = None,
+        failure_taxonomy: str | None = None,
+        context: dict | None = None,
+    ) -> None:
+        """Phase 3.2 — 계정 timeline 에 1줄 append. best-effort, 절대 예외 propagate X."""
+        from hydra.protocol import redact_for_logging
+        body = {
+            "account_id": account_id,
+            "event_type": event_type,
+            "message": message[:1000],
+            "task_id": task_id,
+            "screen_state": screen_state,
+            "failure_taxonomy": failure_taxonomy,
+            "context": redact_for_logging(context) if context else None,
+        }
+        try:
+            self._request(
+                "POST", "/api/workers/account-event",
+                headers=self.headers,
+                json=body,
+                timeout=10,
+            )
+        except Exception:
+            pass
+
     def report_progress(
         self,
         *,

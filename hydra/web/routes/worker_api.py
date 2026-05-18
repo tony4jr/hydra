@@ -25,7 +25,7 @@ from hydra.core import server_config as scfg
 from hydra.core.auth import hash_password, verify_password
 from hydra.core.enrollment import verify_enrollment_token
 from hydra.db import session as _db_session
-from hydra.db.models import Worker, WorkerError, WorkerCommand
+from hydra.db.models import Account, AccountEvent, Task, Worker, WorkerError, WorkerCommand
 
 router = APIRouter()
 
@@ -450,6 +450,79 @@ def report_error(
         db.add(err)
         db.commit()
         return ReportErrorResponse(ok=True, deduped=False)
+    finally:
+        db.close()
+
+
+# ───────────── account event (Phase 3.2 timeline) ─────────────
+_ALLOWED_EVENT_TYPES = frozenset({
+    "task_start", "task_complete", "task_fail",
+    "login_success", "login_fail", "unknown_screen", "note", "other",
+})
+
+
+class AccountEventRequest(BaseModel):
+    account_id: int
+    event_type: str = Field(..., min_length=1, max_length=32)
+    message: str = Field(..., min_length=1, max_length=1000)
+    task_id: int | None = None
+    screen_state: str | None = Field(default=None, max_length=64)
+    failure_taxonomy: str | None = Field(default=None, max_length=32)
+    context: dict | None = None
+
+
+class AccountEventResponse(BaseModel):
+    ok: bool
+    event_id: int
+
+
+@router.post("/account-event", response_model=AccountEventResponse)
+def report_account_event(
+    req: AccountEventRequest,
+    worker: Worker = Depends(worker_auth),
+) -> AccountEventResponse:
+    """워커가 계정 timeline 에 1줄 append.
+
+    Ownership 검증 (Codex P1 fix):
+      - account_id 가 실제 존재해야 함 (없으면 404)
+      - task_id 가 있으면 Task 가 존재하고, Task.worker_id 가 caller 와 일치하고,
+        Task.account_id 가 req.account_id 와 일치해야 함 (없거나 불일치 시 403/404)
+    이걸로 stale/poisoning 워커가 남의 계정 timeline 을 더럽히지 못함.
+
+    현재 wire 된 호출처: capture_unknown_screen 만 (Phase 3.2 슬라이스). task 라이프사이클
+    event(start/complete/fail), login 결과는 후속 PR 에서 worker app/login 에 wire 함.
+    """
+    ev_type = req.event_type if req.event_type in _ALLOWED_EVENT_TYPES else "other"
+    ctx_json = json.dumps(req.context, ensure_ascii=False) if req.context else None
+    db = _db_session.SessionLocal()
+    try:
+        if db.get(Account, req.account_id) is None:
+            raise HTTPException(404, f"account {req.account_id} not found")
+        if req.task_id is not None:
+            task = db.get(Task, req.task_id)
+            if task is None:
+                raise HTTPException(404, f"task {req.task_id} not found")
+            if task.worker_id is not None and task.worker_id != worker.id:
+                raise HTTPException(403, f"task {req.task_id} not owned by worker {worker.id}")
+            if task.account_id is not None and task.account_id != req.account_id:
+                raise HTTPException(
+                    400,
+                    f"task {req.task_id} account_id ({task.account_id}) != req.account_id ({req.account_id})",
+                )
+        ev = AccountEvent(
+            account_id=req.account_id,
+            worker_id=worker.id,
+            task_id=req.task_id,
+            event_type=ev_type,
+            screen_state=req.screen_state,
+            failure_taxonomy=req.failure_taxonomy,
+            message=req.message,
+            context=ctx_json,
+        )
+        db.add(ev)
+        db.commit()
+        db.refresh(ev)
+        return AccountEventResponse(ok=True, event_id=ev.id)
     finally:
         db.close()
 
