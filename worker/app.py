@@ -229,6 +229,25 @@ class WorkerApp:
 
         await asyncio.sleep(config.task_fetch_interval)
 
+    def _emit_lifecycle(self, account_id: int | None, event_type: str,
+                        message: str, *, task_id: int | None = None,
+                        context: dict | None = None) -> None:
+        """Phase 3.2b — task/login lifecycle 이벤트를 account timeline 에 append.
+        best-effort: 절대 워커 실행을 막지 않음.
+        """
+        if account_id is None or not hasattr(self.client, "report_account_event"):
+            return
+        try:
+            self.client.report_account_event(
+                account_id=account_id,
+                event_type=event_type,
+                message=message,
+                task_id=task_id,
+                context=context,
+            )
+        except Exception:
+            pass
+
     async def _execute_session(self, tasks: list, profile_id: str, account_id: int):
         """한 계정의 세션 — 여러 태스크를 자연스럽게 실행."""
         # M2.1 DRY-RUN: WorkerSession/AdsPower/Playwright 를 완전히 우회하고
@@ -389,6 +408,10 @@ class WorkerApp:
 
                     self._current_task_id = task_id
                     session.current_task_id = task_id
+                    # Phase 3.2b — task_start 이벤트 (account timeline)
+                    self._emit_lifecycle(account_id, "task_start",
+                                         f"start {task_type} task={task_id}",
+                                         task_id=task_id)
                     try:
                         try:
                             # PR-E: executor.execute() 전체를 phase=compose timeout 으로 래핑.
@@ -401,6 +424,9 @@ class WorkerApp:
                             self.client.complete_task(task_id, result)
                             session.tasks_completed += 1
                             print(f"[Worker] Task {task_id} completed")
+                            self._emit_lifecycle(account_id, "task_complete",
+                                                 f"done {task_type} task={task_id}",
+                                                 task_id=task_id)
                         except PhaseTimeout as pt:
                             # PR-E: task 실행 중 phase timeout.
                             err_msg = pt.to_error_message()
@@ -427,6 +453,12 @@ class WorkerApp:
                                     self.client.reschedule_task(task_id, reason=err_msg)
                             except Exception:
                                 pass
+                            self._emit_lifecycle(account_id, "task_fail",
+                                                 f"phase_timeout {pt.phase} task={task_id}",
+                                                 task_id=task_id,
+                                                 context={"reason": "phase_timeout",
+                                                          "phase": pt.phase,
+                                                          "policy": pt.policy})
                         except Exception as e:
                             error = str(e)
                             print(f"[Worker] Task {task_id} failed: {error}")
@@ -434,6 +466,11 @@ class WorkerApp:
                                 self.client.fail_task(task_id, error)
                             except Exception:
                                 pass
+                            self._emit_lifecycle(account_id, "task_fail",
+                                                 f"{type(e).__name__}: {error[:200]}",
+                                                 task_id=task_id,
+                                                 context={"reason": "exception",
+                                                          "exc_type": type(e).__name__})
                             # 스크린샷 캡처 + 서버 업로드 (실 YouTube 실패 디버깅)
                             try:
                                 import traceback as _tb
