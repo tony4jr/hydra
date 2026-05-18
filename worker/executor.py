@@ -490,7 +490,8 @@ class TaskExecutor:
 
         client = getattr(session, "server_client", None)
         tid = task.get("id") if isinstance(task, dict) else None
-        aid = payload.get("account_id")
+        # Codex P1 fix: payload account_id 누락 시 session.account_id 로 fallback.
+        aid = payload.get("account_id") or getattr(session, "account_id", None)
 
         success = await auto_login(
             page, email, password,

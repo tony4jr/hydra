@@ -453,8 +453,12 @@ class WorkerApp:
                                     self.client.reschedule_task(task_id, reason=err_msg)
                             except Exception:
                                 pass
-                            self._emit_lifecycle(account_id, "task_fail",
-                                                 f"phase_timeout {pt.phase} task={task_id}",
+                            # Codex P1 fix: policy=fail 만 task_fail. reschedule/other 는
+                            # task 가 pending 상태로 남으므로 'other' 로 구분 표기.
+                            ev_type = "task_fail" if pt.policy == "fail" else "other"
+                            self._emit_lifecycle(account_id, ev_type,
+                                                 f"phase_timeout {pt.phase} policy={pt.policy} "
+                                                 f"task={task_id}",
                                                  task_id=task_id,
                                                  context={"reason": "phase_timeout",
                                                           "phase": pt.phase,

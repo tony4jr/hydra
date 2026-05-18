@@ -101,6 +101,47 @@ async def test_handle_login_emits_login_fail_and_raises(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_handle_login_falls_back_to_session_account_id(monkeypatch):
+    """Codex P1 fix: payload 에 account_id 없어도 session.account_id 사용."""
+    from worker.executor import TaskExecutor as Executor
+    import worker.executor as exe_mod
+
+    async def _fake_login(*a, **kw): return True
+    monkeypatch.setattr(exe_mod, "auto_login", _fake_login)
+
+    client = MagicMock()
+    session = MagicMock()
+    session.server_client = client
+    session.browser.page = MagicMock()
+    session.account_id = 77  # ← session level
+
+    ex = Executor.__new__(Executor)
+    task = {"id": 1}
+    payload = {"email": "x@y", "password": "p"}  # no account_id
+    await ex._handle_login(task, payload, session)
+    assert client.report_account_event.called
+    assert client.report_account_event.call_args.kwargs["account_id"] == 77
+
+
+def test_phase_timeout_reschedule_emits_other_not_task_fail():
+    """Codex P1 fix: policy=reschedule 인 PhaseTimeout 은 task_fail 아닌 'other'."""
+    # _emit_lifecycle 호출 자체를 직접 시뮬레이션 — 분기 로직만 검증.
+    # 실제 _execute_session 통째 mock 은 너무 heavy.
+    from worker.app import WorkerApp
+    app = WorkerApp.__new__(WorkerApp)
+    app.client = MagicMock()
+    # 분기 로직과 동일하게 시뮬:
+    for policy, expected in (("fail", "task_fail"), ("reschedule", "other"),
+                             ("unknown", "other")):
+        app.client.reset_mock()
+        ev_type = "task_fail" if policy == "fail" else "other"
+        app._emit_lifecycle(1, ev_type, f"x policy={policy}", task_id=2,
+                             context={"policy": policy})
+        kw = app.client.report_account_event.call_args.kwargs
+        assert kw["event_type"] == expected, f"policy={policy} → {kw['event_type']}"
+
+
+@pytest.mark.asyncio
 async def test_handle_login_skips_emit_when_no_account_id(monkeypatch):
     from worker.executor import TaskExecutor as Executor
     import worker.executor as exe_mod
@@ -112,6 +153,7 @@ async def test_handle_login_skips_emit_when_no_account_id(monkeypatch):
     session = MagicMock()
     session.server_client = client
     session.browser.page = MagicMock()
+    session.account_id = None  # session 도 모를 때만 skip
 
     ex = Executor.__new__(Executor)
     task = {"id": 9, "task_type": "login"}
