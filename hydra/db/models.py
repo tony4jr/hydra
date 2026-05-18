@@ -1385,6 +1385,34 @@ class AITokenUsage(Base):
     )
 
 
+class AccountEvent(Base):
+    """Phase 3.2 — 계정별 timeline.
+
+    매 task 시작/성공/실패, login 결과, UNKNOWN_SCREEN, 운영자 메모를 1줄씩 append.
+    운영자가 한 계정 클릭하면 최근 N건을 한눈에 볼 수 있어야 함.
+    retention: 30일 (별도 cleanup).
+    """
+    __tablename__ = "account_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(Integer, ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False)
+    worker_id = Column(Integer, ForeignKey("workers.id", ondelete="SET NULL"), nullable=True)
+    task_id = Column(Integer, ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True)
+    event_type = Column(String(32), nullable=False)
+    # task_start | task_complete | task_fail | login_success | login_fail
+    # | unknown_screen | note | other
+    screen_state = Column(String(64), nullable=True)
+    failure_taxonomy = Column(String(32), nullable=True)
+    message = Column(Text, nullable=False)
+    context = Column(Text, nullable=True)  # JSON
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+
+    __table_args__ = (
+        Index("idx_acctevt_acct_time", "account_id", "created_at"),
+        Index("idx_acctevt_type_time", "event_type", "created_at"),
+    )
+
+
 class CommentSnapshot(Base):
     """Periodic snapshot of one of our comments — used to track ranking / hold / ghost over time.
 
